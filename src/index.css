@@ -1,0 +1,278 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource/instrument-serif/400.css";
+@import "@fontsource/instrument-serif/400-italic.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: "Instrument Serif", serif;
+    --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+    /* Tampersloth brand palette */
+    --ink: #0f0f0e;
+    --paper: #f6f4ef;
+    --cream: #faf8f2;
+    --bark: #3a2e26;
+    --dust: #e5dfd3;
+    --sand: #c9c2b0;
+    --stone: #7a7368;
+    --moss: #3f4a2a;
+    --moss-soft: #6b7a4f;
+
+    --background: var(--paper);
+    --foreground: var(--ink);
+    --card: var(--cream);
+    --card-foreground: var(--ink);
+    --popover: var(--cream);
+    --popover-foreground: var(--ink);
+    --primary: var(--ink);
+    --primary-foreground: var(--paper);
+    --secondary: var(--dust);
+    --secondary-foreground: var(--ink);
+    --muted: var(--dust);
+    --muted-foreground: var(--stone);
+    --accent: var(--moss);
+    --accent-foreground: var(--paper);
+    --destructive: oklch(0.55 0.18 25);
+    --border: var(--sand);
+    --input: var(--sand);
+    --ring: var(--moss);
+    --chart-1: var(--ink);
+    --chart-2: var(--bark);
+    --chart-3: var(--stone);
+    --chart-4: var(--sand);
+    --chart-5: var(--dust);
+    --radius: 0.5rem;
+    --sidebar: var(--cream);
+    --sidebar-foreground: var(--ink);
+    --sidebar-primary: var(--ink);
+    --sidebar-primary-foreground: var(--paper);
+    --sidebar-accent: var(--dust);
+    --sidebar-accent-foreground: var(--ink);
+    --sidebar-border: var(--sand);
+    --sidebar-ring: var(--moss);
+
+    /* Type scale — editorial */
+    --fs-display: clamp(56px, 9vw, 128px);
+    --fs-h1: clamp(40px, 5.5vw, 72px);
+    --fs-h2: clamp(32px, 4vw, 48px);
+    --fs-h3: 28px;
+    --fs-h4: 22px;
+    --fs-body-lg: 19px;
+    --fs-body: 17px;
+    --fs-body-sm: 15px;
+    --fs-caption: 13px;
+    --fs-eyebrow: 12px;
+
+    --lh-tight: 1.05;
+    --lh-snug: 1.2;
+    --lh-normal: 1.55;
+    --lh-loose: 1.7;
+
+    --tracking-tight: -0.02em;
+    --tracking-wide: 0.12em;
+
+    --divider: var(--dust);
+    --link: var(--moss);
+    --link-hover: var(--moss-soft);
+
+    --dur-fast: 160ms;
+    --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.dark {
+    --background: var(--ink);
+    --foreground: var(--paper);
+    --card: var(--bark);
+    --card-foreground: var(--paper);
+    --popover: var(--bark);
+    --popover-foreground: var(--paper);
+    --primary: var(--paper);
+    --primary-foreground: var(--ink);
+    --secondary: var(--bark);
+    --secondary-foreground: var(--paper);
+    --muted: var(--bark);
+    --muted-foreground: var(--sand);
+    --accent: var(--moss-soft);
+    --accent-foreground: var(--ink);
+    --destructive: oklch(0.7 0.19 22);
+    --border: oklch(1 0 0 / 12%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: var(--moss-soft);
+    --chart-1: var(--paper);
+    --chart-2: var(--sand);
+    --chart-3: var(--stone);
+    --chart-4: var(--bark);
+    --chart-5: var(--ink);
+    --sidebar: var(--bark);
+    --sidebar-foreground: var(--paper);
+    --sidebar-primary: var(--paper);
+    --sidebar-primary-foreground: var(--ink);
+    --sidebar-accent: var(--moss-soft);
+    --sidebar-accent-foreground: var(--ink);
+    --sidebar-border: oklch(1 0 0 / 12%);
+    --sidebar-ring: var(--moss-soft);
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+    html {
+        @apply font-sans;
+        color-scheme: light;
+    }
+    .dark {
+        color-scheme: dark;
+    }
+    body {
+        @apply bg-background text-foreground;
+        font-size: var(--fs-body);
+        line-height: var(--lh-normal);
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4 {
+        font-family: var(--font-heading);
+        font-weight: 400;
+        line-height: var(--lh-tight);
+        letter-spacing: var(--tracking-tight);
+        color: var(--foreground);
+        text-wrap: balance;
+    }
+    h1 {
+        font-size: var(--fs-h1);
+    }
+    h2 {
+        font-size: var(--fs-h2);
+    }
+    h3 {
+        font-size: var(--fs-h3);
+        line-height: var(--lh-snug);
+    }
+    h4 {
+        font-size: var(--fs-h4);
+        line-height: var(--lh-snug);
+    }
+
+    .display {
+        font-family: var(--font-heading);
+        font-size: var(--fs-display);
+        line-height: var(--lh-tight);
+        letter-spacing: var(--tracking-tight);
+        font-weight: 400;
+    }
+
+    .eyebrow {
+        font-family: var(--font-mono);
+        font-size: var(--fs-eyebrow);
+        letter-spacing: var(--tracking-wide);
+        text-transform: uppercase;
+        color: var(--muted-foreground);
+    }
+
+    p {
+        font-size: var(--fs-body);
+        line-height: var(--lh-normal);
+        color: var(--foreground);
+        text-wrap: pretty;
+    }
+    p.lead {
+        font-size: var(--fs-body-lg);
+        line-height: var(--lh-loose);
+        color: var(--muted-foreground);
+    }
+
+    small,
+    .caption {
+        font-size: var(--fs-caption);
+        color: var(--muted-foreground);
+    }
+
+    a {
+        color: var(--link);
+        text-decoration: underline;
+        text-decoration-thickness: 1px;
+        text-underline-offset: 3px;
+        transition: color var(--dur-fast) var(--ease-out);
+    }
+    a:hover {
+        color: var(--link-hover);
+    }
+
+    code,
+    pre,
+    kbd {
+        font-family: var(--font-mono);
+        font-size: 0.92em;
+    }
+    code {
+        background: var(--muted);
+        padding: 0.1em 0.4em;
+        border-radius: calc(var(--radius) * 0.25);
+    }
+
+    hr {
+        border: 0;
+        border-top: 1px solid var(--divider);
+        margin: 3rem 0;
+    }
+
+    ::selection {
+        background: var(--ink);
+        color: var(--paper);
+    }
+
+    :focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 2px;
+    }
+}

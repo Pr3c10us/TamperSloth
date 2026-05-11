@@ -1,0 +1,47 @@
+{
+  "name": "Tampersloth",
+  "description": "The last extension you would ever need",
+  "version": "0.1",
+  "manifest_version": 3,
+  "minimum_chrome_version": "138",
+  "action": {
+    "default_icon": {
+      "16": "icon.png",
+      "32": "icon.png",
+      "48": "icon.png",
+      "128": "icon.png"
+    }
+  },
+  "icons": {
+    "16": "icon.png",
+    "32": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "background": {
+    "service_worker": "src/background/index.js",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "permissions": [
+    "scripting",
+    "tabs",
+    "activeTab",
+    "sidePanel",
+    "storage",
+    "unlimitedStorage",
+    "userScripts",
+    "alarms",
+    "cookies",
+    "debugger"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "web_accessible_resources": [
+    {
+      "resources": ["index.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
