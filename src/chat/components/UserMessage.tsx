@@ -7,7 +7,7 @@ export function UserMessage({ msg }: { msg: ChatMessage }) {
     const picked = msg.pickedElements ?? [];
     const attachments = msg.attachments ?? [];
     return (
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-col items-end gap-2 selection:bg-white selection:text-black">
             <div className="font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground">
                 You
             </div>

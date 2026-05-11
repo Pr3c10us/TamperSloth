@@ -110,7 +110,7 @@ export function HistoryDrawer({
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto">
+                <div className="flex-1 overflow-y-auto overflow-x-hidden">
                     {filtered.length === 0 ? (
                         <div className="px-3.5 py-6 text-center text-[13px] text-muted-foreground">
                             {query ? "No matches" : "No conversations yet"}
@@ -122,7 +122,7 @@ export function HistoryDrawer({
                                 <div
                                     key={c.id}
                                     className={cn(
-                                        "group relative border-b border-muted transition-colors",
+                                        "group relative min-w-0 border-b border-muted transition-colors",
                                         isActive ? "bg-muted" : "hover:bg-card",
                                     )}
                                 >
@@ -133,17 +133,17 @@ export function HistoryDrawer({
                                             onSelect(c);
                                             onOpenChange(false);
                                         }}
-                                        className="h-auto w-full flex-col items-start gap-1 rounded-none px-3.5 py-3 pr-10 text-left hover:bg-transparent"
+                                        className="h-auto w-full min-w-0 flex-col items-start gap-1 rounded-none px-3.5 py-3 pr-10 text-left hover:bg-transparent"
                                     >
                                         <div
                                             className={cn(
-                                                "truncate text-[13px] text-foreground",
+                                                "w-full truncate text-[13px] text-foreground",
                                                 isActive ? "font-medium" : "font-normal",
                                             )}
                                         >
                                             {c.title || "Untitled"}
                                         </div>
-                                        <div className="font-mono text-[10px] uppercase tracking-[.08em] text-muted-foreground">
+                                        <div className="w-full truncate font-mono text-[10px] uppercase tracking-[.08em] text-muted-foreground">
                                             {formatWhen(c.updatedAt || c.createdAt)}
                                         </div>
                                     </Button>

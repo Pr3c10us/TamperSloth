@@ -4,9 +4,9 @@ import type { BackgroundScript } from "./types.ts";
 
 const isChromeExtension = typeof chrome !== "undefined" && !!chrome?.storage?.local;
 
-const SELECTED_MODEL_KEY = "tamper_sloth_selected_model";
-const CONVERSATIONS_KEY = "tamper_sloth_conversations";
-const SCRIPTS_KEY = "tamper_sloth_background_scripts";
+const SELECTED_MODEL_KEY = "ts_selected_model";
+const CONVERSATIONS_KEY = "ts_conversations";
+const SCRIPTS_KEY = "ts_background_scripts";
 
 // ── Selected model ──────────────────────────────────────────
 
@@ -214,7 +214,7 @@ export async function importScriptsFromJson(json: string): Promise<number> {
 
 // ── Code Files ───────────────────────────────────────────
 
-const FILE_PREFIX = 'file:';
+const FILE_PREFIX = 'ts_file:';
 
 function key(conversationId: string, path: string ): string {
     return FILE_PREFIX + conversationId + "/" + path;

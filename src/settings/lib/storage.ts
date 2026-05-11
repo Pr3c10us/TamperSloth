@@ -1,4 +1,4 @@
-const API_KEYS_NAMESPACE = "tamper_sloth_api_keys";
+const API_KEYS_NAMESPACE = "ts_api_keys";
 
 type ApiKeyMap = Record<string, string>;
 

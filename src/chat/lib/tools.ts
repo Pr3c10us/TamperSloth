@@ -49,12 +49,18 @@ export function createAgentTools(context: { conversationId: string }) {
                 path: z
                     .string()
                     .describe('Virtual path. End with "/" to list a "directory" (prefix scan).'),
-                view_range: z
-                    .tuple([z.number().int(), z.number().int()])
+                start_line: z
+                    .number()
+                    .int()
                     .optional()
-                    .describe('Optional [start, end] line range (1-indexed, inclusive). Use -1 for EOF.'),
+                    .describe('Optional start line (1-indexed, inclusive). Defaults to 1.'),
+                end_line: z
+                    .number()
+                    .int()
+                    .optional()
+                    .describe('Optional end line (1-indexed, inclusive). Use -1 or omit for EOF.'),
             }),
-            execute: async ({path, view_range}) => {
+            execute: async ({path, start_line, end_line}) => {
                 try {
                     if (path.endsWith('/')) {
                         const entries = await listFiles(context.conversationId, path);
@@ -67,9 +73,8 @@ export function createAgentTools(context: { conversationId: string }) {
                     }
 
                     const totalLines = content.split('\n').length;
-                    const start = view_range?.[0] ?? 1;
-                    const end =
-                        view_range == null || view_range[1] === -1 ? totalLines : view_range[1];
+                    const start = start_line ?? 1;
+                    const end = end_line == null || end_line === -1 ? totalLines : end_line;
 
                     return {
                         type: 'file' as const,

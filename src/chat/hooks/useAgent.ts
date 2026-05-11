@@ -1,10 +1,10 @@
-import { useState, useCallback, useRef, useEffect } from "react";
-import { streamText, stepCountIs, type ModelMessage, type UserContent } from "ai";
-import { getModel, type ProviderId } from "../lib/provider.ts";
-import { createAgentTools } from "../lib/tools.ts";
-import { saveConversation, type StoredConversation } from "../lib/storage.ts";
+import {useCallback, useEffect, useRef, useState} from "react";
+import {type ModelMessage, stepCountIs, streamText, type UserContent} from "ai";
+import {getModel, type ProviderId} from "../lib/provider.ts";
+import {createAgentTools} from "../lib/tools.ts";
+import {saveConversation, type StoredConversation} from "../lib/storage.ts";
 import SYSTEM_PROMPT from "../lib/prompt.ts";
-import type { PendingAttachment } from "../components/AttachmentChip.tsx";
+import type {PendingAttachment} from "../components/AttachmentChip.tsx";
 
 export interface StoredAttachment {
     kind: "image" | "file";
@@ -27,7 +27,7 @@ async function fileToDataUrl(file: File): Promise<string> {
 export interface ToolCall {
     id: string;
     name: string;
-    args: Record<string, unknown>;
+    args: { description: string; [key: string]: unknown };
     result: unknown;
     status: "calling" | "done" | "error";
 }
@@ -107,22 +107,22 @@ export function useAgent() {
             const displayContent = text;
             const textWithElements = elementContext?.length
                 ? `${text}\n\n${elementContext
-                      .map(
-                          (html, i) =>
-                              `[Selected element ${elementContext.length > 1 ? i + 1 : ""} outerHTML]:\n\`\`\`html\n${html}\n\`\`\``,
-                      )
-                      .join("\n\n")}`
+                    .map(
+                        (html, i) =>
+                            `[Selected element ${elementContext.length > 1 ? i + 1 : ""} outerHTML]:\n\`\`\`html\n${html}\n\`\`\``,
+                    )
+                    .join("\n\n")}`
                 : text;
 
             const storedAttachments: StoredAttachment[] | undefined = attachments?.length
                 ? attachments.map((a) => ({
-                      kind: a.kind,
-                      name: a.name,
-                      size: a.size,
-                      ext: a.ext,
-                      url: a.url ?? null,
-                      mediaType: a.mediaType,
-                  }))
+                    kind: a.kind,
+                    name: a.name,
+                    size: a.size,
+                    ext: a.ext,
+                    url: a.url ?? null,
+                    mediaType: a.mediaType,
+                }))
                 : undefined;
 
             const userMsg: ChatMessage = {
@@ -141,7 +141,7 @@ export function useAgent() {
             let multimodalContent: UserContent | null = null;
             if (attachments?.length) {
                 const parts: UserContent = [];
-                if (textWithElements) parts.push({ type: "text", text: textWithElements });
+                if (textWithElements) parts.push({type: "text", text: textWithElements});
                 for (const a of attachments) {
                     if (!a.file) continue;
                     const dataUrl = await fileToDataUrl(a.file);
@@ -170,14 +170,14 @@ export function useAgent() {
                         content: multimodalContent ?? textWithElements,
                     };
                 }
-                return { role: m.role, content: m.content };
+                return {role: m.role, content: m.content};
             });
 
             const assistantId = crypto.randomUUID();
             assistantIdRef.current = assistantId;
             setMessages((prev) => [
                 ...prev,
-                { id: assistantId, role: "assistant", content: "", toolCalls: [], blocks: [] },
+                {id: assistantId, role: "assistant", content: "", toolCalls: [], blocks: []},
             ]);
 
             try {
@@ -185,17 +185,17 @@ export function useAgent() {
 
                 const providerOptions =
                     providerId === "anthropic"
-                        ? { anthropic: { thinking: { type: "enabled" as const, budgetTokens: 8000 } } }
+                        ? {anthropic: {thinking: {type: "enabled" as const, budgetTokens: 8000}}}
                         : undefined;
 
                 const result = streamText({
                     model,
                     messages: modelMessages,
-                    tools: createAgentTools({ conversationId }),
+                    tools: createAgentTools({conversationId}),
                     stopWhen: stepCountIs(50),
                     abortSignal: abortController.signal,
                     system: SYSTEM_PROMPT,
-                    ...(providerOptions ? { providerOptions } : {}),
+                    ...(providerOptions ? {providerOptions} : {}),
                 });
 
                 for await (const part of result.fullStream) {
@@ -204,15 +204,15 @@ export function useAgent() {
                             const blocks = [...m.blocks];
                             const last = blocks[blocks.length - 1];
                             if (last && last.type === "text") {
-                                blocks[blocks.length - 1] = { ...last, text: last.text + part.text };
+                                blocks[blocks.length - 1] = {...last, text: last.text + part.text};
                             } else {
-                                blocks.push({ type: "text", text: part.text });
+                                blocks.push({type: "text", text: part.text});
                             }
                             const content = blocks
                                 .filter((b): b is Extract<ContentBlock, { type: "text" }> => b.type === "text")
                                 .map((b) => b.text)
                                 .join("");
-                            return { ...m, blocks, content };
+                            return {...m, blocks, content};
                         });
                     } else if (part.type === "reasoning-delta") {
                         const chunk = (part as any).textDelta ?? "";
@@ -221,32 +221,35 @@ export function useAgent() {
                                 const blocks = [...m.blocks];
                                 const last = blocks[blocks.length - 1];
                                 if (last?.type === "thinking") {
-                                    blocks[blocks.length - 1] = { type: "thinking", text: last.text + chunk };
+                                    blocks[blocks.length - 1] = {type: "thinking", text: last.text + chunk};
                                 } else {
-                                    blocks.push({ type: "thinking", text: chunk });
+                                    blocks.push({type: "thinking", text: chunk});
                                 }
-                                return { ...m, blocks };
+                                return {...m, blocks};
                             });
                         }
                     } else if (part.type === "tool-input-start") {
                         const tc: ToolCall = {
                             id: part.id,
                             name: part.toolName,
-                            args: {},
+                            args: {description: ""},
                             result: null,
                             status: "calling",
                         };
                         updateAssistant((m) => ({
                             ...m,
                             toolCalls: [...m.toolCalls, tc],
-                            blocks: [...m.blocks, { type: "tool_call", toolCall: tc }],
+                            blocks: [...m.blocks, {type: "tool_call", toolCall: tc}],
                         }));
                     } else if (part.type === "tool-call") {
                         updateAssistant((m) => {
+                            const input = part.input as Record<string, unknown>;
+                            const mergedArgs = { description: "", ...input } as {
+                                description: string;
+                                [key: string]: unknown;
+                            };
                             const updatedTc = (tc: ToolCall): ToolCall =>
-                                tc.id === part.toolCallId
-                                    ? { ...tc, args: part.input as Record<string, unknown> }
-                                    : tc;
+                                tc.id === part.toolCallId ? { ...tc, args: mergedArgs } : tc;
                             return {
                                 ...m,
                                 toolCalls: m.toolCalls.map(updatedTc),
@@ -261,14 +264,14 @@ export function useAgent() {
                         updateAssistant((m) => {
                             const updatedTc = (tc: ToolCall): ToolCall =>
                                 tc.id === part.toolCallId
-                                    ? { ...tc, result: part.output, status: "done" as const }
+                                    ? {...tc, result: part.output, status: "done" as const}
                                     : tc;
                             return {
                                 ...m,
                                 toolCalls: m.toolCalls.map(updatedTc),
                                 blocks: m.blocks.map((b) =>
                                     b.type === "tool_call"
-                                        ? { type: "tool_call" as const, toolCall: updatedTc(b.toolCall) }
+                                        ? {type: "tool_call" as const, toolCall: updatedTc(b.toolCall)}
                                         : b,
                                 ),
                             };
@@ -283,14 +286,14 @@ export function useAgent() {
                         updateAssistant((m) => {
                             const updatedTc = (tc: ToolCall): ToolCall =>
                                 tc.id === (part as any).toolCallId
-                                    ? { ...tc, result: (part as any).error, status: "error" as const }
+                                    ? {...tc, result: (part as any).error, status: "error" as const}
                                     : tc;
                             return {
                                 ...m,
                                 toolCalls: m.toolCalls.map(updatedTc),
                                 blocks: m.blocks.map((b) =>
                                     b.type === "tool_call"
-                                        ? { type: "tool_call" as const, toolCall: updatedTc(b.toolCall) }
+                                        ? {type: "tool_call" as const, toolCall: updatedTc(b.toolCall)}
                                         : b,
                                 ),
                             };
@@ -328,14 +331,14 @@ export function useAgent() {
         const migrated = (conversation.messages as ChatMessage[]).map((msg) => {
             if (msg.blocks && msg.blocks.length > 0) return msg;
             const blocks: ContentBlock[] = [
-                ...(msg.toolCalls || []).map((tc) => ({ type: "tool_call" as const, toolCall: tc })),
-                ...(msg.content ? [{ type: "text" as const, text: msg.content }] : []),
+                ...(msg.toolCalls || []).map((tc) => ({type: "tool_call" as const, toolCall: tc})),
+                ...(msg.content ? [{type: "text" as const, text: msg.content}] : []),
             ];
-            return { ...msg, blocks };
+            return {...msg, blocks};
         });
         setMessages(migrated);
         setError(null);
     }, []);
 
-    return { messages, isLoading, error, conversationId, sendMessage, cancel, clear, loadConversation };
+    return {messages, isLoading, error, conversationId, sendMessage, cancel, clear, loadConversation};
 }
