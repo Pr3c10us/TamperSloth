@@ -57,7 +57,7 @@ export function createAgentTools(context: { conversationId: string }) {
             execute: async ({path, view_range}) => {
                 try {
                     if (path.endsWith('/')) {
-                        const entries = await listFiles(path);
+                        const entries = await listFiles(context.conversationId, path);
                         return {type: 'directory' as const, path, entries};
                     }
 
@@ -181,7 +181,9 @@ export function createAgentTools(context: { conversationId: string }) {
             description:
                 "Get the browser tab id, url and title for the tab this sidebar is attached to. " +
                 "Call this at the start of every task to establish the current page context.",
-            inputSchema: z.object({}),
+            inputSchema: z.object({
+                description: z.string().describe('Why this tab info is needed'),
+            }),
             execute: async () => {
                 const tab = await chrome.tabs.get(tabId);
                 return {tabId: tab.id, url: tab.url, title: tab.title};
@@ -193,6 +195,7 @@ export function createAgentTools(context: { conversationId: string }) {
                 "Get a simplified DOM structure of the current page for writing content scripts. " +
                 "Prefer getPageText when you only need text content.",
             inputSchema: z.object({
+                description: z.string().describe('Why this DOM inspection is needed'),
                 selector: z
                     .string()
                     .optional()
@@ -275,6 +278,7 @@ export function createAgentTools(context: { conversationId: string }) {
             description:
                 "Get detailed info about specific elements matching a CSS selector",
             inputSchema: z.object({
+                description: z.string().describe('Why these element details are needed'),
                 selector: z.string(),
                 responseFormat: responseFormatSchema,
             }),
@@ -359,6 +363,7 @@ export function createAgentTools(context: { conversationId: string }) {
                 "are excluded automatically. Much faster and more token-efficient than " +
                 "getPageStructure when you only need the text, not the DOM tree.",
             inputSchema: z.object({
+                description: z.string().describe('Why this page text is needed'),
                 selector: z
                     .string()
                     .optional()
@@ -434,7 +439,9 @@ export function createAgentTools(context: { conversationId: string }) {
         takeScreenshot: tool({
             description:
                 "Take a screenshot of the current page. Returns an image of the visible viewport.",
-            inputSchema: z.object({}),
+            inputSchema: z.object({
+                description: z.string().describe('Why this screenshot is needed'),
+            }),
             execute: async () => {
                 const response = await chrome.runtime.sendMessage({
                     type: "TAKE_SCREENSHOT",
@@ -468,6 +475,7 @@ export function createAgentTools(context: { conversationId: string }) {
                 "Returns key-value pairs as a JSON object. Useful for inspecting auth tokens, user " +
                 "preferences, feature flags, or cached data. Only reads — never modifies.",
             inputSchema: z.object({
+                description: z.string().describe('Why this storage read is needed'),
                 storageType: z
                     .enum(["local", "session", "both"])
                     .optional()
@@ -533,6 +541,7 @@ export function createAgentTools(context: { conversationId: string }) {
                 "Reads ALL cookies including httpOnly cookies invisible to document.cookie. " +
                 "Only reads — never creates or modifies cookies.",
             inputSchema: z.object({
+                description: z.string().describe('Why this cookie read is needed'),
                 nameFilter: z
                     .string()
                     .optional()
@@ -585,24 +594,36 @@ export function createAgentTools(context: { conversationId: string }) {
 
         executeContentScript: tool({
             description:
-                "Run a JavaScript function on the current page to manipulate the DOM. " +
-                'Provide a named function definition that will be immediately invoked. ' +
+                "Run a JavaScript function from a virtual file on the current page to manipulate the DOM. " +
+                "The file at `path` must contain a named function definition that will be immediately invoked. " +
+                "Create the script with createFileTool first, then pass its path here. " +
                 "If your function returns a value and you get null, the function failed.",
             inputSchema: z.object({
-                code: z
+                description: z.string().describe('Why this script execution is needed'),
+                path: z
                     .string()
                     .describe(
-                        'A named JavaScript function definition (e.g. "function doSomething() { ... }").'
+                        'Virtual path to the script file containing a named function definition (e.g. "scripts/highlight.js").'
                     ),
             }),
-            execute: async ({code}) => {
+            execute: async ({path}) => {
+                const code = await readFile(context.conversationId, path);
+                if (code === null) {
+                    return {
+                        success: false,
+                        error: `No file at ${path}. Create it with createFileTool first.`,
+                    };
+                }
+
                 const fnMatch = code.match(
                     /function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/
                 );
                 if (!fnMatch) {
-                    throw new Error(
-                        "code must be a named function definition, e.g. function myFn() { ... }"
-                    );
+                    return {
+                        success: false,
+                        error:
+                            `File at ${path} must contain a named function definition, e.g. function myFn() { ... }`,
+                    };
                 }
                 const response = await chrome.runtime.sendMessage({
                     type: "EXECUTE_SCRIPT",
@@ -624,15 +645,21 @@ export function createAgentTools(context: { conversationId: string }) {
 
         saveScript: tool({
             description:
-                "Save a JavaScript script to run persistently in the background on web pages. " +
+                "Save a JavaScript script from a virtual file to run persistently in the background on web pages. " +
+                "Create the script with createFileTool first, then pass its path here. " +
                 "Always ask the user about scope before calling this. " +
                 "Choose runAt based on when the script needs to execute relative to page load.",
             inputSchema: z.object({
-                code: z
+                description: z.string().describe('Why this script is being saved'),
+                path: z
                     .string()
-                    .describe("The JavaScript code to execute persistently"),
+                    .describe(
+                        'Virtual path to the script file containing the JavaScript code to execute persistently.'
+                    ),
                 name: z.string().describe("Short descriptive name for the script"),
-                description: z.string().describe("What this script does"),
+                scriptDescription: z
+                    .string()
+                    .describe("What this script does (stored alongside the script for later reference)"),
                 urlMatchPattern: z
                     .string()
                     .optional()
@@ -647,7 +674,7 @@ export function createAgentTools(context: { conversationId: string }) {
                         "When to inject: document_start (before DOM), document_end (DOM ready), document_idle (page loaded, default)"
                     ),
             }),
-            execute: async ({code, name, description, urlMatchPattern, runAt}) => {
+            execute: async ({path, name, scriptDescription, urlMatchPattern, runAt}) => {
                 if (urlMatchPattern && !isValidMatchPattern(urlMatchPattern)) {
                     return {
                         success: false,
@@ -657,11 +684,19 @@ export function createAgentTools(context: { conversationId: string }) {
                     };
                 }
 
+                const code = await readFile(context.conversationId, path);
+                if (code === null) {
+                    return {
+                        success: false,
+                        error: `No file at ${path}. Create it with createFileTool first.`,
+                    };
+                }
+
                 const script: BackgroundScript = {
                     id: crypto.randomUUID(),
                     conversationId: context.conversationId,
                     name,
-                    description,
+                    description: scriptDescription,
                     code,
                     urlMatchPattern: urlMatchPattern ?? "",
                     status: "active",
@@ -674,6 +709,7 @@ export function createAgentTools(context: { conversationId: string }) {
                     success: true,
                     scriptId: script.id,
                     name: script.name,
+                    sourcePath: path,
                     urlMatchPattern: script.urlMatchPattern,
                     status: "active",
                     runAt: script.runAt,
@@ -685,6 +721,7 @@ export function createAgentTools(context: { conversationId: string }) {
             description:
                 "List all saved background scripts. Optionally filter to scripts from the current conversation only.",
             inputSchema: z.object({
+                description: z.string().describe('Why this listing is needed'),
                 conversationOnly: z
                     .boolean()
                     .optional()
@@ -719,6 +756,7 @@ export function createAgentTools(context: { conversationId: string }) {
         toggleScript: tool({
             description: "Pause or resume a specific background script.",
             inputSchema: z.object({
+                description: z.string().describe('Why this script is being toggled'),
                 scriptId: z.string().describe("The ID of the script to toggle"),
                 action: z
                     .enum(["pause", "resume"])
@@ -740,6 +778,7 @@ export function createAgentTools(context: { conversationId: string }) {
         removeScript: tool({
             description: "Delete a specific background script permanently.",
             inputSchema: z.object({
+                description: z.string().describe('Why this script is being removed'),
                 scriptId: z.string().describe("The ID of the script to delete"),
             }),
             execute: async ({scriptId}) => {
@@ -762,6 +801,7 @@ export function createAgentTools(context: { conversationId: string }) {
                 "render asynchronously after the load event). " +
                 "Handles redirects, hash navigations, and SPA client-side routing transparently.",
             inputSchema: z.object({
+                description: z.string().describe('Why this navigation is needed'),
                 url: z
                     .string()
                     .describe(
@@ -914,6 +954,7 @@ export function createAgentTools(context: { conversationId: string }) {
                 "Waits for the page to fully load before returning. Returns the URL and title " +
                 "of the page navigated to.",
             inputSchema: z.object({
+                description: z.string().describe('Why this history navigation is needed'),
                 direction: z
                     .enum(["back", "forward"])
                     .describe('Navigate "back" or "forward" in history.'),
@@ -985,6 +1026,7 @@ export function createAgentTools(context: { conversationId: string }) {
                 "Reload the current tab's page. Optionally bypass the browser cache to force a fresh " +
                 "load from the server. Waits for the page to fully load before returning.",
             inputSchema: z.object({
+                description: z.string().describe('Why this reload is needed'),
                 bypassCache: z
                     .boolean()
                     .optional()
@@ -1047,6 +1089,7 @@ export function createAgentTools(context: { conversationId: string }) {
                 "first if needed. Clicks the first matching element by default. Returns info about " +
                 "the clicked element and whether it triggered a navigation.",
             inputSchema: z.object({
+                description: z.string().describe('Why this click is needed'),
                 selector: z
                     .string()
                     .describe(
@@ -1150,6 +1193,7 @@ export function createAgentTools(context: { conversationId: string }) {
                 "CSS selector. Clears the existing value first by default. Dispatches realistic input " +
                 "and change events so that frameworks (React, Vue, etc.) detect the update.",
             inputSchema: z.object({
+                description: z.string().describe('Why this text input is needed'),
                 selector: z
                     .string()
                     .describe(
@@ -1325,6 +1369,7 @@ export function createAgentTools(context: { conversationId: string }) {
                 "Select an option from a <select> dropdown element. Can select by value, by visible " +
                 "text label, or by index. Dispatches change events for framework compatibility.",
             inputSchema: z.object({
+                description: z.string().describe('Why this option is being selected'),
                 selector: z
                     .string()
                     .describe('CSS selector for the <select> element, e.g. "#country", "select[name=\\"size\\"]".'),
@@ -1430,6 +1475,7 @@ export function createAgentTools(context: { conversationId: string }) {
                 "Scroll the page or a specific scrollable container. Supports scrolling by pixels, " +
                 "by pages (viewport heights), to a specific element, or to the top/bottom of the page.",
             inputSchema: z.object({
+                description: z.string().describe('Why this scroll is needed'),
                 direction: z
                     .enum(["up", "down", "left", "right", "top", "bottom"])
                     .optional()
@@ -1563,6 +1609,7 @@ export function createAgentTools(context: { conversationId: string }) {
                 "and optionally waits for navigation or dynamic content changes. Use after filling " +
                 "in form fields with typeText and selectOption.",
             inputSchema: z.object({
+                description: z.string().describe('Why this form submission is needed'),
                 selector: z
                     .string()
                     .describe(
@@ -1665,6 +1712,7 @@ export function createAgentTools(context: { conversationId: string }) {
                 "Returns immediately if the element already exists. Use after navigations, " +
                 "form submissions, AJAX loads, or any async operation.",
             inputSchema: z.object({
+                description: z.string().describe('Why waiting for this element is needed'),
                 selector: z
                     .string()
                     .describe(
@@ -1756,6 +1804,7 @@ export function createAgentTools(context: { conversationId: string }) {
                 "Network interceptors are installed on first call; subsequent calls return new requests since last retrieval. " +
                 "Note: console capture shows a debugger warning bar at the top of the tab.",
             inputSchema: z.object({
+                description: z.string().describe('Why this debug info is needed'),
                 sources: z
                     .array(z.enum(["console", "network"]))
                     .describe(
