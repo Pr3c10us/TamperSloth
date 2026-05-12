@@ -223,7 +223,7 @@ async function syncRegisteredScripts() {
 
 // Re-sync whenever scripts change in storage
 chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.backgroundScripts) {
+    if (area === 'local' && changes['ts_background_scripts']) {
         invalidateCache();
         syncRegisteredScripts();
     }
