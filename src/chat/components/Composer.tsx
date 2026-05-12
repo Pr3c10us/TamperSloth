@@ -12,6 +12,7 @@ import { ModelSelector, type SelectedModelEntry } from "./ModelSelector";
 import { PickedElementChip } from "./PickedElementChip";
 import { AttachmentChip, formatSize, type PendingAttachment } from "./AttachmentChip";
 import { ComposerTodoButton } from "./todo/composerTodoButton";
+import {AskUserOverlay} from "@/src/chat/components/askUser/askUserOverlay.tsx";
 
 interface ComposerProps {
     draft: string;
@@ -90,7 +91,9 @@ export function Composer({
     };
 
     return (
-        <div className="fixed bottom-0 inset-x-0 flex shrink-0 flex-col gap-2.5 border-t border-muted bg-background p-3">
+        <div className="fixed bottom-0 inset-x-0 flex shrink-0 flex-col border-t border-muted bg-background">
+            <AskUserOverlay />
+            <div className="flex flex-col gap-2.5 p-3">
             {pickedElements.length > 0 && (
                 <div className="flex flex-col gap-1.5">
                     <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground">
@@ -214,6 +217,7 @@ export function Composer({
                 onChange={handleFileChange}
                 className="hidden"
             />
+        </div>
         </div>
     );
 }

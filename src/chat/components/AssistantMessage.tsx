@@ -6,9 +6,6 @@ import {ToolCallInline} from "./ToolCallInline";
 import {ThinkingBlock} from "./ThinkingBlock";
 import {Button} from "@/components/ui/button";
 import {StreamingDots} from "./StreamingDots";
-import {TodoWriteCard} from "./todo/todoWriteCard";
-import {TodoReadCard} from "./todo/todoReadCard";
-import {TodoClearCard} from "./todo/todoClearCard";
 
 function TextBlockContent({text}: { text: string }) {
     return (
@@ -62,11 +59,7 @@ export function AssistantMessage({msg, isLoading, isLast}: AssistantMessageProps
                 {msg.blocks.map((block, i) => {
                     if (block.type === "tool_call") {
                         const key = block.toolCall.id + ":" + i;
-                        const name = block.toolCall.name;
-                        if (name === "TodoWrite") return <TodoWriteCard key={key} tc={block.toolCall}/>;
-                        if (name === "TodoRead") return <TodoReadCard key={key} tc={block.toolCall}/>;
-                        if (name === "TodoClear") return <TodoClearCard key={key} tc={block.toolCall}/>;
-                        return <ToolCallInline key={key} tc={block.toolCall}/>;
+                        return <ToolCallInline key={key} i={i} tc={block.toolCall}/>;
                     }
                     if (block.type === "thinking") {
                         const isLastBlock = i === msg.blocks.length - 1;

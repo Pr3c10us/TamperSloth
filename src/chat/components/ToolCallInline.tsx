@@ -1,11 +1,22 @@
 import { Check } from "lucide-react";
 import { getToolMeta, AlertCircle } from "../lib/toolMeta";
 import type { ToolCall } from "@/src/chat/hooks";
+import {TodoWriteCard} from "@/src/chat/components/todo/todoWriteCard.tsx";
+import {TodoReadCard} from "@/src/chat/components/todo/todoReadCard.tsx";
+import {TodoClearCard} from "@/src/chat/components/todo/todoClearCard.tsx";
+import {AskUserCard} from "@/src/chat/components/askUser/askUserCard.tsx";
 
-export function ToolCallInline({ tc }: { tc: ToolCall }) {
+export function ToolCallInline({ tc, i }: { tc: ToolCall, i: number }) {
     const meta = getToolMeta(tc.name);
     const Icon = tc.status === "error" ? AlertCircle : meta.icon;
     const isPending = tc.status === "calling";
+    const key = tc.id + ":" + i;
+    const name = tc.name;
+
+    if (name === "TodoWrite") return <TodoWriteCard key={key} tc={tc}/>;
+    if (name === "TodoRead") return <TodoReadCard key={key} tc={tc}/>;
+    if (name === "TodoClear") return <TodoClearCard key={key} tc={tc}/>;
+    if (name === "askUser") return <AskUserCard key={key} tc={tc}/>;
 
     return (
         <div className="flex flex-col items-start gap-1.5">

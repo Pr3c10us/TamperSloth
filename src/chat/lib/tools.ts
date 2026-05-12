@@ -2304,6 +2304,7 @@ export function createAgentTools(context: { conversationId: string }) {
             inputSchema: z.object({
                 description: z
                     .string()
+                    .optional()
                     .describe("Why this question is being asked (one short line, shown in the tool-call header)."),
                 question: z.string().min(1).describe("The question to ask the user."),
                 options: z
