@@ -9,6 +9,7 @@ import {StreamingDots} from "./StreamingDots";
 import {TodoWriteCard} from "./todo/todoWriteCard";
 import {TodoReadCard} from "./todo/todoReadCard";
 import {TodoClearCard} from "./todo/todoClearCard";
+import {AskUserCard} from "./askUser/askUserCard";
 
 function TextBlockContent({text}: { text: string }) {
     return (
@@ -66,6 +67,7 @@ export function AssistantMessage({msg, isLoading, isLast}: AssistantMessageProps
                         if (name === "TodoWrite") return <TodoWriteCard key={key} tc={block.toolCall}/>;
                         if (name === "TodoRead") return <TodoReadCard key={key} tc={block.toolCall}/>;
                         if (name === "TodoClear") return <TodoClearCard key={key} tc={block.toolCall}/>;
+                        if (name === "askUser") return <AskUserCard key={key} tc={block.toolCall}/>;
                         return <ToolCallInline key={key} tc={block.toolCall}/>;
                     }
                     if (block.type === "thinking") {
