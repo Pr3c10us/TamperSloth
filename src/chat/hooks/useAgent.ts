@@ -277,10 +277,26 @@ export function useAgent() {
                             };
                         });
                     } else if (part.type === "error") {
-                        const errMsg =
-                            (part as any).error?.message ||
-                            (part as any).error?.toString?.() ||
-                            "Something went wrong";
+                        const rawErr: any = (part as any).error;
+                        let errMsg: string = "Something went wrong";
+                        if (typeof rawErr === "string") {
+                            errMsg = rawErr;
+                        } else if (rawErr instanceof Error) {
+                            errMsg = rawErr.message || rawErr.name || errMsg;
+                        } else if (rawErr && typeof rawErr === "object") {
+                            errMsg =
+                                rawErr.message ||
+                                rawErr.error?.message ||
+                                rawErr.error ||
+                                (() => {
+                                    try {
+                                        return JSON.stringify(rawErr);
+                                    } catch {
+                                        return errMsg;
+                                    }
+                                })();
+                            if (typeof errMsg !== "string") errMsg = "Something went wrong";
+                        }
                         setError(errMsg);
                     } else if (part.type === "tool-error") {
                         updateAssistant((m) => {

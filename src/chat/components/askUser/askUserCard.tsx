@@ -12,12 +12,33 @@ interface AskUserArgs {
 
 interface AskUserResult {
     answer?: AskUserAnswer;
-    error?: string;
+    error?: unknown;
+}
+
+function errorToString(err: unknown): string {
+    if (!err) return "Question dropped";
+    if (typeof err === "string") return err;
+    if (err instanceof Error) return err.message || err.name || "Question dropped";
+    if (typeof err === "object") {
+        const anyErr = err as { message?: unknown; error?: unknown };
+        if (typeof anyErr.message === "string") return anyErr.message;
+        if (typeof anyErr.error === "string") return anyErr.error;
+        try {
+            return JSON.stringify(err);
+        } catch {
+            return "Question dropped";
+        }
+    }
+    return String(err);
 }
 
 export function AskUserCard({ tc }: { tc: ToolCall }) {
-    const args = tc.args as AskUserArgs;
-    const result = (tc.result ?? {}) as AskUserResult;
+    const args = (tc.args ?? {}) as AskUserArgs;
+    const rawResult = tc.result;
+    const result =
+        rawResult && typeof rawResult === "object" && !Array.isArray(rawResult)
+            ? (rawResult as AskUserResult)
+            : ({} as AskUserResult);
     const isCalling = tc.status === "calling";
     const isError = tc.status === "error" || !!result.error;
     const answer = result.answer;
@@ -25,6 +46,10 @@ export function AskUserCard({ tc }: { tc: ToolCall }) {
     const question = args.question ?? "Waiting for a question…";
 
     if (isError) {
+        const errText =
+            errorToString(result.error) !== "Question dropped"
+                ? errorToString(result.error)
+                : errorToString(rawResult);
         return (
             <article
                 className="rounded-md border border-destructive/40 bg-card p-3.5"
@@ -32,7 +57,7 @@ export function AskUserCard({ tc }: { tc: ToolCall }) {
             >
                 <div className="flex items-center gap-2 text-sm text-destructive">
                     <AlertCircle className="size-3.5" strokeWidth={2} />
-                    <span>{result.error ?? "Question dropped"}</span>
+                    <span>{errText}</span>
                 </div>
             </article>
         );
