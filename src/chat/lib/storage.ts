@@ -247,3 +247,88 @@ export async function listFiles(conversationId: string,prefix = ''): Promise<str
         .map((k) => k.slice(FILE_PREFIX.length))
         .sort();
 }
+
+// ── Todos ───────────────────────────────────────────────────
+
+export type TodoStatus = "pending" | "in_progress" | "completed";
+export type TodoPriority = "high" | "medium" | "low";
+
+export interface TodoItem {
+    id: string;
+    content: string;
+    status: TodoStatus;
+    priority: TodoPriority;
+}
+
+const TODO_PREFIX = "ts_todos:";
+
+function todoKey(conversationId: string): string {
+    return TODO_PREFIX + conversationId;
+}
+
+export async function loadTodos(conversationId: string): Promise<TodoItem[]> {
+    const k = todoKey(conversationId);
+    if (isChromeExtension) {
+        const result = await chrome.storage.local.get(k);
+        const v = result[k];
+        return Array.isArray(v) ? (v as TodoItem[]) : [];
+    }
+    const raw = localStorage.getItem(k);
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? (parsed as TodoItem[]) : [];
+    } catch {
+        return [];
+    }
+}
+
+export async function saveTodos(conversationId: string, todos: TodoItem[]): Promise<void> {
+    const k = todoKey(conversationId);
+    if (isChromeExtension) {
+        await chrome.storage.local.set({ [k]: todos });
+    } else {
+        localStorage.setItem(k, JSON.stringify(todos));
+    }
+}
+
+export async function clearTodos(conversationId: string): Promise<void> {
+    const k = todoKey(conversationId);
+    if (isChromeExtension) {
+        await chrome.storage.local.remove(k);
+    } else {
+        localStorage.removeItem(k);
+    }
+}
+
+export function subscribeTodos(
+    conversationId: string,
+    listener: (todos: TodoItem[]) => void,
+): () => void {
+    const k = todoKey(conversationId);
+    if (isChromeExtension) {
+        const handler = (
+            changes: Record<string, chrome.storage.StorageChange>,
+            area: chrome.storage.AreaName,
+        ) => {
+            if (area !== "local" || !(k in changes)) return;
+            const next = changes[k].newValue;
+            listener(Array.isArray(next) ? (next as TodoItem[]) : []);
+        };
+        chrome.storage.onChanged.addListener(handler);
+        return () => chrome.storage.onChanged.removeListener(handler);
+    }
+    const handler = (e: StorageEvent) => {
+        if (e.key !== k) return;
+        if (!e.newValue) return listener([]);
+        try {
+            const parsed = JSON.parse(e.newValue);
+            listener(Array.isArray(parsed) ? (parsed as TodoItem[]) : []);
+        } catch {
+            listener([]);
+        }
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+}
+

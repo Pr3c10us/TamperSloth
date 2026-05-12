@@ -90,7 +90,8 @@ export function ComposerTodoButton({ conversationId }: ComposerTodoButtonProps) 
                 side="top"
                 align="start"
                 sideOffset={8}
-                className="w-[min(22rem,calc(100vw-1.5rem))] rounded-md border border-border bg-card p-0 text-foreground shadow-lg"
+                collisionPadding={12}
+                className="w-[min(20rem,calc(100vw-2rem))] rounded-md border border-border bg-card p-0 text-foreground shadow-lg"
             >
                 {total === 0 ? (
                     <div className="px-4 py-4">

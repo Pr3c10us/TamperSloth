@@ -11,6 +11,7 @@ import { useElementPicker } from "../hooks/useElementPicker";
 import { ModelSelector, type SelectedModelEntry } from "./ModelSelector";
 import { PickedElementChip } from "./PickedElementChip";
 import { AttachmentChip, formatSize, type PendingAttachment } from "./AttachmentChip";
+import { ComposerTodoButton } from "./todo/composerTodoButton";
 
 interface ComposerProps {
     draft: string;
@@ -26,6 +27,7 @@ interface ComposerProps {
     onSend: () => void;
     onCancel: () => void;
     tabId: number;
+    conversationId: string;
 }
 
 export function Composer({
@@ -42,6 +44,7 @@ export function Composer({
     onSend,
     onCancel,
     tabId,
+    conversationId,
 }: ComposerProps) {
     const [isPicking, setIsPicking] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -171,6 +174,7 @@ export function Composer({
                             </TooltipTrigger>
                             <TooltipContent side="top">Attach file</TooltipContent>
                         </Tooltip>
+                        <ComposerTodoButton conversationId={conversationId} />
                         <ModelSelector selected={selectedModel} onChange={setSelectedModel} />
                     </div>
 

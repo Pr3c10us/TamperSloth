@@ -23,6 +23,10 @@ MousePointerClick,
     ListChecks,
     ArrowDownUp,
     SendHorizonal,
+    ListTodo,
+    ClipboardList,
+    Eraser,
+    HelpCircle,
 } from 'lucide-react';
 
 export type ToolCategory = 'data' | 'compute' | 'web' | 'utility' | 'communication' | 'media';
@@ -226,6 +230,42 @@ const toolMeta: Record<string, ToolMeta> = {
         icon: MonitorDot,
         category: 'data',
     },
+    // ── Task Tracking ──
+    TodoWrite: {
+        displayName: 'Update Todo List',
+        activeLabel: 'Updating todo list…',
+        doneLabel: 'Todo list updated',
+        errorLabel: 'Failed to update todo list',
+        icon: ListTodo,
+        category: 'utility',
+    },
+    TodoRead: {
+        displayName: 'Read Todo List',
+        activeLabel: 'Reading todo list…',
+        doneLabel: 'Todo list read',
+        errorLabel: 'Failed to read todo list',
+        icon: ClipboardList,
+        category: 'utility',
+    },
+    TodoClear: {
+        displayName: 'Clear Todo List',
+        activeLabel: 'Clearing todo list…',
+        doneLabel: 'Todo list cleared',
+        errorLabel: 'Failed to clear todo list',
+        icon: Eraser,
+        category: 'utility',
+    },
+
+    // ── User Interaction ──
+    askUser: {
+        displayName: 'Ask user',
+        activeLabel: 'Waiting on you…',
+        doneLabel: 'Got your answer',
+        errorLabel: 'Question dropped',
+        icon: HelpCircle,
+        category: 'communication',
+    },
+
 };
 
 const fallbackMeta: ToolMeta = {

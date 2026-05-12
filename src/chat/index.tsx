@@ -128,6 +128,7 @@ function Chat() {
                 onSend={handleSend}
                 onCancel={cancel}
                 tabId={tabId}
+                conversationId={conversationId}
             />
 
             <HistoryDrawer

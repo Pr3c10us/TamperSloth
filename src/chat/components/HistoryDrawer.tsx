@@ -75,6 +75,7 @@ export function HistoryDrawer({
         <Sheet open={open} onOpenChange={onOpenChange}>
             <SheetContent
                 side="right"
+                aria-describedby={undefined}
                 className="flex w-[320px] flex-col gap-0 border-l border-border bg-background p-0"
             >
                 <SheetHeader className="flex-row items-center justify-between border-b border-muted px-3.5 py-3">
