@@ -11,7 +11,6 @@ import {
 } from "./components/ModelSelector";
 import { getApiKeys as loadApiKeys } from "../settings/lib/storage";
 import type { PendingAttachment } from "./components/AttachmentChip";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { clearPickedMarkers } from "./hooks/useElementPicker";
 
 const tabId = Number(new URLSearchParams(window.location.search).get("tabId")) || 0;
@@ -86,7 +85,6 @@ function Chat() {
     };
 
     return (
-        <TooltipProvider delayDuration={200}>
         <div className="relative flex h-full w-full flex-col overflow-hidden border-l border-border bg-background font-sans text-foreground pt-12">
             <style>{`
                 @keyframes slothPulse {
@@ -139,7 +137,6 @@ function Chat() {
                 onNewChat={handleNewChat}
             />
         </div>
-        </TooltipProvider>
     );
 }
 

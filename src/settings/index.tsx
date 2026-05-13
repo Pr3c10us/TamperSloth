@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Plug, SlidersHorizontal } from "lucide-react";
+import { ArrowLeft, Plug, SlidersHorizontal, FileCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConnectionsTab } from "./components/ConnectionsTab";
 import { PreferencesTab } from "./components/PreferencesTab";
+import { CodeTab } from "./components/CodeTab";
 
 function Settings() {
   const navigate = useNavigate();
@@ -47,6 +48,10 @@ function Settings() {
             <SlidersHorizontal className="size-3" />
             Preferences
           </TabsTrigger>
+          <TabsTrigger value="code" className="flex-none text-sm">
+            <FileCode className="size-3" />
+            Code
+          </TabsTrigger>
         </TabsList>
 
         <div className="flex-1 overflow-y-auto px-4 py-4">
@@ -55,6 +60,9 @@ function Settings() {
           </TabsContent>
           <TabsContent value="preferences">
             <PreferencesTab />
+          </TabsContent>
+          <TabsContent value="code">
+            <CodeTab />
           </TabsContent>
         </div>
       </Tabs>
