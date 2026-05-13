@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, MousePointerSquareDashed, Paperclip, Square } from "lucide-react";
+import {
+    ArrowUp,
+    MousePointerSquareDashed,
+    Paperclip,
+    Square,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
     Tooltip,
@@ -10,9 +15,13 @@ import { cn } from "@/lib/utils";
 import { useElementPicker } from "../hooks/useElementPicker";
 import { ModelSelector, type SelectedModelEntry } from "./ModelSelector";
 import { PickedElementChip } from "./PickedElementChip";
-import { AttachmentChip, formatSize, type PendingAttachment } from "./AttachmentChip";
+import {
+    AttachmentChip,
+    formatSize,
+    type PendingAttachment,
+} from "./AttachmentChip";
 import { ComposerTodoButton } from "./todo/composerTodoButton";
-import {AskUserOverlay} from "@/src/chat/components/askUser/askUserOverlay.tsx";
+import { AskUserOverlay } from "@/src/chat/components/askUser/askUserOverlay.tsx";
 
 interface ComposerProps {
     draft: string;
@@ -51,12 +60,13 @@ export function Composer({
     const fileInputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    const { start: startPicker, remove: removePickedFromDom } = useElementPicker({
-        tabId,
-        isPicking,
-        setIsPicking,
-        setPickedElements,
-    });
+    const { start: startPicker, remove: removePickedFromDom } =
+        useElementPicker({
+            tabId,
+            isPicking,
+            setIsPicking,
+            setPickedElements,
+        });
 
     useEffect(() => {
         const ta = textareaRef.current;
@@ -70,7 +80,9 @@ export function Composer({
 
     const canSend =
         !!selectedModel &&
-        (draft.trim().length > 0 || pendingFiles.length > 0 || pickedElements.length > 0);
+        (draft.trim().length > 0 ||
+            pendingFiles.length > 0 ||
+            pickedElements.length > 0);
 
     const handleAttach = () => fileInputRef.current?.click();
 
@@ -94,130 +106,165 @@ export function Composer({
         <div className="fixed bottom-0 inset-x-0 flex shrink-0 flex-col border-t border-muted bg-background">
             <AskUserOverlay />
             <div className="flex flex-col gap-2.5 p-3">
-            {pickedElements.length > 0 && (
-                <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground">
-                        <span>
-                            {pickedElements.length} element{pickedElements.length === 1 ? "" : "s"} picked
-                        </span>
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="xs"
-                            onClick={clearPicked}
-                            className="h-auto px-0 py-0 font-mono text-[10px] uppercase tracking-[.08em] text-foreground underline underline-offset-2 hover:bg-transparent"
-                        >
-                            clear all
-                        </Button>
+                {pickedElements.length > 0 && (
+                    <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground">
+                            <span>
+                                {pickedElements.length} element
+                                {pickedElements.length === 1 ? "" : "s"} picked
+                            </span>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="xs"
+                                onClick={clearPicked}
+                                className="h-auto px-0 py-0 font-mono text-[10px] uppercase tracking-[.08em] text-foreground underline underline-offset-2 hover:bg-transparent"
+                            >
+                                clear all
+                            </Button>
+                        </div>
+                        {pickedElements.map((html, i) => (
+                            <PickedElementChip
+                                key={i}
+                                html={html}
+                                onRemove={() => removePicked(i)}
+                            />
+                        ))}
                     </div>
-                    {pickedElements.map((html, i) => (
-                        <PickedElementChip key={i} html={html} onRemove={() => removePicked(i)} />
-                    ))}
-                </div>
-            )}
+                )}
 
-            {pendingFiles.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                    {pendingFiles.map((f, i) => (
-                        <AttachmentChip key={i} att={f} onRemove={() => removeFile(i)} />
-                    ))}
-                </div>
-            )}
-
-            <div className="flex flex-col rounded-xl border border-border bg-card transition-colors focus-within:border-foreground">
-                <textarea
-                    ref={textareaRef}
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            if (canSend && !isLoading) onSend();
-                        }
-                    }}
-                    placeholder="Tell the sloth what to write…"
-                    rows={2}
-                    disabled={isLoading}
-                    className="w-full resize-none border-0 bg-transparent px-3 pb-1 pt-3 font-sans text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-50"
-                />
-
-                <div className="flex items-center justify-between gap-2 px-2 pb-2 pt-1.5">
-                    <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    onClick={startPicker}
-                                    disabled={isLoading}
-                                    aria-pressed={isPicking}
-                                    aria-label="Pick a page element"
-                                    className={cn(
-                                        isPicking && "bg-foreground text-background hover:bg-foreground hover:text-background",
-                                    )}
-                                >
-                                    <MousePointerSquareDashed strokeWidth={1.5} />
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">Pick a page element</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    onClick={handleAttach}
-                                    disabled={isLoading}
-                                    aria-label="Attach file"
-                                >
-                                    <Paperclip strokeWidth={1.5} />
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">Attach file</TooltipContent>
-                        </Tooltip>
-                        <ComposerTodoButton conversationId={conversationId} />
-                        <ModelSelector selected={selectedModel} onChange={setSelectedModel} />
+                {pendingFiles.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                        {pendingFiles.map((f, i) => (
+                            <AttachmentChip
+                                key={i}
+                                att={f}
+                                onRemove={() => removeFile(i)}
+                            />
+                        ))}
                     </div>
+                )}
 
-                    {isLoading ? (
-                        <Button type="button" size="icon-lg" onClick={onCancel} aria-label="Stop">
-                            <Square strokeWidth={3} fill="currentColor" />
-                        </Button>
-                    ) : (
-                        <Button
-                            type="button"
-                            size="lg"
-                            onClick={onSend}
-                            disabled={!canSend}
-                            className="gap-1.5 px-3"
-                        >
-                            Send
-                            <ArrowUp strokeWidth={2} />
-                        </Button>
-                    )}
-                </div>
-            </div>
-
-            {isPicking && (
-                <div className="flex items-center gap-1.5 font-mono text-[11px] text-accent">
-                    <span
-                        className="size-1.5 rounded-full bg-accent"
-                        style={{ animation: "slothPulse 1.4s infinite" }}
+                <div className="flex flex-col rounded-xl border border-border bg-card transition-colors focus-within:border-foreground">
+                    <textarea
+                        ref={textareaRef}
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                if (canSend && !isLoading) onSend();
+                            }
+                        }}
+                        placeholder="Tell the sloth what to write…"
+                        rows={2}
+                        disabled={isLoading}
+                        className="w-full resize-none border-0 bg-transparent px-3 pb-1 pt-3 font-sans text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-50"
                     />
-                    Click elements to add · click the picker again or Esc when done
-                </div>
-            )}
 
-            <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                onChange={handleFileChange}
-                className="hidden"
-            />
-        </div>
+                    {!selectedModel && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 border-t border-border text-xs text-muted-foreground bg-muted/30">
+                            <span>
+                                Add an API key in Settings to start chatting.
+                            </span>
+                        </div>
+                    )}
+
+                    <div className="flex items-center justify-between gap-2 px-2 pb-2 pt-1.5">
+                        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        onClick={startPicker}
+                                        disabled={isLoading}
+                                        aria-pressed={isPicking}
+                                        aria-label="Pick a page element"
+                                        className={cn(
+                                            isPicking &&
+                                                "bg-foreground text-background hover:bg-foreground hover:text-background",
+                                        )}
+                                    >
+                                        <MousePointerSquareDashed
+                                            strokeWidth={1.5}
+                                        />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                    Pick a page element
+                                </TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        onClick={handleAttach}
+                                        disabled={isLoading}
+                                        aria-label="Attach file"
+                                    >
+                                        <Paperclip strokeWidth={1.5} />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                    Attach file
+                                </TooltipContent>
+                            </Tooltip>
+                            <ComposerTodoButton
+                                conversationId={conversationId}
+                            />
+                            <ModelSelector
+                                selected={selectedModel}
+                                onChange={setSelectedModel}
+                            />
+                        </div>
+
+                        {isLoading ? (
+                            <Button
+                                type="button"
+                                size="icon-lg"
+                                onClick={onCancel}
+                                aria-label="Stop"
+                            >
+                                <Square strokeWidth={3} fill="currentColor" />
+                            </Button>
+                        ) : (
+                            <Button
+                                type="button"
+                                size="lg"
+                                onClick={onSend}
+                                disabled={!canSend}
+                                className="gap-1.5 px-3"
+                            >
+                                Send
+                                <ArrowUp strokeWidth={2} />
+                            </Button>
+                        )}
+                    </div>
+                </div>
+
+                {isPicking && (
+                    <div className="flex items-center gap-1.5 font-mono text-[11px] text-accent">
+                        <span
+                            className="size-1.5 rounded-full bg-accent"
+                            style={{ animation: "slothPulse 1.4s infinite" }}
+                        />
+                        Click elements to add · click the picker again or Esc
+                        when done
+                    </div>
+                )}
+
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    onChange={handleFileChange}
+                    className="hidden"
+                />
+            </div>
         </div>
     );
 }

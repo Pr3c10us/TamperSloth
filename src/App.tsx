@@ -1,7 +1,33 @@
 import {useEffect, useRef, useState} from "react";
 import {Link, useNavigate} from "react-router-dom";
-import {ArrowRight, ChevronDown, Download, Pause, Play, Search, Settings, Sparkles, Trash2, Upload, X,} from "lucide-react";
+import {
+    ArrowRight,
+    ChevronDown,
+    Download,
+    Pause,
+    Play,
+    Search,
+    Settings,
+    Sparkles,
+    Trash2,
+    Upload,
+    X,
+} from "lucide-react";
+import {toast} from "sonner";
 import {Button} from "@/components/ui/button";
+import {Input} from "@/components/ui/input";
+import {Toaster} from "@/components/ui/sonner";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,} from "@/components/ui/tooltip";
 import {deleteScript, exportScript, importScriptsFromJson, loadScripts, updateScriptStatus,} from "./chat/lib/storage";
 import type {BackgroundScript} from "./chat/lib/types";
 
@@ -14,11 +40,9 @@ function App() {
         id: string;
         name: string;
     } | null>(null);
-    const [importError, setImportError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleImport = () => {
-        setImportError(null);
         fileInputRef.current?.click();
     };
 
@@ -31,9 +55,9 @@ function App() {
             const count = await importScriptsFromJson(text);
             const updated = await loadScripts();
             setScripts(updated);
-            setImportError(`Imported ${count} script${count !== 1 ? "s" : ""} successfully.`);
+            toast.success(`Imported ${count} script${count !== 1 ? "s" : ""} successfully.`);
         } catch {
-            setImportError("Invalid script file. Make sure it's a TamperSloth JSON export.");
+            toast.error("Invalid script file. Make sure it's a TamperSloth JSON export.");
         }
     };
 
@@ -56,14 +80,17 @@ function App() {
         setScripts((prev) =>
             prev.map((s) => (s.id === script.id ? {...s, status: next} : s)),
         );
+        toast.success(next === "paused" ? `"${script.name}" paused.` : `"${script.name}" resumed.`);
     };
 
     const confirmRemoval = async () => {
         if (!confirmDelete) return;
+        const name = confirmDelete.name;           // capture before clearing
         await deleteScript(confirmDelete.id);
         setScripts((prev) => prev.filter((s) => s.id !== confirmDelete.id));
         if (expanded === confirmDelete.id) setExpanded(null);
         setConfirmDelete(null);
+        toast.success(`"${name}" deleted.`);
     };
 
     return (
@@ -77,103 +104,126 @@ function App() {
                 onChange={handleFileChange}
             />
 
+            {/* Sonner toaster */}
+            <Toaster position="bottom-center"/>
+
             {/* Header */}
             <header className="flex shrink-0 items-center justify-between px-4 py-3.5">
                 <div className="flex items-center gap-2.5">
                     <img src="favicon.svg" className="h-[22px] w-[22px]" alt=""/>
                 </div>
-                <div className="flex items-center gap-1.5">
-                    <button
-                        onClick={handleImport}
-                        title="Import scripts"
-                        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-border bg-background text-foreground/60 transition-colors hover:bg-muted"
-                    >
-                        <Upload strokeWidth={1.5} className="size-[15px]"/>
-                    </button>
-                    <button
-                        onClick={() => navigate("/settings")}
-                        title="Settings"
-                        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-border bg-background text-foreground/60 transition-colors hover:bg-muted"
-                    >
-                        <Settings strokeWidth={1.5} className="size-[15px]"/>
-                    </button>
-                </div>
+                <TooltipProvider delayDuration={300}>
+                    <div className="flex items-center gap-1.5">
+                        {scripts.length > 0 && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        size="icon"
+                                        onClick={handleImport}
+                                        className="h-8 w-8 rounded-lg text-foreground/60"
+                                    >
+                                        <Upload strokeWidth={1.5} className="size-[15px]"/>
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Import scripts</TooltipContent>
+                            </Tooltip>
+                        )}
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() => navigate("/settings")}
+                                    className="h-8 w-8 rounded-lg text-foreground/60"
+                                >
+                                    <Settings strokeWidth={1.5} className="size-[15px]"/>
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Settings</TooltipContent>
+                        </Tooltip>
+                    </div>
+                </TooltipProvider>
             </header>
-
-            {/* CTA card */}
-            <div className="shrink-0 px-4 pb-3">
-                <button
-                    onClick={() => navigate("/chat")}
-                    className="flex w-full cursor-pointer items-center gap-3 rounded-[10px] bg-foreground px-3.5 py-3 text-left transition-transform active:scale-[0.99]"
-                >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-background">
-                        <Sparkles strokeWidth={1.5} className="size-[18px] text-foreground"/>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                        <div className="mb-1 font-heading text-[19px] italic leading-[1.1] text-primary-foreground">
-                            Tell the sloth.
-                        </div>
-                        <div className="font-mono text-[10.5px] uppercase tracking-[.12em] text-[var(--sand)]">
-                            What do you want to change?
-                        </div>
-                    </div>
-                    <ArrowRight
-                        strokeWidth={1.5}
-                        className="size-4 shrink-0 text-primary-foreground"
-                    />
-                </button>
-            </div>
-
-            {/* Search */}
-            <div className="shrink-0 px-4 pb-2.5">
-                <div className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-2">
-                    <Search
-                        strokeWidth={1.5}
-                        className="size-3.5 shrink-0 text-muted-foreground"
-                    />
-                    <input
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        placeholder="Search my scripts…"
-                        className="flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
-                    />
-                    {search && (
+            {scripts.length > 0 && (
+                <>
+                    {/* CTA card */}
+                    <div className="shrink-0 px-4 pb-3">
                         <button
-                            onClick={() => setSearch("")}
-                            className="flex cursor-pointer items-center justify-center text-muted-foreground"
+                            onClick={() => navigate("/chat")}
+                            className="flex w-full cursor-pointer items-center gap-3 rounded-[10px] bg-foreground px-3.5 py-3 text-left transition-transform active:scale-[0.99]"
                         >
-                            <X strokeWidth={1.5} className="size-3"/>
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-background">
+                                <Sparkles strokeWidth={1.5} className="size-[18px] text-foreground"/>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <div
+                                    className="mb-1 font-heading text-[19px] italic leading-[1.1] text-primary-foreground">
+                                    Tell the sloth.
+                                </div>
+                                <div className="font-mono text-[10.5px] uppercase tracking-[.12em] text-[var(--sand)]">
+                                    What do you want to change?
+                                </div>
+                            </div>
+                            <ArrowRight
+                                strokeWidth={1.5}
+                                className="size-4 shrink-0 text-primary-foreground"
+                            />
                         </button>
-                    )}
-                </div>
-            </div>
+                    </div>
+
+                    {/* Search */}
+                    <div className="shrink-0 px-4 pb-2.5">
+                        <div className="relative flex items-center">
+                            <Search
+                                strokeWidth={1.5}
+                                className="pointer-events-none absolute left-3 size-3.5 text-muted-foreground"
+                            />
+                            <Input
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                placeholder="Search my scripts…"
+                                className="h-9 rounded-full bg-card pl-9 pr-9 text-[13px]"
+                            />
+                            {search && (
+                                <button
+                                    onClick={() => setSearch("")}
+                                    className="absolute right-3 flex cursor-pointer items-center justify-center text-muted-foreground"
+                                >
+                                    <X strokeWidth={1.5} className="size-3"/>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </>
+            )}
 
             {/* Scripts list */}
             <div className="flex-1 overflow-y-auto px-4 pb-4">
-                {/* Section label */}
                 {scripts.length === 0 ? (
-                    <div className="flex flex-col items-center gap-5 mt-10 px-2 text-center">
+                    <div className="mt-10 flex flex-col items-center gap-5 px-2 text-center">
                         <p className="font-heading text-[22px] italic leading-snug text-foreground">
                             No scripts yet.
                         </p>
-                        <p className="text-[13px] leading-relaxed text-muted-foreground -mt-2">
+                        <p className="-mt-2 text-[13px] leading-relaxed text-muted-foreground">
                             Ask the AI to write one, or import an existing script.
                         </p>
-                        <div className="flex flex-col w-full gap-2">
-                            <Link
-                                to="/chat"
-                                className="flex w-full items-center justify-center gap-2 rounded-[8px] bg-foreground px-4 py-2.5 text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
-                            >
-                                <Sparkles strokeWidth={1.5} className="size-3.5"/>
-                                Start a conversation
-                            </Link>
-                            <button
+                        <div className="flex w-full flex-col gap-2">
+                            <Button asChild className="w-full gap-2">
+                                <Link to="/chat" className="no-underline">
+                                    <Sparkles strokeWidth={1.5} className="size-3.5"/>
+                                    Start a conversation
+                                </Link>
+                            </Button>
+                            <Button
+                                variant="outline"
                                 onClick={handleImport}
-                                className="flex w-full items-center justify-center gap-2 rounded-[8px] border border-border px-4 py-2.5 text-[13px] font-medium text-foreground transition-colors hover:bg-muted"
+                                className="w-full gap-2"
                             >
                                 <Upload strokeWidth={1.5} className="size-3.5"/>
                                 Import a script
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 ) : filtered.length === 0 ? (
@@ -210,26 +260,26 @@ function App() {
                                         }
                                         className="flex w-full cursor-pointer items-center gap-3 px-3.5 py-3 text-left"
                                     >
-                    <span
-                        className={[
-                            "h-2 w-2 shrink-0 rounded-full",
-                            isActive ? "bg-accent" : "bg-border",
-                        ].join(" ")}
-                    />
+                                        <span
+                                            className={[
+                                                "h-2 w-2 shrink-0 rounded-full",
+                                                isActive ? "bg-accent" : "bg-border",
+                                            ].join(" ")}
+                                        />
                                         <span
                                             className={[
                                                 "flex-1 truncate text-[14px] font-medium",
                                                 isActive ? "text-foreground" : "text-muted-foreground",
                                             ].join(" ")}
                                         >
-                      {script.name}
-                    </span>
+                                            {script.name}
+                                        </span>
                                         <span
                                             className="font-mono text-[10.5px] tracking-[.04em] text-muted-foreground">
-                      {script.urlMatchPattern
-                          .replace("*://", "")
-                          .replace("/*", "")}
-                    </span>
+                                            {script.urlMatchPattern
+                                                .replace("*://", "")
+                                                .replace("/*", "")}
+                                        </span>
                                         <ChevronDown
                                             strokeWidth={1.5}
                                             className={[
@@ -250,49 +300,55 @@ function App() {
                                                 </p>
                                             )}
                                             <div className="flex items-center gap-1.5">
-                                                <ActionButton
-                                                    icon={
-                                                        isActive ? (
-                                                            <Pause
-                                                                strokeWidth={1.5}
-                                                                className="size-[11px]"
-                                                            />
-                                                        ) : (
-                                                            <Play
-                                                                strokeWidth={1.5}
-                                                                className="size-[11px]"
-                                                            />
-                                                        )
-                                                    }
-                                                    label={isActive ? "Pause" : "Resume"}
-                                                    onClick={() => handleToggleStatus(script)}
-                                                />
-                                                <ActionButton
-                                                    icon={
-                                                        <Download
-                                                            strokeWidth={1.5}
-                                                            className="size-[11px]"
-                                                        />
-                                                    }
-                                                    label="Export"
-                                                    onClick={() => exportScript(script)}
-                                                />
-                                                <ActionButton
-                                                    icon={
-                                                        <Trash2
-                                                            strokeWidth={1.5}
-                                                            className="size-[11px]"
-                                                        />
-                                                    }
-                                                    label="Delete"
-                                                    onClick={() =>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleToggleStatus(script);
+                                                    }}
+                                                    className="h-7 gap-1 px-2 text-[11.5px]"
+                                                >
+                                                    {isActive ? (
+                                                        <>
+                                                            <Pause strokeWidth={1.5} className="size-[11px]"/>
+                                                            Pause
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Play strokeWidth={1.5} className="size-[11px]"/>
+                                                            Resume
+                                                        </>
+                                                    )}
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        exportScript(script);
+                                                        toast.success(`"${script.name}" exported.`);
+                                                    }}
+                                                    className="h-7 gap-1 px-2 text-[11.5px]"
+                                                >
+                                                    <Download strokeWidth={1.5} className="size-[11px]"/>
+                                                    Export
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
                                                         setConfirmDelete({
                                                             id: script.id,
                                                             name: script.name,
-                                                        })
-                                                    }
-                                                    danger
-                                                />
+                                                        });
+                                                    }}
+                                                    className="h-7 gap-1 px-2 text-[11.5px] text-destructive hover:border-destructive hover:bg-destructive hover:text-white"
+                                                >
+                                                    <Trash2 strokeWidth={1.5} className="size-[11px]"/>
+                                                    Delete
+                                                </Button>
                                             </div>
                                         </div>
                                     )}
@@ -303,84 +359,32 @@ function App() {
                 )}
             </div>
 
-            {/* Import feedback toast */}
-            {importError && (
-                <div
-                    className="absolute bottom-4 left-4 right-4 z-40 flex items-center justify-between gap-3 rounded-[8px] border border-border bg-card px-3.5 py-2.5 shadow-sm"
-                    onClick={() => setImportError(null)}
-                >
-                    <span className="text-[13px] text-foreground">{importError}</span>
-                    <X strokeWidth={1.5} className="size-3.5 shrink-0 cursor-pointer text-muted-foreground"/>
-                </div>
-            )}
-
             {/* Delete confirmation dialog */}
-            {confirmDelete && (
-                <div
-                    className="absolute inset-0 z-50 flex items-center justify-center bg-foreground/50 p-5"
-                    onClick={() => setConfirmDelete(null)}
-                >
-                    <div
-                        className="w-full max-w-xs rounded-[10px] border border-foreground bg-background p-[18px]"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <h2 className="mb-2 font-heading text-[22px] leading-tight">
-                            Delete {confirmDelete.name}?
-                        </h2>
-                        <p className="mb-4 text-[13px] leading-relaxed text-[var(--bark)]">
+            <AlertDialog
+                open={!!confirmDelete}
+                onOpenChange={(open) => !open && setConfirmDelete(null)}
+            >
+                <AlertDialogContent className="max-w-xs rounded-[10px] border-foreground">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="font-heading text-[22px] leading-tight">
+                            Delete {confirmDelete?.name}?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="text-[13px] leading-relaxed text-[var(--bark)]">
                             This can't be undone. The sloth will pretend it never happened.
-                        </p>
-                        <div className="flex justify-end gap-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setConfirmDelete(null)}
-                            >
-                                Keep it
-                            </Button>
-                            <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={confirmRemoval}
-                            >
-                                Delete
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Keep it</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={confirmRemoval}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
-    );
-}
-
-function ActionButton({
-                          icon,
-                          label,
-                          onClick,
-                          danger = false,
-                      }: {
-    icon: React.ReactNode;
-    label: string;
-    onClick: () => void;
-    danger?: boolean;
-}) {
-    return (
-        <button
-            onClick={(e) => {
-                e.stopPropagation();
-                onClick();
-            }}
-            className={[
-                "inline-flex cursor-pointer items-center gap-[5px] rounded-md border px-[9px] py-[5px]",
-                "text-[11.5px] font-medium transition-all duration-[160ms]",
-                danger
-                    ? "border-border text-destructive hover:border-destructive hover:bg-destructive hover:text-destructive-foreground"
-                    : "border-border text-[var(--bark)] hover:border-foreground hover:bg-foreground hover:text-background",
-            ].join(" ")}
-        >
-            {icon}
-            {label}
-        </button>
     );
 }
 
