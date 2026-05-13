@@ -248,6 +248,38 @@ export async function listFiles(conversationId: string,prefix = ''): Promise<str
         .sort();
 }
 
+// ── Code Files (all) ─────────────────────────────────────────
+
+export interface CodeFileEntry {
+    conversationId: string;
+    path: string;
+}
+
+export async function listAllCodeFiles(): Promise<CodeFileEntry[]> {
+    if (!isChromeExtension) return [];
+    const all = await chrome.storage.local.get(null);
+    return Object.keys(all)
+        .filter((k) => k.startsWith(FILE_PREFIX))
+        .map((k) => {
+            const withoutPrefix = k.slice(FILE_PREFIX.length);
+            const slashIdx = withoutPrefix.indexOf('/');
+            return {
+                conversationId: withoutPrefix.slice(0, slashIdx),
+                path: withoutPrefix.slice(slashIdx + 1),
+            };
+        })
+        .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+export async function deleteAllFilesForConversation(conversationId: string): Promise<void> {
+    if (!isChromeExtension) return;
+    const all = await chrome.storage.local.get(null);
+    const keys = Object.keys(all).filter(
+        (k) => k.startsWith(FILE_PREFIX + conversationId + '/'),
+    );
+    if (keys.length > 0) await chrome.storage.local.remove(keys);
+}
+
 // ── Todos ───────────────────────────────────────────────────
 
 export type TodoStatus = "pending" | "in_progress" | "completed";
