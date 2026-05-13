@@ -74,13 +74,24 @@ function App() {
         )
         : scripts;
 
+    const sidebarTabId = Number(new URLSearchParams(window.location.search).get("tabId")) || 0;
+
+    const reloadSidebarTab = () => {
+        if (sidebarTabId) {
+            chrome.runtime.sendMessage({type: "RELOAD_TAB", tabId: sidebarTabId});
+        }
+    };
+
     const handleToggleStatus = async (script: BackgroundScript) => {
         const next = script.status === "active" ? "paused" : "active";
         await updateScriptStatus(script.id, next);
         setScripts((prev) =>
             prev.map((s) => (s.id === script.id ? {...s, status: next} : s)),
         );
-        toast.success(next === "paused" ? `"${script.name}" paused.` : `"${script.name}" resumed.`);
+        reloadSidebarTab();
+        toast.success(next === "paused" ? `"${script.name}" paused.` : `"${script.name}" resumed.`, {
+            description: "The page has been refreshed to apply the change.",
+        });
     };
 
     const confirmRemoval = async () => {
@@ -90,7 +101,10 @@ function App() {
         setScripts((prev) => prev.filter((s) => s.id !== confirmDelete.id));
         if (expanded === confirmDelete.id) setExpanded(null);
         setConfirmDelete(null);
-        toast.success(`"${name}" deleted.`);
+        reloadSidebarTab();
+        toast.success(`"${name}" deleted.`, {
+            description: "The page has been refreshed to apply the change.",
+        });
     };
 
     return (

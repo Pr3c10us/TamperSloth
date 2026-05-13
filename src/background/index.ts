@@ -354,6 +354,13 @@ chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
         return true;
     }
 
+    // Reload a specific tab (e.g. after pausing/deleting a script)
+    if (message.type === 'RELOAD_TAB') {
+        if (message.tabId) chrome.tabs.reload(message.tabId).catch(() => {});
+        sendResponse({ok: true});
+        return true;
+    }
+
     // Developer mode / userScripts availability check
     if (message.type === 'CHECK_USERSCRIPTS') {
         sendResponse({available: hasUserScripts()});
