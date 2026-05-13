@@ -1,8 +1,8 @@
-import {useEffect, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {Link, useNavigate} from "react-router-dom";
-import {ArrowRight, ChevronDown, Download, Pause, Play, Search, Settings, Sparkles, Trash2, X,} from "lucide-react";
+import {ArrowRight, ChevronDown, Download, Pause, Play, Search, Settings, Sparkles, Trash2, Upload, X,} from "lucide-react";
 import {Button} from "@/components/ui/button";
-import {deleteScript, exportScript, loadScripts, updateScriptStatus,} from "./chat/lib/storage";
+import {deleteScript, exportScript, importScriptsFromJson, loadScripts, updateScriptStatus,} from "./chat/lib/storage";
 import type {BackgroundScript} from "./chat/lib/types";
 
 function App() {
@@ -14,6 +14,28 @@ function App() {
         id: string;
         name: string;
     } | null>(null);
+    const [importError, setImportError] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleImport = () => {
+        setImportError(null);
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        e.target.value = "";
+        try {
+            const text = await file.text();
+            const count = await importScriptsFromJson(text);
+            const updated = await loadScripts();
+            setScripts(updated);
+            setImportError(`Imported ${count} script${count !== 1 ? "s" : ""} successfully.`);
+        } catch {
+            setImportError("Invalid script file. Make sure it's a TamperSloth JSON export.");
+        }
+    };
 
     useEffect(() => {
         loadScripts().then(setScripts);
@@ -46,21 +68,36 @@ function App() {
 
     return (
         <div className="relative flex h-full flex-col overflow-hidden bg-background font-sans">
+            {/* Hidden file input for import */}
+            <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={handleFileChange}
+            />
+
             {/* Header */}
             <header className="flex shrink-0 items-center justify-between px-4 py-3.5">
                 <div className="flex items-center gap-2.5">
                     <img src="favicon.svg" className="h-[22px] w-[22px]" alt=""/>
-                    {/*<span className="font-heading text-[22px] italic leading-none tracking-tight text-accent">*/}
-                    {/*  gallery*/}
-                    {/*</span>*/}
                 </div>
-                <button
-                    onClick={() => navigate("/settings")}
-                    title="Settings"
-                    className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-border bg-background text-foreground/60 transition-colors hover:bg-muted"
-                >
-                    <Settings strokeWidth={1.5} className="size-[15px]"/>
-                </button>
+                <div className="flex items-center gap-1.5">
+                    <button
+                        onClick={handleImport}
+                        title="Import scripts"
+                        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-border bg-background text-foreground/60 transition-colors hover:bg-muted"
+                    >
+                        <Upload strokeWidth={1.5} className="size-[15px]"/>
+                    </button>
+                    <button
+                        onClick={() => navigate("/settings")}
+                        title="Settings"
+                        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-border bg-background text-foreground/60 transition-colors hover:bg-muted"
+                    >
+                        <Settings strokeWidth={1.5} className="size-[15px]"/>
+                    </button>
+                </div>
             </header>
 
             {/* CTA card */}
@@ -115,9 +152,30 @@ function App() {
             <div className="flex-1 overflow-y-auto px-4 pb-4">
                 {/* Section label */}
                 {scripts.length === 0 ? (
-                    <p className="leading-relaxed text-center mt-8 font-heading italic text-muted-foreground">
-                        No scripts yet. <Link to={"/chat"}>Open Chat</Link> and ask the AI to write one.
-                    </p>
+                    <div className="flex flex-col items-center gap-5 mt-10 px-2 text-center">
+                        <p className="font-heading text-[22px] italic leading-snug text-foreground">
+                            No scripts yet.
+                        </p>
+                        <p className="text-[13px] leading-relaxed text-muted-foreground -mt-2">
+                            Ask the AI to write one, or import an existing script.
+                        </p>
+                        <div className="flex flex-col w-full gap-2">
+                            <Link
+                                to="/chat"
+                                className="flex w-full items-center justify-center gap-2 rounded-[8px] bg-foreground px-4 py-2.5 text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
+                            >
+                                <Sparkles strokeWidth={1.5} className="size-3.5"/>
+                                Start a conversation
+                            </Link>
+                            <button
+                                onClick={handleImport}
+                                className="flex w-full items-center justify-center gap-2 rounded-[8px] border border-border px-4 py-2.5 text-[13px] font-medium text-foreground transition-colors hover:bg-muted"
+                            >
+                                <Upload strokeWidth={1.5} className="size-3.5"/>
+                                Import a script
+                            </button>
+                        </div>
+                    </div>
                 ) : filtered.length === 0 ? (
                     <div className="py-10 text-center">
                         <p className="font-heading text-[22px] italic text-[var(--bark)]">
@@ -244,6 +302,17 @@ function App() {
                     </div>
                 )}
             </div>
+
+            {/* Import feedback toast */}
+            {importError && (
+                <div
+                    className="absolute bottom-4 left-4 right-4 z-40 flex items-center justify-between gap-3 rounded-[8px] border border-border bg-card px-3.5 py-2.5 shadow-sm"
+                    onClick={() => setImportError(null)}
+                >
+                    <span className="text-[13px] text-foreground">{importError}</span>
+                    <X strokeWidth={1.5} className="size-3.5 shrink-0 cursor-pointer text-muted-foreground"/>
+                </div>
+            )}
 
             {/* Delete confirmation dialog */}
             {confirmDelete && (
