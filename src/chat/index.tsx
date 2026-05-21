@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAgent } from "./hooks/useAgent";
 import { ChatHeader } from "./components/ChatHeader";
@@ -34,16 +34,10 @@ function Chat() {
     const [historyOpen, setHistoryOpen] = useState(false);
     const [selectedModel, setSelectedModel] = useState<SelectedModelEntry | null>(null);
 
-    const scrollRef = useRef<HTMLDivElement>(null);
-
     useEffect(() => {
         loadInitialSelectedModel().then(setSelectedModel);
     }, []);
 
-    useEffect(() => {
-        const el = scrollRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
-    }, [messages, isLoading]);
 
     const handleSend = async () => {
         if (!selectedModel) return;
@@ -106,7 +100,6 @@ function Chat() {
             />
 
             <MessageList
-                ref={scrollRef}
                 messages={messages}
                 isLoading={isLoading}
                 error={error}
