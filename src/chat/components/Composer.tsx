@@ -165,7 +165,7 @@ export function Composer({
                     {!selectedModel && (
                         <div className="flex items-center gap-2 px-3 py-1.5 border-t border-border text-xs text-muted-foreground bg-muted/30">
                             <span>
-                                Add an API key in Settings to start chatting.
+                                Add an API key in Settings and select a model to start chatting.
                             </span>
                         </div>
                     )}
