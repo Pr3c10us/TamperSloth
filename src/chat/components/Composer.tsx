@@ -156,7 +156,7 @@ export function Composer({
                                 if (canSend && !isLoading) onSend();
                             }
                         }}
-                        placeholder="Tell the sloth what to write…"
+                        placeholder="Tell the sloth what to do…"
                         rows={2}
                         disabled={isLoading}
                         className="w-full resize-none border-0 bg-transparent px-3 pb-1 pt-3 font-sans text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-50"

@@ -33,7 +33,7 @@ export const MODELPROVIDERS: ProviderConfig[] = [
         id: "google",
         name: "Google Gemini",
         defaultModel: "gemini-3.5-flash",
-        models: ["gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-3-flash-preview"],
+        models: ["gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-3.1-flash-lite"],
         icon: "/googlegemini.svg",
     },
     {
