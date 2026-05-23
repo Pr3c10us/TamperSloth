@@ -27,6 +27,11 @@ MousePointerClick,
     ClipboardList,
     Eraser,
     HelpCircle,
+    BookOpen,
+    FileSearch,
+    FilePlus,
+    FilePen,
+    FileX,
 } from 'lucide-react';
 
 export type ToolCategory = 'data' | 'compute' | 'web' | 'utility' | 'communication' | 'media';
@@ -42,6 +47,50 @@ export interface ToolMeta {
 
 
 const toolMeta: Record<string, ToolMeta> = {
+    // ── Skills ──
+    getSkill: {
+        displayName: 'Fetch Skill',
+        activeLabel: 'Fetching skill reference…',
+        doneLabel: 'Skill reference loaded',
+        errorLabel: 'Failed to fetch skill',
+        icon: BookOpen,
+        category: 'utility',
+    },
+
+    // ── Virtual Files ──
+    viewCodeFiles: {
+        displayName: 'View Files',
+        activeLabel: 'Reading files…',
+        doneLabel: 'Files read',
+        errorLabel: 'Failed to read files',
+        icon: FileSearch,
+        category: 'data',
+    },
+    createFileTool: {
+        displayName: 'Create File',
+        activeLabel: 'Creating file…',
+        doneLabel: 'File created',
+        errorLabel: 'Failed to create file',
+        icon: FilePlus,
+        category: 'utility',
+    },
+    strReplaceTool: {
+        displayName: 'Edit File',
+        activeLabel: 'Editing file…',
+        doneLabel: 'File edited',
+        errorLabel: 'Failed to edit file',
+        icon: FilePen,
+        category: 'utility',
+    },
+    deleteFileTool: {
+        displayName: 'Delete File',
+        activeLabel: 'Deleting file…',
+        doneLabel: 'File deleted',
+        errorLabel: 'Failed to delete file',
+        icon: FileX,
+        category: 'utility',
+    },
+
     // ── Page Inspection ──
     getCurrentTab: {
         displayName: 'Get Current Tab',
