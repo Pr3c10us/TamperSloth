@@ -1,4 +1,4 @@
-import {forwardRef, useEffect, useRef} from "react";
+import {forwardRef, useLayoutEffect, useRef} from "react";
 import { AlertCircle } from "lucide-react";
 import type { ChatMessage } from "../hooks/useAgent";
 import { UserMessage } from "./UserMessage";
@@ -16,12 +16,10 @@ export const MessageList = forwardRef<HTMLDivElement, MessageListProps>(
 
         const scrollRef = useRef<HTMLDivElement>(null);
 
-        useEffect(() => {
-            requestAnimationFrame(() => {
-                const el = scrollRef.current;
-                if (el) el.scrollTop = el.scrollHeight;
-            });
-        }, [messages]);
+        useLayoutEffect(() => {
+            const el = scrollRef.current;
+            if (el) el.scrollTop = el.scrollHeight;
+        }, [messages, isLoading]);
 
         return (
             <div

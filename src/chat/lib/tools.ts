@@ -18,11 +18,8 @@ import {
     writeFile,
 } from "./storage";
 import {isValidMatchPattern} from "./url";
-import {
-    type AskUserAnswer,
-    rejectPendingAsk,
-    setPendingAsk,
-} from "./askUserBus";
+import {type AskUserAnswer, rejectPendingAsk, setPendingAsk,} from "./askUserBus";
+import { skills, type SkillId } from "./skills";
 
 const tabId = Number(new URLSearchParams(window.location.search).get("tabId"));
 
@@ -73,8 +70,45 @@ function diffTodoChanges(previous: TodoItem[], current: TodoItem[]): string[] {
     return changed;
 }
 
+const SKILL_IDS = Object.keys(skills) as [SkillId, ...SkillId[]];
+
 export function createAgentTools(context: { conversationId: string }) {
     return {
+        // ═══════════════════════════════════════════════
+        //  Skills
+        // ═══════════════════════════════════════════════
+        getSkill: tool({
+            description:
+                "Fetch detailed reference material for a specific skill from the skills registry. Use when the system prompt indicates a skill should be fetched before handling a particular kind of work (e.g., 'fetch script_creation_workflow before starting any persistent-script task'). Call multiple skills in parallel when several apply to the current turn — e.g., a script request typically pulls script_creation_workflow + script_format together. Each call returns the full content of that skill so you can follow its instructions verbatim.",
+            inputSchema: z.object({
+                skill_id: z
+                    .enum(SKILL_IDS)
+                    .describe(
+                        "The id of the skill to fetch. Must be one of the ids listed in <when_to_fetch_skills> in the system prompt.",
+                    ),
+                description: z
+                    .string()
+                    .describe(
+                        "Why this fetch is happening (e.g. 'starting script creation for dark-mode toggle', 'about to save and need scope rules', 'script failing, need debugging steps').",
+                    ),
+            }),
+            execute: async ({skill_id}) => {
+                const skill = skills[skill_id];
+                if (!skill) {
+                    return {
+                        ok: false,
+                        error: `Unknown skill_id: "${skill_id}". Available: ${Object.keys(skills).join(", ")}`,
+                    };
+                }
+                return {
+                    ok: true,
+                    skill_id,
+                    description: skill.description,
+                    content: skill.content,
+                };
+            },
+        }),
+
         // ═══════════════════════════════════════════════
         //  Task Tracking (Todos)
         // ═══════════════════════════════════════════════
