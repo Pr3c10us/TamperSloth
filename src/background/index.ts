@@ -22,8 +22,25 @@ chrome.alarms.create('keepalive', {periodInMinutes: 0.5});
 chrome.alarms.onAlarm.addListener(() => { /* just waking up is enough */ });
 
 function hasUserScripts(): boolean {
-    return typeof chrome.userScripts !== 'undefined'
-        && typeof chrome.userScripts.execute === 'function';
+    try {
+        return typeof chrome.userScripts !== 'undefined'
+            && typeof chrome.userScripts.execute === 'function';
+    } catch {
+        return false;
+    }
+}
+
+// Actually exercises the API. A stale reference can survive the user toggling
+// "Allow user scripts" off mid-session, so a presence check alone reports a
+// false positive — getScripts() rejects once the permission is revoked.
+async function probeUserScripts(): Promise<boolean> {
+    if (!hasUserScripts()) return false;
+    try {
+        await chrome.userScripts.getScripts();
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function configureUserScriptsWorld() {
@@ -362,7 +379,7 @@ chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
 
     // Developer mode / userScripts availability check
     if (message.type === 'CHECK_USERSCRIPTS') {
-        sendResponse({available: hasUserScripts()});
+        void probeUserScripts().then((available) => sendResponse({available}));
         return true;
     }
 

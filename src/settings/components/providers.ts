@@ -25,9 +25,9 @@ export const PROVIDERS_PRIMARY: Provider[] = [
     logo: "G",
   },
   {
-    id: "xai",
-    name: "Grok (xAI)",
-    link: "console.x.ai",
-    logo: "X",
+    id: "deepseek",
+    name: "DeepSeek",
+    link: "platform.deepseek.com",
+    logo: "D",
   },
 ];

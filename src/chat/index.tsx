@@ -5,6 +5,7 @@ import { ChatHeader } from "./components/ChatHeader";
 import { MessageList } from "./components/MessageList";
 import { Composer, makeAttachmentFromFile } from "./components/Composer";
 import { HistoryDrawer } from "./components/HistoryDrawer";
+import { UserScriptsBanner } from "./components/UserScriptsBanner";
 import {
     loadInitialSelectedModel,
     type SelectedModelEntry,
@@ -98,6 +99,8 @@ function Chat() {
                 onNewChat={handleNewChat}
                 onOpenSettings={() => navigate("/settings")}
             />
+
+            <UserScriptsBanner />
 
             <MessageList
                 messages={messages}

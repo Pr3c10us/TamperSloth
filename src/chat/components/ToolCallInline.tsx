@@ -53,11 +53,11 @@ export function ToolCallInline({ tc, i }: { tc: ToolCall, i: number }) {
                     <span className={cn("truncate", isError ? "text-destructive" : "text-foreground/80")}>
                         {description || label}
                     </span>
-                    {description && (
-                        <span className="truncate font-mono text-[10px] uppercase tracking-[.14em] text-muted-foreground">
-                            {label}
-                        </span>
-                    )}
+                {/*    {description && (*/}
+                {/*    <span className="truncate font-mono text-[10px] uppercase tracking-[.14em] text-muted-foreground">*/}
+                {/*            {label}*/}
+                {/*        </span>*/}
+                {/*)}*/}
                 </span>
                 {!isPending && !isError && (
                     <Check className="size-3 shrink-0 text-accent" strokeWidth={2.5} />
