@@ -1,10 +1,10 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createXai } from "@ai-sdk/xai";
+import { createDeepSeek } from '@ai-sdk/deepseek';
 import type { LanguageModel } from "ai";
 
-export type ProviderId = "openai" | "anthropic" | "google" | "xai";
+export type ProviderId = "openai" | "anthropic" | "google" | "deepseek" ;
 
 export interface ProviderConfig {
     id: ProviderId;
@@ -37,11 +37,11 @@ export const MODELPROVIDERS: ProviderConfig[] = [
         icon: "/googlegemini.svg",
     },
     {
-        id: "xai",
-        name: "Grok (xAI)",
-        defaultModel: "grok-4",
-        models: ["grok-4-1-fast-reasoning", "grok-4", "grok-3"],
-        icon: "/xai.svg",
+        id: "deepseek",
+        name: "DeepSeek",
+        defaultModel: "deepseek-v4-flash",
+        models: ["deepseek-v4-pro","deepseek-v4-flash"],
+        icon: "/deepseek.svg",
     },
 ];
 
@@ -65,9 +65,9 @@ export function getModel(providerId: ProviderId, apiKey: string, modelId?: strin
             const google = createGoogleGenerativeAI({ apiKey });
             return google(model);
         }
-        case "xai": {
-            const xai = createXai({ apiKey });
-            return xai(model);
+        case "deepseek": {
+            const deepseek =createDeepSeek({apiKey})
+            return deepseek(model)
         }
     }
 }

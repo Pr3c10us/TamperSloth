@@ -183,10 +183,15 @@ export function useAgent() {
             try {
                 const model = getModel(providerId, apiKey, modelId);
 
-                const providerOptions =
-                    providerId === "anthropic"
-                        ? {anthropic: {thinking: {type: "enabled" as const, budgetTokens: 8000}}}
-                        : undefined;
+                const providerOptions: any = {}
+                if (providerId === "anthropic") {
+                    providerOptions.anthropic = {thinking: {type: "enabled" as const, budgetTokens: 8000}}
+                } else if (providerId === "deepseek") {
+                    providerOptions.deepseek = {
+                        thinking: {type: 'enabled'},
+                        reasoningEffort: 'max',
+                    }
+                }
 
                 const result = streamText({
                     model,
@@ -244,18 +249,18 @@ export function useAgent() {
                     } else if (part.type === "tool-call") {
                         updateAssistant((m) => {
                             const input = part.input as Record<string, unknown>;
-                            const mergedArgs = { description: "", ...input } as {
+                            const mergedArgs = {description: "", ...input} as {
                                 description: string;
                                 [key: string]: unknown;
                             };
                             const updatedTc = (tc: ToolCall): ToolCall =>
-                                tc.id === part.toolCallId ? { ...tc, args: mergedArgs } : tc;
+                                tc.id === part.toolCallId ? {...tc, args: mergedArgs} : tc;
                             return {
                                 ...m,
                                 toolCalls: m.toolCalls.map(updatedTc),
                                 blocks: m.blocks.map((b) =>
                                     b.type === "tool_call"
-                                        ? { type: "tool_call" as const, toolCall: updatedTc(b.toolCall) }
+                                        ? {type: "tool_call" as const, toolCall: updatedTc(b.toolCall)}
                                         : b,
                                 ),
                             };
