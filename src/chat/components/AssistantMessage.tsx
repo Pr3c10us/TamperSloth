@@ -1,4 +1,4 @@
-import {useCallback, useState} from "react";
+import {memo, useCallback, useState} from "react";
 import {Check, Copy} from "lucide-react";
 import type {ChatMessage} from "@/src/chat/hooks";
 import {MarkdownContent} from "./Markdown";
@@ -41,7 +41,10 @@ interface AssistantMessageProps {
     isLast: boolean;
 }
 
-export function AssistantMessage({msg, isLoading, isLast}: AssistantMessageProps) {
+// Streaming re-renders the whole list on every delta; `msg` keeps its identity
+// for every message except the one being written, so memo skips the rest —
+// without it each token re-parses the markdown of the entire conversation.
+export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, isLast}: AssistantMessageProps) {
     const fullText = msg.blocks
         .filter((b): b is { type: "text"; text: string } => b.type === "text")
         .map((b) => b.text)
@@ -78,4 +81,4 @@ export function AssistantMessage({msg, isLoading, isLast}: AssistantMessageProps
             {fullText && !isLoading && isLast && <CopyMessageButton text={fullText}/>}
         </div>
     );
-}
+});

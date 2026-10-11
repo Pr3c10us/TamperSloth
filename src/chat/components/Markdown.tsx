@@ -2,7 +2,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { useState, useCallback, useMemo } from "react";
+import { memo, useState, useCallback, useMemo } from "react";
 import { Check, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -75,7 +75,9 @@ const codeBlockStyle: React.CSSProperties = {
     lineHeight: "1.6",
 };
 
-export function MarkdownContent({ content, className }: { content: string; className?: string }) {
+// Parsing runs remark + Prism over the whole string, so only re-run it when the
+// text actually changed — during streaming only one block's text is growing.
+export const MarkdownContent = memo(function MarkdownContent({ content, className }: { content: string; className?: string }) {
     const components = useMemo(
         () => ({
             p: ({ children }: any) => (
@@ -192,4 +194,4 @@ export function MarkdownContent({ content, className }: { content: string; class
             </Markdown>
         </div>
     );
-}
+});

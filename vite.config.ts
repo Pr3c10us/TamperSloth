@@ -1,6 +1,5 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { viteStaticCopy } from "vite-plugin-static-copy";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
@@ -14,18 +13,12 @@ export default defineConfig({
       "@": resolve(dirname(fileURLToPath(import.meta.url)), "."),
     },
   },
-  plugins: [
-    react(),
-    tailwindcss(),
-    viteStaticCopy({
-      targets: [
-        {
-          src: "public/manifest.json",
-          dest: ".",
-        },
-      ],
-    }),
-  ],
+  // No static-copy plugin for the manifest: Vite's default publicDir already
+  // copies the contents of public/ (manifest.json, icons, favicon) to the root
+  // of outDir. Copying it a second time produced extension/public/manifest.json
+  // alongside extension/manifest.json, which the Chrome Web Store rejects as
+  // "More than one manifest found in package".
+  plugins: [react(), tailwindcss()],
   build: {
     outDir: "extension",
     rollupOptions: {
