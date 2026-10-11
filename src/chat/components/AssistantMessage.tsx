@@ -6,6 +6,8 @@ import {ToolCallInline} from "./ToolCallInline";
 import {ThinkingBlock} from "./ThinkingBlock";
 import {Button} from "@/components/ui/button";
 import {StreamingDots} from "./StreamingDots";
+import {formatElapsedTime} from "../lib/efficiency";
+import {estimateRunCost, formatCost} from "../lib/pricing";
 
 function TextBlockContent({text}: { text: string }) {
     return (
@@ -45,6 +47,8 @@ interface AssistantMessageProps {
 // for every message except the one being written, so memo skips the rest —
 // without it each token re-parses the markdown of the entire conversation.
 export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, isLast}: AssistantMessageProps) {
+    const [showCost, setShowCost] = useState(false);
+    const cost = showCost && msg.runMetrics ? estimateRunCost(msg.runMetrics) : undefined;
     const fullText = msg.blocks
         .filter((b): b is { type: "text"; text: string } => b.type === "text")
         .map((b) => b.text)
@@ -78,6 +82,26 @@ export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, 
                 })}
             </div>
             {isLoading && isLast && <StreamingDots/>}
+            {msg.runMetrics && !(isLoading && isLast) && (
+                <button
+                    type="button"
+                    onClick={() => setShowCost(previous => !previous)}
+                    aria-pressed={showCost}
+                    aria-label={showCost ? "Show token counts" : "Show estimated costs in USD"}
+                    title={showCost
+                        ? `${msg.runMetrics.modelId ?? "Model unknown"} · Estimated USD cost at standard API rates. Click to show tokens.`
+                        : "Click to show estimated input and output costs in USD"}
+                    className="self-start cursor-pointer rounded-sm text-left text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
+                >
+                    {formatElapsedTime(msg.runMetrics.elapsedMs)} elapsed
+                    {msg.runMetrics.total?.input !== undefined && (showCost
+                        ? ` · ${formatCost(cost?.input)} input cost`
+                        : ` · ${msg.runMetrics.total.input.toLocaleString()} input tokens`)}
+                    {msg.runMetrics.total?.output !== undefined && (showCost
+                        ? ` · ${formatCost(cost?.output)} output cost`
+                        : ` · ${msg.runMetrics.total.output.toLocaleString()} output tokens`)}
+                </button>
+            )}
             {fullText && !isLoading && isLast && <CopyMessageButton text={fullText}/>}
         </div>
     );

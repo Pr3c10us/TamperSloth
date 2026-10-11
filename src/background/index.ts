@@ -314,10 +314,25 @@ chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
                 if (!tab?.windowId) throw new Error('No window for tab');
                 await chrome.windows.update(tab.windowId, {focused: true});
                 await chrome.tabs.update(message.tabId, {active: true});
-                const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+                let dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
                     format: 'jpeg',
                     quality: 80,
                 });
+                if (message.maxWidth && message.maxWidth > 0) {
+                    const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
+                    try {
+                        if (bitmap.width > message.maxWidth) {
+                            const width = message.maxWidth;
+                            const canvas = new OffscreenCanvas(width, Math.max(1, Math.round(bitmap.height * width / bitmap.width)));
+                            canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+                            const blob = await canvas.convertToBlob({type: 'image/jpeg', quality: 0.8});
+                            const bytes = new Uint8Array(await blob.arrayBuffer());
+                            let binary = '';
+                            for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+                            dataUrl = 'data:image/jpeg;base64,' + btoa(binary);
+                        }
+                    } finally { bitmap.close(); }
+                }
                 sendResponse({dataUrl});
             } catch (e: any) {
                 sendResponse({error: e.message});

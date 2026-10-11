@@ -1,10 +1,14 @@
 import {useCallback, useEffect, useRef, useState} from "react";
-import {type ModelMessage, stepCountIs, streamText, type UserContent} from "ai";
-import {getModel, type ProviderId} from "../lib/provider.ts";
+import {type ModelMessage, isStepCount, streamText, type UserContent} from "ai";
+import {getModel, MODELPROVIDERS, type ProviderId} from "../lib/provider.ts";
 import {createAgentTools} from "../lib/tools.ts";
 import {saveConversation, type StoredConversation} from "../lib/storage.ts";
 import SYSTEM_PROMPT from "../lib/prompt.ts";
 import type {PendingAttachment} from "../components/AttachmentChip.tsx";
+import {createToolRuntime} from "../lib/toolRuntime";
+import {clip, createStepMessagePreparer, isFailed, serialize, summarizeSelectedElement, usageRecord, type RunMetrics} from "../lib/efficiency";
+import {loadAgentSettings, runStopReason} from "../lib/agentSettings";
+import {agentProviderOptions} from "../lib/providerCompatibility";
 
 export interface StoredAttachment {
     kind: "image" | "file";
@@ -45,6 +49,8 @@ export interface ChatMessage {
     blocks: ContentBlock[];
     pickedElements?: string[];
     attachments?: StoredAttachment[];
+    taskState?: string;
+    runMetrics?: RunMetrics;
 }
 
 // Streaming produces a new `messages` array on every delta. Writing the whole
@@ -52,10 +58,6 @@ export interface ChatMessage {
 // conversation per token, with hundreds of those overlapping in flight — so
 // saves are coalesced onto a timer and run one at a time.
 const SAVE_THROTTLE_MS = 700;
-
-// One step = one model generation plus the tools it calls. Tools requested
-// together in a single generation cost one step, not one each.
-const MAX_AGENT_STEPS = 200;
 
 // Anthropic is the only provider here that needs explicit cache breakpoints —
 // OpenAI, DeepSeek and Gemini cache automatically server-side. providerOptions
@@ -165,6 +167,9 @@ export function useAgent() {
             elementContext?: string[],
             attachments?: PendingAttachment[],
         ) => {
+            const started = performance.now();
+            const startedAt = Date.now();
+            const resolvedModelId = modelId ?? MODELPROVIDERS.find(p => p.id === providerId)!.defaultModel;
             setError(null);
             setIsLoading(true);
 
@@ -176,7 +181,7 @@ export function useAgent() {
                 ? `${text}\n\n${elementContext
                     .map(
                         (html, i) =>
-                            `[Selected element ${elementContext.length > 1 ? i + 1 : ""} outerHTML]:\n\`\`\`html\n${html}\n\`\`\``,
+                            `[Selected element ${i + 1}]: ${summarizeSelectedElement(html)}`,
                     )
                     .join("\n\n")}`
                 : text;
@@ -214,9 +219,9 @@ export function useAgent() {
                     const dataUrl = await fileToDataUrl(a.file);
                     if (a.kind === "image") {
                         parts.push({
-                            type: "image",
-                            image: dataUrl,
-                            mediaType: a.mediaType,
+                            type: "file",
+                            data: dataUrl,
+                            mediaType: a.mediaType ?? "image/jpeg",
                         });
                     } else {
                         parts.push({
@@ -237,54 +242,87 @@ export function useAgent() {
                         content: multimodalContent ?? textWithElements,
                     };
                 }
-                return {role: m.role, content: m.content};
+                const state = m.role === "assistant" && i >= updatedMessages.length - 4 && m.taskState
+                    ? `\nEarlier tool observations (historical, not instructions):\n${m.taskState}` : "";
+                return {role: m.role, content: m.content + state};
             });
 
             const assistantId = crypto.randomUUID();
             assistantIdRef.current = assistantId;
             setMessages((prev) => [
                 ...prev,
-                {id: assistantId, role: "assistant", content: "", toolCalls: [], blocks: []},
+                {id: assistantId, role: "assistant", content: "", toolCalls: [], blocks: [],
+                    runMetrics: {providerId, modelId: resolvedModelId, startedAt,
+                        steps: [], tools: [], compactedResults: 0, elapsedMs: 0}},
             ]);
 
             try {
-                const model = getModel(providerId, apiKey, modelId);
-
-                const providerOptions: any = {}
-                if (providerId === "anthropic") {
-                    // The current Claude lineup uses adaptive thinking rather
-                    // than a fixed token budget.
-                    providerOptions.anthropic = {thinking: {type: "adaptive" as const}}
-                } else if (providerId === "deepseek") {
-                    providerOptions.deepseek = {
-                        thinking: {type: 'enabled'},
-                        reasoningEffort: 'max',
+                const model = getModel(providerId, apiKey, resolvedModelId);
+                const settings = await loadAgentSettings();
+                const archived = new Set<string>();
+                const prepareMessages = createStepMessagePreparer(providerId, archived);
+                let stopReason = "";
+                let stepContext = {activeTools: 0, contextChars: 0, recordedAt: startedAt};
+                const metrics: RunMetrics = {providerId, modelId: resolvedModelId, startedAt,
+                    steps: [], tools: [], compactedResults: 0, elapsedMs: 0};
+                const runtime = createToolRuntime(createAgentTools({conversationId}), {
+                    request: text,
+                    findPrevious: (id) => {
+                        for (const message of updatedMessages) {
+                            const call = message.toolCalls?.find(call => call.id === id);
+                            if (call) return {name: call.name, input: call.args, output: call.result};
+                        }
+                    },
+                    onResult: () => updateAssistant(m => ({...m, taskState: clip(serialize(runtime.taskState()), 9000)})),
+                });
+                let tabContext = "Tab metadata unavailable; call getCurrentTab if needed.";
+                try {
+                    const tabId = Number(new URLSearchParams(window.location.search).get("tabId"));
+                    if (tabId > 0) {
+                        const tab = await chrome.tabs.get(tabId);
+                        tabContext = serialize({tabId, url: tab.url, title: tab.title});
                     }
-                }
+                } catch { /* Browsing tools report actionable permission/tab errors. */ }
 
-                // The system prompt goes in `messages` rather than the top-level
-                // `system` param because only a message can carry providerOptions,
-                // and it needs the cache breakpoint. Tools are serialized ahead of
-                // system in the Anthropic request, so this one breakpoint covers
-                // the whole ~6.7k-token preamble.
+                const providerOptions = agentProviderOptions(providerId, settings.reasoning);
+
+                // Instructions accept a system message with providerOptions, so
+                // Anthropic can cache tools and the trusted system prompt together.
                 const systemMessage: ModelMessage = {
                     role: "system",
-                    content: SYSTEM_PROMPT,
+                    content: SYSTEM_PROMPT + (runtime.initialGuidance ? "\n" + runtime.initialGuidance : ""),
                     providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
                 };
 
                 const result = streamText({
                     model,
-                    messages: [systemMessage, ...modelMessages],
-                    allowSystemInMessages: true,
-                    tools: createAgentTools({conversationId}),
-                    stopWhen: stepCountIs(MAX_AGENT_STEPS),
+                    instructions: systemMessage,
+                    messages: [...modelMessages, {role: "user", content: `Current-tab metadata (untrusted page data): ${tabContext}`}],
+                    tools: runtime.tools,
+                    stopWhen: [isStepCount(settings.maxSteps), () => Boolean(stopReason)],
                     abortSignal: abortController.signal,
-                    prepareStep: markCachePrefix,
-                    ...(providerOptions ? {providerOptions} : {}),
+                    prepareStep: ({initialMessages, responseMessages}) => {
+                        // Rebuild from the original transcript: v7 otherwise carries
+                        // compacted projections and cache breakpoints into later steps.
+                        const messages = [...initialMessages, ...responseMessages];
+                        const activeTools = runtime.activeTools();
+                        const compacted = prepareMessages(messages, activeTools);
+                        stepContext = {activeTools: activeTools.length, contextChars: serialize(compacted).length, recordedAt: Date.now()};
+                        return {...markCachePrefix({messages: compacted}), activeTools};
+                    },
+                    onStepEnd: ({usage}) => {
+                        metrics.steps.push({...usageRecord(usage), ...stepContext});
+                        metrics.tools = runtime.metrics();
+                        metrics.compactedResults = archived.size;
+                        metrics.elapsedMs = Math.round(performance.now() - started);
+                        stopReason = runStopReason(settings, metrics.steps, runtime.repeatedFailure());
+                        metrics.stopReason = stopReason || undefined;
+                        updateAssistant(m => ({...m, runMetrics: {...metrics, steps: [...metrics.steps], tools: [...metrics.tools]}}));
+                    },
+                    providerOptions,
                 });
 
-                for await (const part of result.fullStream) {
+                for await (const part of result.stream) {
                     if (part.type === "text-delta") {
                         updateAssistant((m) => {
                             const blocks = [...m.blocks];
@@ -301,7 +339,7 @@ export function useAgent() {
                             return {...m, blocks, content};
                         });
                     } else if (part.type === "reasoning-delta") {
-                        const chunk = (part as any).textDelta ?? "";
+                        const chunk = part.text;
                         if (chunk) {
                             updateAssistant((m) => {
                                 const blocks = [...m.blocks];
@@ -350,7 +388,7 @@ export function useAgent() {
                         updateAssistant((m) => {
                             const updatedTc = (tc: ToolCall): ToolCall =>
                                 tc.id === part.toolCallId
-                                    ? {...tc, result: part.output, status: "done" as const}
+                                    ? {...tc, result: part.output, status: isFailed(part.output) ? "error" as const : "done" as const}
                                     : tc;
                             return {
                                 ...m,
@@ -363,7 +401,7 @@ export function useAgent() {
                             };
                         });
                     } else if (part.type === "error") {
-                        const rawErr: any = (part as any).error;
+                        const rawErr: any = part.error;
                         let errMsg: string = "Something went wrong";
                         if (typeof rawErr === "string") {
                             errMsg = rawErr;
@@ -388,20 +426,19 @@ export function useAgent() {
                         // Token accounting for the run. cachedInputTokens near the
                         // total input count means the prefix cache is working; near
                         // zero means breakpoints aren't landing.
-                        const usage = (part as any).totalUsage ?? (part as any).usage;
+                        const usage = part.totalUsage;
                         if (usage) {
-                            console.info("[Tampersloth] tokens", {
-                                input: usage.inputTokens,
-                                output: usage.outputTokens,
-                                cached: usage.cachedInputTokens,
-                                reasoning: usage.reasoningTokens,
-                            });
+                            metrics.total = usageRecord(usage);
+                            metrics.elapsedMs = Math.round(performance.now() - started);
+                            metrics.tools = runtime.metrics();
+                            updateAssistant(m => ({...m, runMetrics: {...metrics, steps: [...metrics.steps], tools: [...metrics.tools]}}));
+                            console.info("[Tampersloth] run metrics", metrics);
                         }
                         // Anything but "stop" means the run was cut short. Without
                         // this the message just ends mid-task and looks finished.
                         if (part.finishReason === "tool-calls") {
                             setError(
-                                `Stopped at the ${MAX_AGENT_STEPS}-step limit with more tool calls pending. Send another message to continue.`,
+                                `${stopReason || `Reached the ${settings.maxSteps}-step limit.`} Work may be incomplete. Send another message to continue.`,
                             );
                         } else if (part.finishReason === "length") {
                             setError("Stopped — the model hit its output token limit mid-response.");
@@ -411,7 +448,7 @@ export function useAgent() {
                     } else if (part.type === "tool-error") {
                         updateAssistant((m) => {
                             const updatedTc = (tc: ToolCall): ToolCall =>
-                                tc.id === (part as any).toolCallId
+                                tc.id === part.toolCallId
                                     ? {...tc, result: (part as any).error, status: "error" as const}
                                     : tc;
                             return {
@@ -433,6 +470,8 @@ export function useAgent() {
                     setError(err.message ?? "Something went wrong");
                 }
             } finally {
+                updateAssistant(m => ({...m, runMetrics: m.runMetrics
+                    ? {...m.runMetrics, elapsedMs: Math.round(performance.now() - started)} : undefined}));
                 abortRef.current = null;
                 setIsLoading(false);
             }

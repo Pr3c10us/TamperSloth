@@ -1,6 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createGoogle } from "@ai-sdk/google";
 import { createDeepSeek } from '@ai-sdk/deepseek';
 import type { LanguageModel } from "ai";
 
@@ -71,28 +71,29 @@ export function isKnownModel(providerId: ProviderId, modelId: string): boolean {
     return !!config?.models.includes(modelId);
 }
 
-export function getModel(providerId: ProviderId, apiKey: string, modelId?: string): LanguageModel {
+export function getModel(providerId: ProviderId, apiKey: string, modelId?: string, transport?: typeof fetch): LanguageModel {
     const config = MODELPROVIDERS.find((p) => p.id === providerId)!;
     const model = modelId ?? config.defaultModel;
 
     switch (providerId) {
         case "openai": {
-            const openai = createOpenAI({ apiKey });
+            const openai = createOpenAI({ apiKey, fetch: transport });
             return openai(model);
         }
         case "anthropic": {
             const anthropic = createAnthropic({
                 apiKey,
+                fetch: transport,
                 headers: { "anthropic-dangerous-direct-browser-access": "true" },
             });
             return anthropic(model);
         }
         case "google": {
-            const google = createGoogleGenerativeAI({ apiKey });
+            const google = createGoogle({ apiKey, fetch: transport });
             return google(model);
         }
         case "deepseek": {
-            const deepseek =createDeepSeek({apiKey})
+            const deepseek =createDeepSeek({apiKey, fetch: transport})
             return deepseek(model)
         }
     }
