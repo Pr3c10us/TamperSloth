@@ -1,9 +1,12 @@
+import { memo } from "react";
 import type { ChatMessage } from "../hooks/useAgent";
 import { MarkdownContent } from "./Markdown";
 import { PickedElementChip } from "./PickedElementChip";
 import { AttachmentChip } from "./AttachmentChip";
 
-export function UserMessage({ msg }: { msg: ChatMessage }) {
+// Streaming re-renders the whole list on every delta; `msg` keeps its identity
+// for every message except the one being written, so memo skips the rest.
+export const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage }) {
     const picked = msg.pickedElements ?? [];
     const attachments = msg.attachments ?? [];
     return (
@@ -32,4 +35,4 @@ export function UserMessage({ msg }: { msg: ChatMessage }) {
             )}
         </div>
     );
-}
+});

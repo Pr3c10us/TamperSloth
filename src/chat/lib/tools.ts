@@ -23,13 +23,21 @@ import { skills, type SkillId } from "./skills";
 
 const tabId = Number(new URLSearchParams(window.location.search).get("tabId"));
 
+// Output budgets. Every tool result stays in the message history and is re-sent
+// on each subsequent step, so an uncapped result is charged many times over.
+const MAX_DOM_NODES = 1500;
+const MAX_CONSOLE_LOGS = 50;
+const DEFAULT_VIEW_LINES = 400;
+
 const responseFormatSchema = z
     .enum(["concise", "detailed"])
     .optional()
-    .default("detailed")
+    .default("concise")
     .describe(
-        'Response verbosity: "concise" returns minimal fields for token efficiency, ' +
-        '"detailed" (default) returns full information.'
+        'Response verbosity. "concise" (default) returns the minimal useful fields and is ' +
+        'the right choice almost always. Only pass "detailed" when you specifically need ' +
+        'full element attributes, computed styles, or positions — it costs several times ' +
+        'more tokens for information you usually will not read.'
     );
 
 function numberLines(content: string, startLine: number, endLine: number): string {
@@ -194,7 +202,10 @@ export function createAgentTools(context: { conversationId: string }) {
                     .number()
                     .int()
                     .optional()
-                    .describe('Optional end line (1-indexed, inclusive). Use -1 or omit for EOF.'),
+                    .describe(
+                        `Optional end line (1-indexed, inclusive). Omitted, reads a ${DEFAULT_VIEW_LINES}-line ` +
+                        'window from start_line. Use -1 for the whole file, which is rarely necessary.',
+                    ),
             }),
             execute: async ({path, start_line, end_line}) => {
                 try {
@@ -210,13 +221,26 @@ export function createAgentTools(context: { conversationId: string }) {
 
                     const totalLines = content.split('\n').length;
                     const start = start_line ?? 1;
-                    const end = end_line == null || end_line === -1 ? totalLines : end_line;
+                    // Defaulting to EOF meant every re-view of a long script paid
+                    // for the whole file again. -1 still opts into the full read.
+                    const end =
+                        end_line === -1
+                            ? totalLines
+                            : end_line != null
+                                ? end_line
+                                : Math.min(totalLines, start + DEFAULT_VIEW_LINES - 1);
 
                     return {
                         type: 'file' as const,
                         path,
                         totalLines,
                         viewedRange: [start, end] as [number, number],
+                        ...(end < totalLines && {
+                            truncated: true,
+                            hint:
+                                `Showing lines ${start}-${end} of ${totalLines}. Pass start_line/end_line ` +
+                                "for a different window, or end_line: -1 for the whole file.",
+                        }),
                         content: numberLines(content, start, end),
                     };
                 } catch (err) {
@@ -354,14 +378,41 @@ export function createAgentTools(context: { conversationId: string }) {
 
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId: tab.id},
-                    func: (sel: string | null, format: string) => {
+                    func: (sel: string | null, format: string, maxNodes: number) => {
                         const root = sel ? document.querySelector(sel) : document.body;
-                        if (!root) return null;
+                        if (!root) {
+                            return {
+                                error: `No element found for selector: ${sel}`,
+                                hint: "Omit selector to capture from document.body, or call getPageText to find valid landmarks.",
+                            };
+                        }
 
                         const concise = format === "concise";
 
+                        // Depth alone does not bound this — a page can hold
+                        // thousands of elements within six levels.
+                        let budget = maxNodes;
+                        let omitted = 0;
+                        const omittedSubtrees: Array<{ selector: string; nodes: number }> = [];
+
+                        const describe = (el: Element) => {
+                            const id = el.id ? "#" + el.id : "";
+                            const cls = el.classList.length
+                                ? "." + Array.from(el.classList).slice(0, 2).join(".")
+                                : "";
+                            return el.tagName.toLowerCase() + id + cls;
+                        };
+
+                        const countNodes = (el: Element): number => {
+                            let n = 1;
+                            for (const c of Array.from(el.children)) n += countNodes(c);
+                            return n;
+                        };
+
                         function simplify(el: Element, depth = 0): any {
                             if (depth > 6) return "...";
+                            if (budget <= 0) return null;
+                            budget--;
 
                             const info: any = {tag: el.tagName.toLowerCase()};
 
@@ -394,21 +445,44 @@ export function createAgentTools(context: { conversationId: string }) {
                                 if (rect.width === 0 && rect.height === 0) info.hidden = true;
                             }
 
-                            const children = Array.from(el.children)
-                                .map((c) => simplify(c, depth + 1))
-                                .filter(Boolean);
+                            const children: any[] = [];
+                            for (const c of Array.from(el.children)) {
+                                if (budget <= 0) {
+                                    // Record what was skipped so the agent can
+                                    // re-query that subtree instead of guessing.
+                                    const size = countNodes(c);
+                                    omitted += size;
+                                    omittedSubtrees.push({selector: describe(c), nodes: size});
+                                    continue;
+                                }
+                                const child = simplify(c, depth + 1);
+                                if (child) children.push(child);
+                            }
                             if (children.length) info.children = children;
 
                             return info;
                         }
 
+                        const tree = simplify(root);
+
                         return {
                             url: location.href,
                             title: document.title,
-                            tree: simplify(root),
+                            tree,
+                            ...(omitted > 0 && {
+                                truncated: true,
+                                omittedNodes: omitted,
+                                largestOmitted: omittedSubtrees
+                                    .sort((a, b) => b.nodes - a.nodes)
+                                    .slice(0, 5),
+                                hint:
+                                    `Node budget (${maxNodes}) exhausted — ${omitted} nodes omitted. ` +
+                                    "Re-run with `selector` scoped to one of largestOmitted rather than " +
+                                    "capturing the whole page again.",
+                            }),
                         };
                     },
-                    args: [selector ?? null, responseFormat ?? "detailed"],
+                    args: [selector ?? null, responseFormat ?? "concise", MAX_DOM_NODES],
                 });
 
                 return result.result;
@@ -491,7 +565,7 @@ export function createAgentTools(context: { conversationId: string }) {
                                 };
                             });
                     },
-                    args: [selector, responseFormat ?? "detailed"],
+                    args: [selector, responseFormat ?? "concise"],
                 });
                 return result.result;
             },
@@ -522,7 +596,7 @@ export function createAgentTools(context: { conversationId: string }) {
                 responseFormat: responseFormatSchema,
             }),
             execute: async ({selector, maxLength, responseFormat}) => {
-                const effectiveMax = responseFormat === "concise" && !maxLength ? 3000 : (maxLength ?? 10000);
+                const effectiveMax = maxLength ?? (responseFormat === "detailed" ? 10000 : 3000);
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId},
                     func: (sel: string | null, max: number, format: string) => {
@@ -571,7 +645,7 @@ export function createAgentTools(context: { conversationId: string }) {
                             }),
                         };
                     },
-                    args: [selector ?? null, effectiveMax, responseFormat ?? "detailed"],
+                    args: [selector ?? null, effectiveMax, responseFormat ?? "concise"],
                 });
                 return result.result;
             },
@@ -620,22 +694,25 @@ export function createAgentTools(context: { conversationId: string }) {
                 storageType: z
                     .enum(["local", "session", "both"])
                     .optional()
-                    .default("both")
+                    .default("local")
                     .describe(
-                        'Which storage to read: "local", "session", or "both" (default: "both")'
+                        'Which storage to read: "local" (default), "session", or "both". ' +
+                        'Only ask for "both" when you actually need session storage too — it doubles the output.'
                     ),
                 keyPrefix: z
                     .string()
                     .optional()
                     .describe(
-                        'Only return keys starting with this prefix (e.g. "auth_", "user_").'
+                        'Only return keys starting with this prefix (e.g. "auth_", "user_"). ' +
+                        "Strongly preferred over reading every key."
                     ),
                 maxKeys: z
                     .number()
                     .optional()
-                    .default(100)
+                    .default(25)
                     .describe(
-                        "Maximum number of keys to return per storage type (default: 100)"
+                        "Maximum number of keys to return per storage type (default: 25). " +
+                        "Raise only when a prefix search has already narrowed the set."
                     ),
             }),
             execute: async ({storageType, keyPrefix, maxKeys}) => {
@@ -649,12 +726,21 @@ export function createAgentTools(context: { conversationId: string }) {
                                 const key = storage.key(i)!;
                                 if (prefix && !key.startsWith(prefix)) continue;
                                 let value = storage.getItem(key) ?? "";
-                                if (value.length > 1000)
-                                    value = value.slice(0, 1000) + "...[truncated]";
+                                if (value.length > 300)
+                                    value = value.slice(0, 300) + `...[truncated, ${value.length} chars total]`;
                                 entries[key] = value;
                                 count++;
                             }
-                            return {name, count, total: storage.length, entries};
+                            return {
+                                name,
+                                count,
+                                total: storage.length,
+                                ...(storage.length > count && {
+                                    truncated: true,
+                                    hint: "Not all keys returned. Use keyPrefix to target what you need.",
+                                }),
+                                entries,
+                            };
                         };
 
                         const data: any = {origin: location.origin};
@@ -669,7 +755,7 @@ export function createAgentTools(context: { conversationId: string }) {
                         }
                         return data;
                     },
-                    args: [storageType ?? "both", keyPrefix ?? null, maxKeys ?? 100],
+                    args: [storageType ?? "local", keyPrefix ?? null, maxKeys ?? 25],
                 });
                 return result.result;
             },
@@ -1311,7 +1397,7 @@ export function createAgentTools(context: { conversationId: string }) {
                             }, 200);
                         });
                     },
-                    args: [selector, index ?? 0, waitAfter ?? 500, responseFormat ?? "detailed"],
+                    args: [selector, index ?? 0, waitAfter ?? 500, responseFormat ?? "concise"],
                 });
 
                 const afterTab = await chrome.tabs.get(tabId);
@@ -1498,7 +1584,7 @@ export function createAgentTools(context: { conversationId: string }) {
                         clearFirst ?? true,
                         pressEnter ?? false,
                         index ?? 0,
-                        responseFormat ?? "detailed",
+                        responseFormat ?? "concise",
                     ],
                 });
                 return result.result;
@@ -1605,7 +1691,7 @@ export function createAgentTools(context: { conversationId: string }) {
                             totalOptions: options.length,
                         };
                     },
-                    args: [selector, value ?? null, label ?? null, index ?? null, responseFormat ?? "detailed"],
+                    args: [selector, value ?? null, label ?? null, index ?? null, responseFormat ?? "concise"],
                 });
                 return result.result;
             },
@@ -1737,7 +1823,7 @@ export function createAgentTools(context: { conversationId: string }) {
                         amount ?? null,
                         selector ?? null,
                         (behavior ?? "smooth") as ScrollBehavior,
-                        responseFormat ?? "detailed",
+                        responseFormat ?? "concise",
                     ],
                 });
                 return result.result;
@@ -1805,7 +1891,7 @@ export function createAgentTools(context: { conversationId: string }) {
 
                         return {submitted: true, ...(formInfo && {form: formInfo})};
                     },
-                    args: [selector, responseFormat ?? "detailed"],
+                    args: [selector, responseFormat ?? "concise"],
                 });
 
                 const navigated = await new Promise<boolean>((resolve) => {
@@ -1993,11 +2079,31 @@ export function createAgentTools(context: { conversationId: string }) {
                             ...(firstError && {firstError: {type: firstError.type, args: firstError.args}}),
                         };
                     } else {
+                        // Was unbounded — a chatty page could return thousands of
+                        // entries. Errors and warnings are what debugging needs, so
+                        // they survive truncation; the rest fills the remainder with
+                        // the most recent entries.
+                        const isSevere = (l: { type: string }) =>
+                            l.type === "error" ||
+                            l.type === "uncaught-error" ||
+                            l.type === "unhandled-rejection" ||
+                            l.type === "warn";
+                        const severe = logs.filter(isSevere).slice(0, MAX_CONSOLE_LOGS);
+                        const filler = logs
+                            .filter((l) => !isSevere(l))
+                            .slice(-Math.max(0, MAX_CONSOLE_LOGS - severe.length));
+                        const kept = [...severe, ...filler];
+
                         result.console = {
-                            logs,
+                            logs: kept,
                             count: logs.length,
-                            ...(logs.length > 50 && {
-                                hint: "Many console entries captured. Errors and warnings are typically most relevant for debugging.",
+                            ...(kept.length < logs.length && {
+                                truncated: true,
+                                omitted: logs.length - kept.length,
+                                hint:
+                                    `Showing ${kept.length} of ${logs.length} entries, errors and ` +
+                                    "warnings first. Re-run after reproducing a narrower case if you " +
+                                    "need the rest.",
                             }),
                         };
                     }
@@ -2008,8 +2114,10 @@ export function createAgentTools(context: { conversationId: string }) {
                         target: {tabId},
                         world: "MAIN",
                         func: (shouldClear: boolean, filter: string | null) => {
-                            const MAX_ENTRIES = 200;
-                            const MAX_BODY = 2000;
+                            // 200 x 2000 chars of bodies was ~100k tokens per call,
+                            // re-sent on every later step.
+                            const MAX_ENTRIES = 50;
+                            const MAX_BODY = 600;
                             const w = window as any;
 
                             // ── Install interceptors on first call ──
@@ -2042,9 +2150,11 @@ export function createAgentTools(context: { conversationId: string }) {
                                         const response: Response = await origFetch.apply(w, args);
                                         entry.status = response.status;
                                         entry.statusText = response.statusText;
-                                        entry.responseHeaders = Object.fromEntries(
-                                            response.headers.entries()
-                                        );
+                                        // Full response headers on every request cost far
+                                        // more than they answer; content-type is the one
+                                        // that actually gets read.
+                                        const contentType = response.headers.get("content-type");
+                                        if (contentType) entry.contentType = contentType;
 
                                         const clone = response.clone();
                                         try {

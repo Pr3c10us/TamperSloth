@@ -1,6 +1,6 @@
 import {useEffect, useMemo, useState} from "react";
 import {Check, ChevronDown, ChevronUp, HardDrive, KeyRound, Search, X} from "lucide-react";
-import {MODELPROVIDERS, type ProviderId} from "../lib/provider";
+import {MODELPROVIDERS, isKnownModel, type ProviderId} from "../lib/provider";
 import {loadSelectedModel, saveSelectedModel} from "../lib/storage";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
@@ -192,9 +192,18 @@ export async function loadInitialSelectedModel(): Promise<SelectedModelEntry | n
     if (!saved) return null;
     const provider = MODELPROVIDERS.find((p) => p.id === saved.providerId);
     if (!provider) return null;
+    // A model retired since the selection was saved would otherwise keep being
+    // sent to the API and 404 on every request, with the picker still showing
+    // the dead ID as if it were fine.
+    const modelId = isKnownModel(saved.providerId, saved.modelId)
+        ? saved.modelId
+        : provider.defaultModel;
+    if (modelId !== saved.modelId) {
+        void saveSelectedModel(saved.providerId, modelId);
+    }
     return {
         providerId: saved.providerId,
-        modelId: saved.modelId,
+        modelId,
         providerName: provider.name,
         providerIcon: provider.icon,
     };

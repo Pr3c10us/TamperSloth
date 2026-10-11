@@ -47,6 +47,46 @@ export interface ChatMessage {
     attachments?: StoredAttachment[];
 }
 
+// Streaming produces a new `messages` array on every delta. Writing the whole
+// conversation store on each one means a full read + serialize + write of every
+// conversation per token, with hundreds of those overlapping in flight — so
+// saves are coalesced onto a timer and run one at a time.
+const SAVE_THROTTLE_MS = 700;
+
+// One step = one model generation plus the tools it calls. Tools requested
+// together in a single generation cost one step, not one each.
+const MAX_AGENT_STEPS = 200;
+
+// Anthropic is the only provider here that needs explicit cache breakpoints —
+// OpenAI, DeepSeek and Gemini cache automatically server-side. providerOptions
+// are namespaced per provider, so this is inert for the other three.
+const ANTHROPIC_CACHE_BREAKPOINT = {
+    anthropic: {cacheControl: {type: "ephemeral" as const}},
+} as const;
+
+/**
+ * Rolling cache breakpoint at the tail of each step's message list.
+ *
+ * Anthropic only re-reads a cached prefix up to a breakpoint. The one on the
+ * system message covers tools + system, but without a second one at the tail
+ * every tool result accumulated so far is re-billed at full input rate on each
+ * of the up-to-200 steps. With it, each step reads the whole prior prefix from
+ * cache and only writes the delta.
+ */
+function markCachePrefix({messages}: { messages: ModelMessage[] }) {
+    if (messages.length === 0) return {};
+    const last = messages[messages.length - 1];
+    return {
+        messages: [
+            ...messages.slice(0, -1),
+            {
+                ...last,
+                providerOptions: {...last.providerOptions, ...ANTHROPIC_CACHE_BREAKPOINT},
+            } as ModelMessage,
+        ],
+    };
+}
+
 function deriveTitle(messages: ChatMessage[]): string {
     const first = messages.find((m) => m.role === "user");
     if (!first) return "New conversation";
@@ -63,22 +103,49 @@ export function useAgent() {
     const assistantIdRef = useRef("");
     const messagesRef = useRef<ChatMessage[]>([]);
     const abortRef = useRef<AbortController | null>(null);
+    const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const pendingSaveRef = useRef<StoredConversation | null>(null);
+    const saveChainRef = useRef<Promise<void>>(Promise.resolve());
 
     useEffect(() => {
         messagesRef.current = messages;
     }, [messages]);
 
+    // Writes whatever snapshot is pending, chained behind any in-flight write so
+    // concurrent read-modify-writes can't drop each other's updates.
+    const flushSave = useCallback(() => {
+        const pending = pendingSaveRef.current;
+        if (!pending) return;
+        pendingSaveRef.current = null;
+        saveChainRef.current = saveChainRef.current
+            .then(() => saveConversation(pending))
+            .catch(() => {});
+    }, []);
+
     useEffect(() => {
         if (messages.length === 0) return;
-        const conversation: StoredConversation = {
+        pendingSaveRef.current = {
             id: conversationId,
             title: deriveTitle(messages),
             messages,
             createdAt: conversationCreatedAt,
             updatedAt: Date.now(),
         };
-        saveConversation(conversation);
-    }, [messages, conversationId, conversationCreatedAt]);
+        // A timer already scheduled will pick up this snapshot when it fires.
+        if (saveTimerRef.current) return;
+        saveTimerRef.current = setTimeout(() => {
+            saveTimerRef.current = null;
+            flushSave();
+        }, SAVE_THROTTLE_MS);
+    }, [messages, conversationId, conversationCreatedAt, flushSave]);
+
+    useEffect(
+        () => () => {
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+            flushSave();
+        },
+        [flushSave],
+    );
 
     const updateAssistant = useCallback(
         (updater: (msg: ChatMessage) => ChatMessage) => {
@@ -185,7 +252,9 @@ export function useAgent() {
 
                 const providerOptions: any = {}
                 if (providerId === "anthropic") {
-                    providerOptions.anthropic = {thinking: {type: "enabled" as const, budgetTokens: 8000}}
+                    // Adaptive, not a fixed budget: budgetTokens is rejected with a
+                    // 400 on Opus 5 / Sonnet 5 / Opus 4.8 / Fable 5.
+                    providerOptions.anthropic = {thinking: {type: "adaptive" as const}}
                 } else if (providerId === "deepseek") {
                     providerOptions.deepseek = {
                         thinking: {type: 'enabled'},
@@ -193,13 +262,25 @@ export function useAgent() {
                     }
                 }
 
+                // The system prompt goes in `messages` rather than the top-level
+                // `system` param because only a message can carry providerOptions,
+                // and it needs the cache breakpoint. Tools are serialized ahead of
+                // system in the Anthropic request, so this one breakpoint covers
+                // the whole ~6.7k-token preamble.
+                const systemMessage: ModelMessage = {
+                    role: "system",
+                    content: SYSTEM_PROMPT,
+                    providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+                };
+
                 const result = streamText({
                     model,
-                    messages: modelMessages,
+                    messages: [systemMessage, ...modelMessages],
+                    allowSystemInMessages: true,
                     tools: createAgentTools({conversationId}),
-                    stopWhen: stepCountIs(50),
+                    stopWhen: stepCountIs(MAX_AGENT_STEPS),
                     abortSignal: abortController.signal,
-                    system: SYSTEM_PROMPT,
+                    prepareStep: markCachePrefix,
                     ...(providerOptions ? {providerOptions} : {}),
                 });
 
@@ -303,6 +384,30 @@ export function useAgent() {
                             if (typeof errMsg !== "string") errMsg = "Something went wrong";
                         }
                         setError(errMsg);
+                    } else if (part.type === "finish") {
+                        // Token accounting for the run. cachedInputTokens near the
+                        // total input count means the prefix cache is working; near
+                        // zero means breakpoints aren't landing.
+                        const usage = (part as any).totalUsage ?? (part as any).usage;
+                        if (usage) {
+                            console.info("[Tampersloth] tokens", {
+                                input: usage.inputTokens,
+                                output: usage.outputTokens,
+                                cached: usage.cachedInputTokens,
+                                reasoning: usage.reasoningTokens,
+                            });
+                        }
+                        // Anything but "stop" means the run was cut short. Without
+                        // this the message just ends mid-task and looks finished.
+                        if (part.finishReason === "tool-calls") {
+                            setError(
+                                `Stopped at the ${MAX_AGENT_STEPS}-step limit with more tool calls pending. Send another message to continue.`,
+                            );
+                        } else if (part.finishReason === "length") {
+                            setError("Stopped — the model hit its output token limit mid-response.");
+                        } else if (part.finishReason === "content-filter") {
+                            setError("Stopped — the response was blocked by a content filter.");
+                        }
                     } else if (part.type === "tool-error") {
                         updateAssistant((m) => {
                             const updatedTc = (tc: ToolCall): ToolCall =>
