@@ -14,42 +14,58 @@ export interface ProviderConfig {
     icon: string;
 }
 
-// Model IDs verified 2026-08-22 against each provider's own docs. Retired IDs
-// are dropped rather than kept as aliases — a saved selection that no longer
-// appears here falls back to the provider's defaultModel (see ModelSelector).
+// Chat/tool-use model IDs verified 2026-10-11 against the official catalogs below.
+// Superseded entries are dropped — a saved selection that no longer appears
+// here falls back to the provider's defaultModel (see ModelSelector).
 export const MODELPROVIDERS: ProviderConfig[] = [
     {
         id: "openai",
         name: "OpenAI",
-        defaultModel: "gpt-5.6-sol",
-        models: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5-pro", "gpt-5.4-mini"],
+        // https://developers.openai.com/api/docs/models
+        defaultModel: "gpt-6.1-sol",
+        models: ["gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna"],
         icon: "/openai.svg",
     },
     {
         id: "anthropic",
         name: "Anthropic",
-        defaultModel: "claude-opus-5",
-        models: ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5", "claude-opus-4-8", "claude-fable-5"],
+        // https://platform.claude.com/docs/en/models/overview
+        defaultModel: "claude-opus-5-5",
+        models: [
+            "claude-opus-5-5",
+            "claude-sonnet-5-5",
+            "claude-haiku-5-5",
+            "claude-fable-5-1",
+        ],
         icon: "/anthropic.svg",
     },
     {
         id: "google",
         name: "Google Gemini",
-        defaultModel: "gemini-3.7-flash",
-        models: ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview"],
+        // https://ai.google.dev/gemini-api/docs/models
+        defaultModel: "gemini-3.8-flash",
+        models: [
+            "gemini-3.8-flash",
+            "gemini-3.6-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-3.1-pro-preview",
+            "gemini-3-flash-preview",
+        ],
         icon: "/googlegemini.svg",
     },
     {
         id: "deepseek",
         name: "DeepSeek",
-        defaultModel: "deepseek-v4-flash",
-        // vision-exp is the only DeepSeek model that can read takeScreenshot output.
-        models: ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp"],
+        // https://api-docs.deepseek.com/quick_start/pricing/
+        defaultModel: "deepseek-flash",
+        // Flash (V4.1) supports vision, including takeScreenshot output; Pro is text-only.
+        models: ["deepseek-flash", "deepseek-v4-pro"],
         icon: "/deepseek.svg",
     },
 ];
 
-/** True when `modelId` is still offered by that provider. */
+/** True when `modelId` is in this provider's current picker catalog. */
 export function isKnownModel(providerId: ProviderId, modelId: string): boolean {
     const config = MODELPROVIDERS.find((p) => p.id === providerId);
     return !!config?.models.includes(modelId);
