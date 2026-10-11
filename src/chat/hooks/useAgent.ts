@@ -252,8 +252,8 @@ export function useAgent() {
 
                 const providerOptions: any = {}
                 if (providerId === "anthropic") {
-                    // Adaptive, not a fixed budget: budgetTokens is rejected with a
-                    // 400 on Opus 5 / Sonnet 5 / Opus 4.8 / Fable 5.
+                    // The current Claude lineup uses adaptive thinking rather
+                    // than a fixed token budget.
                     providerOptions.anthropic = {thinking: {type: "adaptive" as const}}
                 } else if (providerId === "deepseek") {
                     providerOptions.deepseek = {
