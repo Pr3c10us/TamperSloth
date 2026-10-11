@@ -1,0 +1,8 @@
+{
+  "description": "Read-only audit before efficiency changes; locally serialized Zod input schemas plus tool descriptions. Characters, not provider tokens.",
+  "toolCount": 31,
+  "toolDefinitionChars": 28298,
+  "systemPromptChars": 7064,
+  "skillContentChars": 23516,
+  "pageTextDefaultChars": 10000
+}
