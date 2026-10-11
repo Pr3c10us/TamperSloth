@@ -244,7 +244,7 @@ export async function listFiles(conversationId: string,prefix = ''): Promise<str
     const wanted = FILE_PREFIX + conversationId + "/" + prefix;
     return Object.keys(all)
         .filter((k) => k.startsWith(wanted))
-        .map((k) => k.slice(FILE_PREFIX.length))
+        .map((k) => k.slice((FILE_PREFIX + conversationId + "/").length))
         .sort();
 }
 

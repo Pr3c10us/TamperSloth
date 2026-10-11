@@ -47,6 +47,8 @@ export interface ToolMeta {
 
 
 const toolMeta: Record<string, ToolMeta> = {
+    enableTools: {displayName: 'Enable tools', activeLabel: 'Enabling tools…', doneLabel: 'Tools ready', errorLabel: 'Could not enable tools', icon: Wrench, category: 'utility'},
+    readToolResult: {displayName: 'Read earlier result', activeLabel: 'Reading earlier result…', doneLabel: 'Earlier result retrieved', errorLabel: 'Could not retrieve result', icon: FileSearch, category: 'data'},
     // ── Skills ──
     getSkill: {
         displayName: 'Fetch Skill',

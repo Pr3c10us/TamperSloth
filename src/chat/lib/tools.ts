@@ -25,20 +25,15 @@ const tabId = Number(new URLSearchParams(window.location.search).get("tabId"));
 
 // Output budgets. Every tool result stays in the message history and is re-sent
 // on each subsequent step, so an uncapped result is charged many times over.
-const MAX_DOM_NODES = 1500;
+const MAX_DOM_NODES = 250;
 const MAX_CONSOLE_LOGS = 50;
-const DEFAULT_VIEW_LINES = 400;
+const DEFAULT_VIEW_LINES = 120;
 
 const responseFormatSchema = z
     .enum(["concise", "detailed"])
     .optional()
     .default("concise")
-    .describe(
-        'Response verbosity. "concise" (default) returns the minimal useful fields and is ' +
-        'the right choice almost always. Only pass "detailed" when you specifically need ' +
-        'full element attributes, computed styles, or positions — it costs several times ' +
-        'more tokens for information you usually will not read.'
-    );
+    .describe('Use detailed only for additional attributes, styles, or diagnostics.');
 
 function numberLines(content: string, startLine: number, endLine: number): string {
     const lines = content.split('\n');
@@ -87,18 +82,14 @@ export function createAgentTools(context: { conversationId: string }) {
         // ═══════════════════════════════════════════════
         getSkill: tool({
             description:
-                "Fetch detailed reference material for a specific skill from the skills registry. Use when the system prompt indicates a skill should be fetched before handling a particular kind of work (e.g., 'fetch script_creation_workflow before starting any persistent-script task'). Call multiple skills in parallel when several apply to the current turn — e.g., a script request typically pulls script_creation_workflow + script_format together. Each call returns the full content of that skill so you can follow its instructions verbatim.",
+                "Read optional reference guidance by skill_id. Fetch only details missing from the current context.",
             inputSchema: z.object({
                 skill_id: z
                     .enum(SKILL_IDS)
                     .describe(
-                        "The id of the skill to fetch. Must be one of the ids listed in <when_to_fetch_skills> in the system prompt.",
+                        "Reference topic.",
                     ),
-                description: z
-                    .string()
-                    .describe(
-                        "Why this fetch is happening (e.g. 'starting script creation for dark-mode toggle', 'about to save and need scope rules', 'script failing, need debugging steps').",
-                    ),
+                description: z.string().max(100).optional().describe("Optional progress label."),
             }),
             execute: async ({skill_id}) => {
                 const skill = skills[skill_id];
@@ -122,10 +113,9 @@ export function createAgentTools(context: { conversationId: string }) {
         // ═══════════════════════════════════════════════
         TodoWrite: tool({
             description:
-                "Replace the entire todo list for this conversation. Pass the full list every time — " +
-                "any item not included is dropped. Exactly one item may be `in_progress` at any time.",
+                "Replace the entire todo list. Preserve IDs; at most one item may be in_progress.",
             inputSchema: z.object({
-                description: z.string().describe("Why this write is happening (e.g. 'plan refactor', 'mark step 2 done')."),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 items: todoListSchema.describe("The full todo list after this write."),
             }),
             execute: async ({items}) => {
@@ -146,9 +136,9 @@ export function createAgentTools(context: { conversationId: string }) {
         }),
 
         TodoRead: tool({
-            description: "Read the current todo list for this conversation.",
+            description: "Read the current todo list when unknown.",
             inputSchema: z.object({
-                description: z.string().describe("Why the list is being read."),
+                description: z.string().max(100).optional().describe("Optional progress label."),
             }),
             execute: async () => {
                 try {
@@ -161,9 +151,9 @@ export function createAgentTools(context: { conversationId: string }) {
         }),
 
         TodoClear: tool({
-            description: "Wipe the entire todo list for this conversation. Destructive — there is no undo.",
+            description: "Clear the current todo list.",
             inputSchema: z.object({
-                description: z.string().describe("Why the list is being cleared."),
+                description: z.string().max(100).optional().describe("Optional progress label."),
             }),
             execute: async () => {
                 try {
@@ -185,11 +175,9 @@ export function createAgentTools(context: { conversationId: string }) {
         // ═══════════════════════════════════════════════
         viewCodeFiles: tool({
             description:
-                'View a virtual file or list virtual files. For files, returns numbered lines ' +
-                '(the `    N\\t` prefix is display-only — do NOT include it in str_replace inputs). ' +
-                'For directory-style listing, pass a path ending in "/" to list all files under that prefix.',
+                "Read numbered file lines, or list files with a path ending in /. Line-number prefixes are display-only.",
             inputSchema: z.object({
-                description: z.string().describe('Why this view is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 path: z
                     .string()
                     .describe('Virtual path. End with "/" to list a "directory" (prefix scan).'),
@@ -251,16 +239,16 @@ export function createAgentTools(context: { conversationId: string }) {
 
         createFileTool: tool({
             description:
-                'Create a new virtual file. Fails if the path already exists — use str_replace to edit existing files.',
+                "Create a virtual file. Fails if it exists; edit existing files with strReplaceTool.",
             inputSchema: z.object({
-                description: z.string().describe('Why this file is being created'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 path: z.string().describe('Virtual path where the new file should live'),
                 file_text: z.string().describe('Full content to write'),
             }),
             execute: async ({path, file_text}) => {
                 try {
                     if (await fileExists(context.conversationId, path)) {
-                        return {error: `File already exists at ${path}. Use str_replace to edit it.`};
+                        return {error: `File already exists at ${path}. Use strReplaceTool to edit it.`};
                     }
                     await writeFile(context.conversationId, path, file_text);
                     return {
@@ -277,43 +265,39 @@ export function createAgentTools(context: { conversationId: string }) {
 
         strReplaceTool: tool({
             description:
-                'Replace a unique string in a virtual file. `old_str` must match exactly (whitespace and ' +
-                'newlines included) and appear EXACTLY ONCE. Add surrounding context to disambiguate if ' +
-                'needed. Pass an empty `new_str` to delete `old_str`. Do not include the `view` line-number prefix.',
+                "Replace exact unique strings in a virtual file. Use old_str/new_str or an ordered edits array. Batch edits commit atomically. Empty replacement deletes.",
             inputSchema: z.object({
-                description: z.string().describe('Why this edit is being made'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 path: z.string().describe('Virtual path to edit'),
-                old_str: z.string().min(1).describe('Exact string to find (must be unique in file)'),
+                old_str: z.string().min(1).optional().describe('Exact unique string. Omit when using edits.'),
                 new_str: z.string().default('').describe('Replacement string (empty deletes old_str)'),
+                edits: z.array(z.object({old_str: z.string().min(1), new_str: z.string()})).min(1).max(20).optional()
+                    .describe('Ordered replacements, committed together only if every match is unique. Alternative to old_str/new_str.'),
             }),
-            execute: async ({path, old_str, new_str}) => {
+            execute: async ({path, old_str, new_str, edits}) => {
                 try {
                     const content = await readFile(context.conversationId, path);
                     if (content === null) {
                         return {error: `No file at ${path}`};
                     }
 
-                    const occurrences = content.split(old_str).length - 1;
-                    if (occurrences === 0) {
-                        return {
-                            error:
-                                'old_str not found. Re-view the file and check whitespace, newlines, and exact characters.',
-                        };
+                    if ((old_str !== undefined) === (edits !== undefined)) {
+                        return {error: 'Provide either old_str/new_str or edits, not both.'};
                     }
-                    if (occurrences > 1) {
-                        return {
-                            error: `old_str appears ${occurrences} times — it must appear exactly once. Add more surrounding context.`,
-                        };
+                    const replacements = edits ?? [{old_str: old_str!, new_str}];
+                    let updated = content;
+                    for (const [index, edit] of replacements.entries()) {
+                        const occurrences = updated.split(edit.old_str).length - 1;
+                        if (occurrences !== 1) return {error: `Edit ${index + 1}: old_str matches ${occurrences} times; expected exactly once. No changes written.`};
+                        updated = updated.replace(edit.old_str, () => edit.new_str);
                     }
-
-                    const updated = content.replace(old_str, new_str);
                     await writeFile(context.conversationId, path, updated);
 
                     return {
                         success: true as const,
                         path,
-                        replaced: 1,
-                        delta: new_str.length - old_str.length,
+                        replaced: replacements.length,
+                        delta: updated.length - content.length,
                     };
                 } catch (err) {
                     return {error: err instanceof Error ? err.message : String(err)};
@@ -322,9 +306,9 @@ export function createAgentTools(context: { conversationId: string }) {
         }),
 
         deleteFileTool: tool({
-            description: 'Delete a virtual file. No-op if the file does not exist.',
+            description: "Delete a virtual working file; no-op if absent.",
             inputSchema: z.object({
-                description: z.string().describe('Why this file is being deleted'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 path: z.string().describe('Virtual path to delete'),
             }),
             execute: async ({path}) => {
@@ -344,10 +328,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         getCurrentTab: tool({
             description:
-                "Get the browser tab id, url and title for the tab this sidebar is attached to. " +
-                "Call this at the start of every task to establish the current page context.",
+                "Refresh the attached tab URL and title. Initial tab metadata is already supplied.",
             inputSchema: z.object({
-                description: z.string().describe('Why this tab info is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
             }),
             execute: async () => {
                 const tab = await chrome.tabs.get(tabId);
@@ -357,10 +340,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         getPageStructure: tool({
             description:
-                "Get a simplified DOM structure of the current page for writing content scripts. " +
-                "Prefer getPageText when you only need text content.",
+                "Inspect scoped DOM for selectors and links. Prefer getPageText for text. Expand maxNodes or scope when truncated.",
             inputSchema: z.object({
-                description: z.string().describe('Why this DOM inspection is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 selector: z
                     .string()
                     .optional()
@@ -368,16 +350,11 @@ export function createAgentTools(context: { conversationId: string }) {
                         "CSS selector to scope the capture to a specific section"
                     ),
                 responseFormat: responseFormatSchema,
+                maxNodes: z.number().int().min(20).max(1500).default(MAX_DOM_NODES),
             }),
-            execute: async ({selector, responseFormat}) => {
-                const [tab] = await chrome.tabs.query({
-                    active: true,
-                    currentWindow: true,
-                });
-                if (!tab?.id) throw new Error("No active tab found");
-
+            execute: async ({selector, responseFormat, maxNodes}) => {
                 const [result] = await chrome.scripting.executeScript({
-                    target: {tabId: tab.id},
+                    target: {tabId},
                     func: (sel: string | null, format: string, maxNodes: number) => {
                         const root = sel ? document.querySelector(sel) : document.body;
                         if (!root) {
@@ -410,7 +387,12 @@ export function createAgentTools(context: { conversationId: string }) {
                         };
 
                         function simplify(el: Element, depth = 0): any {
-                            if (depth > 6) return "...";
+                            if (depth > 6) {
+                                const size = countNodes(el);
+                                omitted += size;
+                                omittedSubtrees.push({selector: describe(el), nodes: size});
+                                return "...";
+                            }
                             if (budget <= 0) return null;
                             budget--;
 
@@ -418,7 +400,12 @@ export function createAgentTools(context: { conversationId: string }) {
 
                             if (concise) {
                                 if (el.id) info.id = el.id;
-                                if (el.classList.length) info.class = Array.from(el.classList).join(" ");
+                                if (el.classList.length) info.class = Array.from(el.classList).join(" ").slice(0, 160);
+                                for (const attr of ["href", "role", "aria-label", "name", "type", "placeholder"]) {
+                                    if (el.hasAttribute(attr)) info[attr] = el.getAttribute(attr)!.slice(0, 180);
+                                }
+                                const label = Array.from(el.childNodes).filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent?.trim()).filter(Boolean).join(" ");
+                                if (label) info.text = label.slice(0, 100);
                             } else {
                                 const dominated = [
                                     "id", "class", "name", "type", "role", "aria-label",
@@ -447,6 +434,7 @@ export function createAgentTools(context: { conversationId: string }) {
 
                             const children: any[] = [];
                             for (const c of Array.from(el.children)) {
+                                if (["SCRIPT", "STYLE", "NOSCRIPT"].includes(c.tagName)) continue;
                                 if (budget <= 0) {
                                     // Record what was skipped so the agent can
                                     // re-query that subtree instead of guessing.
@@ -476,13 +464,13 @@ export function createAgentTools(context: { conversationId: string }) {
                                     .sort((a, b) => b.nodes - a.nodes)
                                     .slice(0, 5),
                                 hint:
-                                    `Node budget (${maxNodes}) exhausted — ${omitted} nodes omitted. ` +
+                                    `DOM node (${maxNodes}) or depth limit reached — ${omitted} nodes omitted. ` +
                                     "Re-run with `selector` scoped to one of largestOmitted rather than " +
                                     "capturing the whole page again.",
                             }),
                         };
                     },
-                    args: [selector ?? null, responseFormat ?? "concise", MAX_DOM_NODES],
+                    args: [selector ?? null, responseFormat ?? "concise", maxNodes ?? MAX_DOM_NODES],
                 });
 
                 return result.result;
@@ -491,19 +479,15 @@ export function createAgentTools(context: { conversationId: string }) {
 
         getElementDetails: tool({
             description:
-                "Get detailed info about specific elements matching a CSS selector",
+                "Inspect elements matching a selector. Detailed includes HTML, positions and computed styles.",
             inputSchema: z.object({
-                description: z.string().describe('Why these element details are needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 selector: z.string(),
                 responseFormat: responseFormatSchema,
             }),
             execute: async ({selector, responseFormat}) => {
-                const [tab] = await chrome.tabs.query({
-                    active: true,
-                    currentWindow: true,
-                });
                 const [result] = await chrome.scripting.executeScript({
-                    target: {tabId: tab!.id!},
+                    target: {tabId},
                     func: (sel: string, format: string) => {
                         const els = document.querySelectorAll(sel);
                         if (els.length === 0) {
@@ -561,6 +545,11 @@ export function createAgentTools(context: { conversationId: string }) {
                                     style: {
                                         color: style.color,
                                         fontSize: style.fontSize,
+                                        fontFamily: style.fontFamily,
+                                        backgroundColor: style.backgroundColor,
+                                        borderRadius: style.borderRadius,
+                                        padding: style.padding,
+                                        boxShadow: style.boxShadow,
                                     },
                                 };
                             });
@@ -573,12 +562,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         getPageText: tool({
             description:
-                "Extract the visible text content of the current page (or a scoped section). " +
-                "Returns the human-readable innerText — all scripts, styles, and hidden elements " +
-                "are excluded automatically. Much faster and more token-efficient than " +
-                "getPageStructure when you only need the text, not the DOM tree.",
+                "Read visible page text, scoped to selector or main/article. Follow nextOffset for more; offsets refer to current text.",
             inputSchema: z.object({
-                description: z.string().describe('Why this page text is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 selector: z
                     .string()
                     .optional()
@@ -588,18 +574,17 @@ export function createAgentTools(context: { conversationId: string }) {
                     ),
                 maxLength: z
                     .number()
+                    .int().min(100).max(20000)
                     .optional()
-                    .default(10000)
-                    .describe(
-                        "Maximum character length of returned text (default: 10000)."
-                    ),
+                    .describe("Characters per page: default 3000 concise, 10000 detailed; maximum 20000."),
+                offset: z.number().int().min(0).default(0).describe('Character offset for the next page of text.'),
                 responseFormat: responseFormatSchema,
             }),
-            execute: async ({selector, maxLength, responseFormat}) => {
+            execute: async ({selector, maxLength, responseFormat, offset}) => {
                 const effectiveMax = maxLength ?? (responseFormat === "detailed" ? 10000 : 3000);
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId},
-                    func: (sel: string | null, max: number, format: string) => {
+                    func: (sel: string | null, max: number, format: string, start: number) => {
                         const concise = format === "concise";
                         let root: Element | null;
                         if (sel) {
@@ -615,7 +600,7 @@ export function createAgentTools(context: { conversationId: string }) {
                             return {error: `No element found for selector: ${sel}`};
 
                         const text = (root as HTMLElement).innerText?.trim() ?? "";
-                        const truncated = text.length > max;
+                        const truncated = text.length > start + max;
 
                         let availableSections: string[] | undefined;
                         if (truncated) {
@@ -635,17 +620,17 @@ export function createAgentTools(context: { conversationId: string }) {
                             title: document.title,
                             selector: sel ?? (concise ? root.tagName.toLowerCase() : "body"),
                             length: text.length,
+                            offset: start,
                             truncated,
-                            text: truncated
-                                ? text.slice(0, max) + "\n\n[...truncated]"
-                                : text,
+                            text: text.slice(start, start + max),
+                            ...(truncated && {nextOffset: start + max}),
                             ...(truncated && availableSections && {
                                 availableSections,
-                                hint: "Content was truncated. Use the selector parameter to scope to a specific section.",
+                                hint: "Use nextOffset for more text, or scope with selector. Offsets apply to the current page text.",
                             }),
                         };
                     },
-                    args: [selector ?? null, effectiveMax, responseFormat ?? "concise"],
+                    args: [selector ?? null, effectiveMax, responseFormat ?? "concise", offset ?? 0],
                 });
                 return result.result;
             },
@@ -653,14 +638,16 @@ export function createAgentTools(context: { conversationId: string }) {
 
         takeScreenshot: tool({
             description:
-                "Take a screenshot of the current page. Returns an image of the visible viewport.",
+                "Capture the visible viewport as an image. Use for visual verification.",
             inputSchema: z.object({
-                description: z.string().describe('Why this screenshot is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
+                detail: z.enum(["standard", "full"]).default("standard").describe('Standard caps width at 1280px; full preserves resolution for fine detail.'),
             }),
-            execute: async () => {
+            execute: async ({detail}) => {
                 const response = await chrome.runtime.sendMessage({
                     type: "TAKE_SCREENSHOT",
                     tabId,
+                    maxWidth: detail === "full" ? undefined : 1280,
                 });
                 if (response?.error) throw new Error(response.error);
                 return {screenshot: response.dataUrl as string};
@@ -671,8 +658,8 @@ export function createAgentTools(context: { conversationId: string }) {
                     type: "content",
                     value: [
                         {
-                            type: "image-data" as const,
-                            data: base64,
+                            type: "file" as const,
+                            data: {type: "data" as const, data: base64},
                             mediaType: "image/jpeg",
                         },
                     ],
@@ -686,11 +673,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         getLocalStorage: tool({
             description:
-                "Read the contents of localStorage and/or sessionStorage for the current page origin. " +
-                "Returns key-value pairs as a JSON object. Useful for inspecting auth tokens, user " +
-                "preferences, feature flags, or cached data. Only reads — never modifies.",
+                "Read page local/session storage, optionally filtered by key prefix. Values are capped.",
             inputSchema: z.object({
-                description: z.string().describe('Why this storage read is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 storageType: z
                     .enum(["local", "session", "both"])
                     .optional()
@@ -763,12 +748,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         getCookies: tool({
             description:
-                "Read cookies for the current page's domain using the Chrome cookies API. " +
-                "Returns cookie name, value, domain, path, expiration, and flags. " +
-                "Reads ALL cookies including httpOnly cookies invisible to document.cookie. " +
-                "Only reads — never creates or modifies cookies.",
+                "Read cookies for the attached page, optionally filtered by name.",
             inputSchema: z.object({
-                description: z.string().describe('Why this cookie read is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 nameFilter: z
                     .string()
                     .optional()
@@ -821,12 +803,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         executeContentScript: tool({
             description:
-                "Run a JavaScript function from a virtual file on the current page to manipulate the DOM. " +
-                "The file at `path` must contain a named function definition that will be immediately invoked. " +
-                "Create the script with createFileTool first, then pass its path here. " +
-                "If your function returns a value and you get null, the function failed.",
+                "Run the named function in a virtual file on the attached page. Create the file first. Null may indicate failure.",
             inputSchema: z.object({
-                description: z.string().describe('Why this script execution is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 path: z
                     .string()
                     .describe(
@@ -872,12 +851,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         saveScript: tool({
             description:
-                "Save a JavaScript script from a virtual file to run persistently in the background on web pages. " +
-                "Create the script with createFileTool first, then pass its path here. " +
-                "Always ask the user about scope before calling this. " +
-                "Choose runAt based on when the script needs to execute relative to page load.",
+                "Save a tested virtual file as a persistent browser script. Confirm URL scope with the user first.",
             inputSchema: z.object({
-                description: z.string().describe('Why this script is being saved'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 path: z
                     .string()
                     .describe(
@@ -946,9 +922,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         listScripts: tool({
             description:
-                "List all saved background scripts. Optionally filter to scripts from the current conversation only.",
+                "List saved script IDs, names, status and URL patterns; optionally filter to this conversation.",
             inputSchema: z.object({
-                description: z.string().describe('Why this listing is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 conversationOnly: z
                     .boolean()
                     .optional()
@@ -967,7 +943,7 @@ export function createAgentTools(context: { conversationId: string }) {
                 return {
                     count: scripts.length,
                     scripts: scripts.map((s) => concise
-                        ? {name: s.name, status: s.status}
+                        ? {id: s.id, name: s.name, status: s.status, urlPattern: s.urlMatchPattern}
                         : {
                             id: s.id,
                             name: s.name,
@@ -981,9 +957,9 @@ export function createAgentTools(context: { conversationId: string }) {
         }),
 
         toggleScript: tool({
-            description: "Pause or resume a specific background script.",
+            description: "Pause or resume a saved script by ID.",
             inputSchema: z.object({
-                description: z.string().describe('Why this script is being toggled'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 scriptId: z.string().describe("The ID of the script to toggle"),
                 action: z
                     .enum(["pause", "resume"])
@@ -1003,9 +979,9 @@ export function createAgentTools(context: { conversationId: string }) {
         }),
 
         removeScript: tool({
-            description: "Delete a specific background script permanently.",
+            description: "Permanently delete a saved script by ID after user confirmation.",
             inputSchema: z.object({
-                description: z.string().describe('Why this script is being removed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 scriptId: z.string().describe("The ID of the script to delete"),
             }),
             execute: async ({scriptId}) => {
@@ -1020,15 +996,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         navigateTo: tool({
             description:
-                "Navigate the current tab to a new URL and wait for the page to fully load before returning. " +
-                "Returns the final URL (after any redirects), page title, and load timing. " +
-                "Use this instead of setting location.href inside executeContentScript, which gives you " +
-                "no way to know when the new page is ready. Supports optional wait-for-selector to delay " +
-                "resolution until a specific element appears on the loaded page (useful for SPAs that " +
-                "render asynchronously after the load event). " +
-                "Handles redirects, hash navigations, and SPA client-side routing transparently.",
+                "Navigate the attached tab and wait for loading/readiness. Optionally readText afterward in the same call. Accepts absolute or relative URLs.",
             inputSchema: z.object({
-                description: z.string().describe('Why this navigation is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 url: z
                     .string()
                     .describe(
@@ -1058,6 +1028,8 @@ export function createAgentTools(context: { conversationId: string }) {
                     .describe(
                         "Maximum wait time in milliseconds for the page load + optional selector (default: 15000)"
                     ),
+                readText: z.boolean().default(false).describe('Return concise page text after navigation and optional readiness wait.'),
+                readSelector: z.string().optional().describe('Scope the optional text read to this selector.'),
             }),
             execute: async ({url, waitUntil, waitForSelector, timeout}) => {
                 const timeoutMs = timeout ?? 15000;
@@ -1177,11 +1149,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         navigateHistory: tool({
             description:
-                "Navigate the current tab back or forward one step in its browsing history. " +
-                "Waits for the page to fully load before returning. Returns the URL and title " +
-                "of the page navigated to.",
+                "Go back or forward and wait for page load.",
             inputSchema: z.object({
-                description: z.string().describe('Why this history navigation is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 direction: z
                     .enum(["back", "forward"])
                     .describe('Navigate "back" or "forward" in history.'),
@@ -1250,10 +1220,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         reloadPage: tool({
             description:
-                "Reload the current tab's page. Optionally bypass the browser cache to force a fresh " +
-                "load from the server. Waits for the page to fully load before returning.",
+                "Reload the attached tab and wait for load.",
             inputSchema: z.object({
-                description: z.string().describe('Why this reload is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 bypassCache: z
                     .boolean()
                     .optional()
@@ -1312,11 +1281,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         clickElement: tool({
             description:
-                "Click on a DOM element identified by a CSS selector. Scrolls the element into view " +
-                "first if needed. Clicks the first matching element by default. Returns info about " +
-                "the clicked element and whether it triggered a navigation.",
+                "Click a selector match and report navigation. Choose index for multiple matches.",
             inputSchema: z.object({
-                description: z.string().describe('Why this click is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 selector: z
                     .string()
                     .describe(
@@ -1416,11 +1383,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         typeText: tool({
             description:
-                "Type text into an input field, textarea, or contenteditable element identified by a " +
-                "CSS selector. Clears the existing value first by default. Dispatches realistic input " +
-                "and change events so that frameworks (React, Vue, etc.) detect the update.",
+                "Type into a matched input or editable element; optionally clear or press Enter.",
             inputSchema: z.object({
-                description: z.string().describe('Why this text input is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 selector: z
                     .string()
                     .describe(
@@ -1593,10 +1558,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         selectOption: tool({
             description:
-                "Select an option from a <select> dropdown element. Can select by value, by visible " +
-                "text label, or by index. Dispatches change events for framework compatibility.",
+                "Select a native dropdown option by value, label or index.",
             inputSchema: z.object({
-                description: z.string().describe('Why this option is being selected'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 selector: z
                     .string()
                     .describe('CSS selector for the <select> element, e.g. "#country", "select[name=\\"size\\"]".'),
@@ -1699,10 +1663,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         scrollPage: tool({
             description:
-                "Scroll the page or a specific scrollable container. Supports scrolling by pixels, " +
-                "by pages (viewport heights), to a specific element, or to the top/bottom of the page.",
+                "Scroll by direction/amount or to an element.",
             inputSchema: z.object({
-                description: z.string().describe('Why this scroll is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 direction: z
                     .enum(["up", "down", "left", "right", "top", "bottom"])
                     .optional()
@@ -1832,11 +1795,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         submitForm: tool({
             description:
-                "Submit a form element identified by a CSS selector. Triggers the submit event " +
-                "and optionally waits for navigation or dynamic content changes. Use after filling " +
-                "in form fields with typeText and selectOption.",
+                "Submit a form and wait for navigation. Obtain confirmation for consequential submissions.",
             inputSchema: z.object({
-                description: z.string().describe('Why this form submission is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 selector: z
                     .string()
                     .describe(
@@ -1934,12 +1895,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         waitForElement: tool({
             description:
-                "Wait for a DOM element matching a CSS selector to appear on the page. " +
-                "Uses a MutationObserver to efficiently detect newly added or changed elements. " +
-                "Returns immediately if the element already exists. Use after navigations, " +
-                "form submissions, AJAX loads, or any async operation.",
+                "Wait for a selector to appear. Skip if navigation already waited for it.",
             inputSchema: z.object({
-                description: z.string().describe('Why waiting for this element is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 selector: z
                     .string()
                     .describe(
@@ -2024,14 +1982,9 @@ export function createAgentTools(context: { conversationId: string }) {
 
         getDebugInfo: tool({
             description:
-                "Capture debugging information from the current page. Supports two sources: " +
-                '"console" captures console output (logs, warnings, errors, exceptions) via the Chrome Debugger API, ' +
-                'and "network" intercepts fetch, XHR, WebSocket, EventSource, and sendBeacon requests. ' +
-                "Request both sources together to get a complete debugging picture. " +
-                "Network interceptors are installed on first call; subsequent calls return new requests since last retrieval. " +
-                "Note: console capture shows a debugger warning bar at the top of the tab.",
+                "Observe console output and/or network activity. Console capture lasts 5s: reproduce during capture. Network hooks install on first call; filter with urlFilter.",
             inputSchema: z.object({
-                description: z.string().describe('Why this debug info is needed'),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 sources: z
                     .array(z.enum(["console", "network"]))
                     .describe(
@@ -2089,9 +2042,10 @@ export function createAgentTools(context: { conversationId: string }) {
                             l.type === "unhandled-rejection" ||
                             l.type === "warn";
                         const severe = logs.filter(isSevere).slice(0, MAX_CONSOLE_LOGS);
-                        const filler = logs
+                        const remaining = MAX_CONSOLE_LOGS - severe.length;
+                        const filler = remaining > 0 ? logs
                             .filter((l) => !isSevere(l))
-                            .slice(-Math.max(0, MAX_CONSOLE_LOGS - severe.length));
+                            .slice(-remaining) : [];
                         const kept = [...severe, ...filler];
 
                         result.console = {
@@ -2416,7 +2370,7 @@ export function createAgentTools(context: { conversationId: string }) {
                     });
                     const netData = netResult.result as any;
                     if (concise) {
-                        const failed = (netData.requests ?? []).filter((r: any) => r.status && (r.status >= 400 || r.error));
+                        const failed = (netData.requests ?? []).filter((r: any) => r.status >= 400 || r.error);
                         result.network = {
                             requestCount: netData.captured ?? 0,
                             failedCount: failed.length,
@@ -2441,15 +2395,9 @@ export function createAgentTools(context: { conversationId: string }) {
         // ═══════════════════════════════════════════════
         askUser: tool({
             description:
-                "Present the user with a multiple-choice question and wait for their selection. " +
-                "Use when the user's request is ambiguous and you need them to choose between " +
-                "concrete options to proceed. The UI automatically appends an \"Other\" option, so " +
-                "do NOT include one yourself. Provide 2–5 clear, mutually-exclusive options.",
+                "Ask a concrete question with 2–5 choices and wait. The UI adds Other; do not include it.",
             inputSchema: z.object({
-                description: z
-                    .string()
-                    .optional()
-                    .describe("Why this question is being asked (one short line, shown in the tool-call header)."),
+                description: z.string().max(100).optional().describe("Optional progress label."),
                 question: z.string().min(1).describe("The question to ask the user."),
                 options: z
                     .array(
