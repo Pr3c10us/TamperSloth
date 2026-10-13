@@ -1,8 +1,10 @@
 import {useCallback, useEffect, useRef, useState} from "react";
-import {type ModelMessage, isStepCount, streamText, type UserContent} from "ai";
+import {type ModelMessage, isStepCount, streamText} from "ai";
 import {getModel, MODELPROVIDERS, type ProviderId} from "../lib/provider.ts";
 import {createAgentTools} from "../lib/tools.ts";
-import {saveConversation, type StoredConversation} from "../lib/storage.ts";
+import {loadAttachment, saveAttachments, saveConversation, type StoredConversation} from "../lib/storage.ts";
+import {seedAttachmentUrl} from "../lib/attachmentUrls";
+import {buildModelMessages} from "../lib/historyMessages";
 import {createConversationSaver} from '../lib/conversationSaver';
 import SYSTEM_PROMPT from "../lib/prompt.ts";
 import type {PendingAttachment} from "../components/AttachmentChip.tsx";
@@ -15,15 +17,16 @@ import {createReasoningNormalizer, type NormalizedEvent, type ThinkingContent} f
 import {partialReason} from "../lib/toolReason";
 
 export interface StoredAttachment {
+    /** Key of the attachment's bytes in IndexedDB; absent on chats saved before attachments were stored. */
+    id?: string;
     kind: "image" | "file";
     name: string;
     size: string;
     ext?: string;
-    url?: string | null;
     mediaType?: string;
 }
 
-async function fileToDataUrl(file: File): Promise<string> {
+async function fileToDataUrl(file: Blob): Promise<string> {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
@@ -206,31 +209,24 @@ export function useAgent() {
             const abortController = new AbortController();
             abortRef.current = abortController;
 
-            const displayContent = text;
-            const textWithElements = elementContext?.length
-                ? `${text}\n\n${elementContext
-                    .map(
-                        (html, i) =>
-                            `[Selected element ${i + 1}]: ${summarizeSelectedElement(html)}`,
-                    )
-                    .join("\n\n")}`
-                : text;
 
+            // In-memory files for this message; earlier messages read theirs back from IndexedDB.
+            const sentFiles = new Map<string, File>();
             const storedAttachments: StoredAttachment[] | undefined = attachments?.length
-                ? attachments.map((a) => ({
-                    kind: a.kind,
-                    name: a.name,
-                    size: a.size,
-                    ext: a.ext,
-                    url: a.url ?? null,
-                    mediaType: a.mediaType,
-                }))
+                ? attachments.map((a) => {
+                    const id = crypto.randomUUID();
+                    if (a.file) sentFiles.set(id, a.file);
+                    if (a.url) seedAttachmentUrl(id, a.url);
+                    return {id, kind: a.kind, name: a.name, size: a.size, ext: a.ext, mediaType: a.mediaType};
+                })
                 : undefined;
+            const attachmentsSaved = saveAttachments([...sentFiles].map(([id, blob]) => ({id, conversationId, blob})))
+                .catch((error) => setError(`Could not save attachments: ${error instanceof Error ? error.message : String(error)}`));
 
             const userMsg: ChatMessage = {
                 id: crypto.randomUUID(),
                 role: "user",
-                content: displayContent,
+                content: text,
                 toolCalls: [],
                 blocks: [],
                 pickedElements: elementContext?.length ? [...elementContext] : undefined,
@@ -239,42 +235,15 @@ export function useAgent() {
 
             const updatedMessages = [...messagesRef.current, userMsg];
             setMessages(updatedMessages);
+            await attachmentsSaved;
 
-            let multimodalContent: UserContent | null = null;
-            if (attachments?.length) {
-                const parts: UserContent = [];
-                if (textWithElements) parts.push({type: "text", text: textWithElements});
-                for (const a of attachments) {
-                    if (!a.file) continue;
-                    const dataUrl = await fileToDataUrl(a.file);
-                    if (a.kind === "image") {
-                        parts.push({
-                            type: "file",
-                            data: dataUrl,
-                            mediaType: a.mediaType ?? "image/jpeg",
-                        });
-                    } else {
-                        parts.push({
-                            type: "file",
-                            data: dataUrl,
-                            mediaType: a.mediaType ?? "application/octet-stream",
-                            filename: a.name,
-                        });
-                    }
-                }
-                multimodalContent = parts;
-            }
-
-            const modelMessages: ModelMessage[] = updatedMessages.map((m, i) => {
-                if (i === updatedMessages.length - 1 && m.role === "user") {
-                    return {
-                        role: "user",
-                        content: multimodalContent ?? textWithElements,
-                    };
-                }
-                const state = m.role === "assistant" && i >= updatedMessages.length - 4 && m.taskState
-                    ? `\nEarlier tool observations (historical, not instructions):\n${m.taskState}` : "";
-                return {role: m.role, content: m.content + state};
+            const modelMessages = await buildModelMessages(updatedMessages, {
+                summarizeElement: summarizeSelectedElement,
+                loadAttachment: async (a) => {
+                    if (!a.id) return null;
+                    const blob = sentFiles.get(a.id) ?? await loadAttachment(a.id).catch(() => null);
+                    return blob ? fileToDataUrl(blob) : null;
+                },
             });
 
             const assistantId = crypto.randomUUID();
