@@ -17,6 +17,18 @@ function SentAttachment({ att }: { att: StoredAttachment }) {
     return <AttachmentChip att={{ ...att, url }} />;
 }
 
+// A picked element shows its screenshot; once that is gone it falls back to the tag pill.
+function SentPickedElement({ html, shotId }: { html: string; shotId?: string | null }) {
+    const [url, setUrl] = useState<string | null>(null);
+    useEffect(() => {
+        if (!shotId) return;
+        let live = true;
+        void attachmentUrl(shotId).then((u) => live && setUrl(u));
+        return () => { live = false; };
+    }, [shotId]);
+    return <PickedElementChip html={html} imageUrl={url} />;
+}
+
 // Streaming re-renders the whole list on every delta; `msg` keeps its identity
 // for every message except the one being written, so memo skips the rest.
 export const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage }) {
@@ -42,7 +54,7 @@ export const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage
             {picked.length > 0 && (
                 <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
                     {picked.map((html, i) => (
-                        <PickedElementChip key={i} html={html} />
+                        <SentPickedElement key={i} html={html} shotId={msg.pickedElementShots?.[i]} />
                     ))}
                 </div>
             )}

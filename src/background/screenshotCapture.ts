@@ -173,3 +173,30 @@ export async function captureViewportScreenshot(tabId: number, maxWidth: number 
         } finally { bitmap.close(); }
     });
 }
+
+/** Longest side of a picked-element preview; it is only ever shown in the panel. */
+const PICK_PREVIEW_MAX = 640;
+
+/**
+ * Crops the visible tab to one element's box for the picker's preview. `rect` is
+ * in viewport CSS pixels and `viewport` is the page's inner size; the ratio to the
+ * captured bitmap absorbs both devicePixelRatio and browser zoom.
+ */
+export async function captureRegion(windowId: number, rect: {x: number; y: number; width: number; height: number},
+    viewport: {width: number; height: number}) {
+    const bitmap = await createImageBitmap(await (await fetch(await captureVisibleTab(windowId, async () => {}))).blob());
+    try {
+        const sx = bitmap.width / viewport.width, sy = bitmap.height / viewport.height;
+        const left = Math.max(0, Math.floor(rect.x * sx)), top = Math.max(0, Math.floor(rect.y * sy));
+        const width = Math.min(bitmap.width, Math.ceil((rect.x + rect.width) * sx)) - left;
+        const height = Math.min(bitmap.height, Math.ceil((rect.y + rect.height) * sy)) - top;
+        if (width < 1 || height < 1) return null;
+        const scale = Math.min(1, PICK_PREVIEW_MAX / Math.max(width, height));
+        const canvas = new OffscreenCanvas(Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)));
+        canvas.getContext('2d')!.drawImage(bitmap, left, top, width, height, 0, 0, canvas.width, canvas.height);
+        const bytes = new Uint8Array(await (await canvas.convertToBlob({type: 'image/webp', quality: 0.9})).arrayBuffer());
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+        return 'data:image/webp;base64,' + btoa(binary);
+    } finally { bitmap.close(); }
+}

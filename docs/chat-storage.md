@@ -15,6 +15,10 @@ have no stored bytes, so their images show a placeholder. When building model
 input, the newest message sends all its attachments and earlier ones share a
 budget of `MAX_HISTORY_ATTACHMENTS` (newest first); the rest are named in a note.
 
+Picked-element screenshots use the same store (`pickedElementShots` holds their
+ids by index). They are display-only: the model receives the element's HTML
+summary, never the screenshot. A missing screenshot falls back to the tag pill.
+
 The previous implementation stored all conversations in the `ts_conversations`
 Chrome storage key. Autosave repeatedly read and rewrote the whole archive.
 Chrome delivers both old and new values to storage listeners, so large archives

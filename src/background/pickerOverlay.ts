@@ -5,6 +5,8 @@
  * Marks are drawn in a closed shadow root in the same hand-drawn style as page
  * guidance: wobbly lime outlines with a hachure fill. The page's own elements are
  * never restyled, so the HTML sent to the model is exactly what the page has.
+ * A pick also crops a screenshot of the element (overlay hidden) for the panel's
+ * chip; the model only ever receives the HTML.
  *
  * Actions: start (pick one element), stop (end picking), remove {index},
  * clear (drop every picked mark), dispose (remove the overlay entirely).
@@ -204,8 +206,9 @@ export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clea
                 tag.append(strong, detail);
                 state.render();
             });
-            capture.addEventListener('click', (event: MouseEvent) => {
+            capture.addEventListener('click', async (event: MouseEvent) => {
                 event.preventDefault(); event.stopPropagation();
+                if (state.capturing) return;
                 // Resolve at the click point: the last hover can lag behind a fast click.
                 capture.style.pointerEvents = 'none';
                 const el = document.elementFromPoint(event.clientX, event.clientY) ?? state.hover?.el as Element | null;
@@ -213,6 +216,24 @@ export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clea
                 if (!el || el === state.host) return;
                 // Captured before anything is drawn, so it is the page's own markup.
                 const outerHTML = el.outerHTML;
+                // Preview for the panel only: hide every mark, let the page repaint,
+                // then crop the visible tab to the element's box.
+                state.capturing = true;
+                state.host.style.visibility = 'hidden';
+                let screenshot: string | null = null;
+                try {
+                    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 0))));
+                    const box = el.getBoundingClientRect();
+                    const response = await chrome.runtime.sendMessage({type: 'PICKER_CAPTURE',
+                        rect: {x: box.x, y: box.y, width: box.width, height: box.height},
+                        viewport: {width: innerWidth, height: innerHeight}});
+                    screenshot = response?.dataUrl ?? null;
+                } catch { /* The chip falls back to the element's tag. */ }
+                finally {
+                    state.host.style.visibility = '';
+                    state.capturing = false;
+                }
+                if (!state.picking) return;
                 const mark = state.makeMark(true);
                 mark.el = el;
                 mark.badge = document.createElement('div');
@@ -221,7 +242,7 @@ export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clea
                 state.picked.push(mark);
                 state.stopPicking();
                 state.render();
-                chrome.runtime.sendMessage({type: 'ELEMENT_PICKED', outerHTML});
+                chrome.runtime.sendMessage({type: 'ELEMENT_PICKED', outerHTML, screenshot});
             }, true);
             state.onKey = (event: KeyboardEvent) => {
                 if (event.key !== 'Escape') return;

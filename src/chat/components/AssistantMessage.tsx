@@ -1,11 +1,12 @@
 import {memo, useCallback, useState} from "react";
-import {Check, Copy} from "lucide-react";
+import {ArrowDown, ArrowUp, Check, Coins, Copy, DatabaseZap, Hash, Sigma, type LucideIcon} from "lucide-react";
 import type {ChatMessage} from "@/src/chat/hooks";
 import {MarkdownContent} from "./Markdown";
 import {CARD_TOOLS, ToolCallInline} from "./ToolCallInline";
 import {isTrivialThinking} from "./ThinkingBlock";
 import {LiveStatus, StepSequence, type SequenceBlock} from "./StepSequence";
 import {Button} from "@/components/ui/button";
+import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
 import {formatElapsedTime} from "../lib/efficiency";
 import {estimateRunCost, formatCost} from "../lib/pricing";
 
@@ -52,12 +53,33 @@ function CopyMessageButton({text}: { text: string }) {
         });
     }, [text]);
     return (
-        <Button variant="ghost" size="xs" onClick={handle} className="self-start text-muted-foreground">
-            {copied ? <Check/> : <Copy/>}
-            <span className="font-mono text-[10px] uppercase tracking-[.08em]">
-                {copied ? "Copied" : "Copy"}
-            </span>
-        </Button>
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon-xs" onClick={handle} aria-label={copied ? "Copied" : "Copy message"}
+                    className="text-muted-foreground hover:text-foreground">
+                    {copied ? <Check className="size-3.5"/> : <Copy className="size-3.5"/>}
+                </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{copied ? "Copied" : "Copy"}</TooltipContent>
+        </Tooltip>
+    );
+}
+
+const compactNumber = new Intl.NumberFormat("en-US", {notation: "compact", maximumFractionDigits: 1});
+
+/** One run metric as a short value, usually with an icon; the tooltip names it in full. */
+function MetricChip({icon: Icon, value, label}: { icon?: LucideIcon; value: string; label: string }) {
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <span tabIndex={0} aria-label={label}
+                    className="flex h-6 cursor-default items-center gap-1 rounded-sm px-1 text-xs tabular-nums text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
+                    {Icon && <Icon className="size-3.5" strokeWidth={1.75}/>}
+                    {value}
+                </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{label}</TooltipContent>
+        </Tooltip>
     );
 }
 
@@ -80,6 +102,8 @@ export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, 
         ?? (msg.runMetrics?.steps.some(step => step.cacheRead !== undefined)
             ? msg.runMetrics.steps.reduce((sum, step) => sum + (step.cacheRead ?? 0), 0) : undefined);
     const live = isLoading && isLast;
+    const total = msg.runMetrics?.total;
+    const modelLabel = msg.runMetrics?.modelId ?? "model unknown";
     const toolMetrics = showToolTokens
         ? new Map(msg.runMetrics?.tools.flatMap(metric => metric.id ? [[metric.id, metric] as const] : []))
         : undefined;
@@ -90,7 +114,7 @@ export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, 
         .join("\n");
 
     return (
-        <div className="flex flex-col gap-2.5">
+        <div className="group/assistant flex flex-col gap-2.5">
             {/*<div className="flex items-center gap-2">*/}
             {/*    <img src="icon-white.svg" alt="" className="size-4 opacity-85"/>*/}
             {/*    <span className="font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground">*/}
@@ -114,32 +138,44 @@ export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, 
                     <LiveStatus label="Working" since={msg.runMetrics?.startedAt}/>
                 </div>
             )}
-            {msg.runMetrics && !(isLoading && isLast) && !showRunTokens && (
-                <p className="text-xs text-muted-foreground">{formatElapsedTime(msg.runMetrics.elapsedMs)} elapsed</p>
+            {!live && (fullText || msg.runMetrics) && (
+                // Message actions stay out of the way until the message is hovered or focused.
+                <div className="-ml-1 flex flex-wrap items-center gap-0.5 opacity-0 transition-opacity group-hover/assistant:opacity-100 focus-within:opacity-100">
+                    {fullText && <CopyMessageButton text={fullText}/>}
+                    {msg.runMetrics && (
+                        <MetricChip value={formatElapsedTime(msg.runMetrics.elapsedMs)} label="Time to complete"/>
+                    )}
+                    {showRunTokens && total && (showCost ? (
+                        <>
+                            <MetricChip icon={ArrowUp} value={formatCost(cost?.input)} label={`Input cost · ${modelLabel}`}/>
+                            <MetricChip icon={ArrowDown} value={formatCost(cost?.output)} label={`Output cost · ${modelLabel}`}/>
+                            <MetricChip icon={Sigma} label="Total estimated cost at standard API rates"
+                                value={formatCost(cost?.input !== undefined && cost.output !== undefined ? cost.input + cost.output : undefined)}/>
+                        </>
+                    ) : (
+                        <>
+                            {total.input !== undefined && <MetricChip icon={ArrowUp} value={compactNumber.format(total.input)}
+                                label={`${total.input.toLocaleString()} input tokens`}/>}
+                            {!!cachedInput && <MetricChip icon={DatabaseZap} value={compactNumber.format(cachedInput)}
+                                label={`${cachedInput.toLocaleString()} input tokens read from cache`}/>}
+                            {total.output !== undefined && <MetricChip icon={ArrowDown} value={compactNumber.format(total.output)}
+                                label={`${total.output.toLocaleString()} output tokens`}/>}
+                        </>
+                    ))}
+                    {showRunTokens && total && (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button variant="ghost" size="icon-xs" onClick={() => setShowCost(previous => !previous)}
+                                    aria-pressed={showCost} aria-label={showCost ? "Show token counts" : "Show estimated cost in USD"}
+                                    className="text-muted-foreground hover:text-foreground">
+                                    {showCost ? <Hash className="size-3.5"/> : <Coins className="size-3.5"/>}
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">{showCost ? "Show token counts" : "Show estimated cost in USD"}</TooltipContent>
+                        </Tooltip>
+                    )}
+                </div>
             )}
-            {msg.runMetrics && !(isLoading && isLast) && showRunTokens && (
-                <button
-                    type="button"
-                    onClick={() => setShowCost(previous => !previous)}
-                    aria-pressed={showCost}
-                    aria-label={showCost ? "Show token counts" : "Show estimated costs in USD"}
-                    title={showCost
-                        ? `${msg.runMetrics.modelId ?? "Model unknown"} · Estimated USD cost at standard API rates. Click to show tokens.`
-                        : "Click to show estimated input and output costs in USD"}
-                    className="self-start cursor-pointer rounded-sm text-left text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
-                >
-                    {formatElapsedTime(msg.runMetrics.elapsedMs)} elapsed
-                    {msg.runMetrics.total?.input !== undefined && (showCost
-                        ? ` · ${formatCost(cost?.input)} input cost`
-                        : ` · ${msg.runMetrics.total.input.toLocaleString()} input tokens${cachedInput ? ` (${cachedInput.toLocaleString()} cached)` : ""}`)}
-                    {msg.runMetrics.total?.output !== undefined && (showCost
-                        ? ` · ${formatCost(cost?.output)} output cost`
-                        : ` · ${msg.runMetrics.total.output.toLocaleString()} output tokens`)}
-                    {showCost && ` · ${formatCost(cost?.input !== undefined && cost.output !== undefined
-                        ? cost.input + cost.output : undefined)} total cost`}
-                </button>
-            )}
-            {fullText && !isLoading && isLast && <CopyMessageButton text={fullText}/>}
         </div>
     );
 });
