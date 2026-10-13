@@ -1,4 +1,5 @@
 import {runPageGuidance} from './pageGuidance';
+import {runPickerOverlay} from './pickerOverlay';
 import type {CDPManager} from './cdp';
 
 export async function cleanupBrowserGuidance(cdp: CDPManager, shouldContinue=()=>true) {
@@ -13,6 +14,13 @@ export async function cleanupBrowserGuidance(cdp: CDPManager, shouldContinue=()=
     if(shouldContinue()) await chrome.storage.session.remove(keys);
 }
 
+function panelTab(port: chrome.runtime.Port) {
+    try {
+        const tabId=Number(new URL(port.sender?.url ?? '').searchParams.get('tabId'));
+        return tabId>0 ? tabId : undefined;
+    } catch { return undefined; }
+}
+
 /** A panel port lives for the whole UI document, including chat/gallery navigation. */
 export function installPanelLifecycle(cdp: CDPManager) {
     const panels=new Set<chrome.runtime.Port>();
@@ -23,6 +31,9 @@ export function installPanelLifecycle(cdp: CDPManager) {
         cdp.setPanelClosed(false);
         port.onDisconnect.addListener(()=>{
             panels.delete(port);
+            // Picked-element marks belong to the panel that made them; the panel's URL names its tab.
+            const tabId=panelTab(port);
+            if(tabId && ![...panels].some(other=>panelTab(other)===tabId)) void runPickerOverlay(tabId,{action:'dispose'});
             if(panels.size) return;
             cdp.setPanelClosed(true);
             void (async()=>{

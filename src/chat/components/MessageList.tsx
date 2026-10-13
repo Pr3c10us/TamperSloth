@@ -146,7 +146,7 @@ export const MessageList = forwardRef<HTMLDivElement, MessageListProps>(
                     aria-hidden={!showJump}
                     tabIndex={showJump ? 0 : -1}
                     className={cn(
-                        "fixed left-1/2 z-30 inline-flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-md",
+                        "fixed left-1/2 cursor-pointer z-30 inline-flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-md",
                         "bottom-[calc(var(--composer-height,8rem)+1rem)] transition-[opacity,transform,background-color] duration-200 hover:bg-muted",
                         "focus-visible:outline-2 focus-visible:outline-offset-2 motion-reduce:transition-none",
                         showJump ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-1.5 opacity-0",

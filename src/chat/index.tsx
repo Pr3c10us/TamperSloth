@@ -80,6 +80,7 @@ function Chat() {
         clear();
         setDraft("");
         setPickedElements([]);
+        clearPickedMarkers(tabId);
         setPendingFiles([]);
     };
 
