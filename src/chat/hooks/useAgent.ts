@@ -16,6 +16,7 @@ import {loadAgentSettings, runStopReason} from "../lib/agentSettings";
 import {agentProviderOptions} from "../lib/providerCompatibility";
 import {createReasoningNormalizer, type NormalizedEvent, type ThinkingContent} from "../lib/reasoning";
 import {partialReason} from "../lib/toolReason";
+import {generateChatTitle, requestTitle} from "../lib/chatTitle";
 
 export interface StoredAttachment {
     /** Key of the attachment's bytes in IndexedDB; absent on chats saved before attachments were stored. */
@@ -127,19 +128,16 @@ function closeThinking(blocks: ContentBlock[], at: number): ContentBlock[] {
         : blocks;
 }
 
-function deriveTitle(messages: ChatMessage[]): string {
-    const first = messages.find((m) => m.role === "user");
-    if (!first) return "New conversation";
-    const text = first.content.trim();
-    return text.length > 60 ? text.slice(0, 57) + "..." : text;
-}
-
 export function useAgent() {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [conversationId, setConversationId] = useState<string>(crypto.randomUUID());
     const [conversationCreatedAt, setConversationCreatedAt] = useState<number>(Date.now());
+    /** Model-written title; `null` until the first request has been named. */
+    const [title, setTitle] = useState<string | null>(null);
+    const conversationIdRef = useRef(conversationId);
+    conversationIdRef.current = conversationId;
     const assistantIdRef = useRef("");
     const messagesRef = useRef<ChatMessage[]>([]);
     const abortRef = useRef<AbortController | null>(null);
@@ -165,7 +163,7 @@ export function useAgent() {
         if (messages.length === 0) return;
         pendingSaveRef.current = {
             id: conversationId,
-            title: deriveTitle(messages),
+            title: title ?? "",
             messages,
             createdAt: conversationCreatedAt,
             updatedAt: Date.now(),
@@ -176,7 +174,7 @@ export function useAgent() {
             saveTimerRef.current = null;
             flushSave();
         }, SAVE_THROTTLE_MS);
-    }, [messages, conversationId, conversationCreatedAt, flushSave]);
+    }, [messages, title, conversationId, conversationCreatedAt, flushSave]);
 
     useEffect(
         () => () => {
@@ -250,8 +248,27 @@ export function useAgent() {
                 attachments: storedAttachments,
             };
 
+            const isFirstMessage = !messagesRef.current.some(m => m.role === "user");
             const updatedMessages = [...messagesRef.current, userMsg];
             setMessages(updatedMessages);
+
+            // Named alongside the run; a reply for a chat the user has since left is dropped.
+            if (isFirstMessage) {
+                const fallback = requestTitle(text) || storedAttachments?.[0]?.name || "Untitled";
+                void (async () => {
+                    let named = "";
+                    try {
+                        named = await generateChatTitle(getModel(providerId, apiKey, resolvedModelId), providerId, {
+                            text,
+                            attachmentNames: storedAttachments?.map(a => a.name),
+                            pickedElements: elementContext?.length,
+                        });
+                    } catch (error) {
+                        console.warn("[Tampersloth] chat title failed", error);
+                    }
+                    if (conversationIdRef.current === conversationId) setTitle(named || fallback);
+                })();
+            }
             await attachmentsSaved;
 
             const modelMessages = await buildModelMessages(updatedMessages, {
@@ -552,6 +569,7 @@ export function useAgent() {
 
     const clear = useCallback(() => {
         setMessages([]);
+        setTitle(null);
         setError(null);
         setConversationId(crypto.randomUUID());
         setConversationCreatedAt(Date.now());
@@ -560,6 +578,9 @@ export function useAgent() {
     const loadConversation = useCallback((conversation: StoredConversation) => {
         setConversationId(conversation.id);
         setConversationCreatedAt(conversation.createdAt);
+        const firstRequest = (conversation.messages as ChatMessage[]).find(m => m.role === "user");
+        // Chats closed before their title arrived are saved untitled.
+        setTitle(conversation.title || (firstRequest && requestTitle(firstRequest.content)) || null);
         const migrated = (conversation.messages as ChatMessage[]).map((msg) => {
             if (msg.blocks && msg.blocks.length > 0) return msg;
             const blocks: ContentBlock[] = [
@@ -572,5 +593,5 @@ export function useAgent() {
         setError(null);
     }, []);
 
-    return {messages, isLoading, error, conversationId, sendMessage, cancel, clear, loadConversation};
+    return {messages, title, isLoading, error, conversationId, sendMessage, cancel, clear, loadConversation};
 }

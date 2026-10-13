@@ -67,7 +67,7 @@ export const StepSequence = memo(function StepSequence({items, live, metrics}: S
 
     return (
         <div className="flex flex-col">
-            <SequenceLine controls={listId} open={open} onOpenChange={setOpen} hint={live ? undefined : summary}>
+            <SequenceLine controls={listId} open={open} onOpenChange={setOpen}>
                 {live
                     ? <LiveStatus label={liveLabel(latest)} labelKey={String(items[items.length - 1].index)} since={since}/>
                     : <span key="summary" className="ts-enter min-w-0 truncate">{summary}</span>}
