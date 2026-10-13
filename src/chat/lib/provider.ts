@@ -65,6 +65,24 @@ export const MODELPROVIDERS: ProviderConfig[] = [
     },
 ];
 
+const MODEL_WORDS: Record<string, string> = {gpt: "GPT", deepseek: "DeepSeek"};
+
+/** Human-readable model name: "claude-opus-5-5" → "Claude Opus 5.5", "gpt-6.1-sol" → "GPT 6.1 Sol". */
+export function formatModelName(modelId: string): string {
+    const parts: string[] = [];
+    for (const part of modelId.split("-")) {
+        // Consecutive numeric segments are a dashed version number ("5-5" → "5.5").
+        if (/^\d+$/.test(part) && /^\d+(\.\d+)*$/.test(parts.at(-1) ?? "")) {
+            parts[parts.length - 1] += `.${part}`;
+        } else {
+            parts.push(part);
+        }
+    }
+    return parts
+        .map((w) => MODEL_WORDS[w] ?? (/^v\d/.test(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
+        .join(" ");
+}
+
 /** True when `modelId` is in this provider's current picker catalog. */
 export function isKnownModel(providerId: ProviderId, modelId: string): boolean {
     const config = MODELPROVIDERS.find((p) => p.id === providerId);

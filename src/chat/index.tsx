@@ -99,11 +99,9 @@ function Chat() {
             `}</style>
 
             <ChatHeader
-                onBack={() => navigate("/")}
+                onBack={() => navigate("/gallery")}
                 historyOpen={historyOpen}
                 onToggleHistory={() => setHistoryOpen((o) => !o)}
-                onNewChat={handleNewChat}
-                onOpenSettings={() => navigate("/settings")}
             />
 
             <UserScriptsBanner />
@@ -128,7 +126,6 @@ function Chat() {
                 onSend={handleSend}
                 onCancel={cancel}
                 tabId={tabId}
-                conversationId={conversationId}
             />
 
             <HistoryDrawer
@@ -137,6 +134,7 @@ function Chat() {
                 activeId={conversationId}
                 onSelect={loadConversation}
                 onNewChat={handleNewChat}
+                onOpenSettings={() => navigate("/settings")}
             />
         </div>
     );

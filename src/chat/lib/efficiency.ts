@@ -58,12 +58,7 @@ export function resultReceipt(output: unknown, resultId: string, previewChars = 
         hint: "Use readToolResult(resultId, offset) for the original result. Archived page data may be stale."};
 }
 
-export function compactToolOutput(name: string, output: unknown, resultId: string): unknown {
-    const value = output as Record<string, unknown> | null;
-    if (name === "TodoWrite" && value?.success) {
-        return {success: true, changedIds: value.changedIds, resultId};
-    }
-    if (name === "TodoClear" && value?.success) return {success: true, cleared: value.cleared};
+export function compactToolOutput(output: unknown, resultId: string): unknown {
     if (serialize(output).length <= RESULT_CHARS) return output ?? null;
     const receipt = resultReceipt(output, resultId, 0);
     receipt.preview = clipEncoded(serialize(output), Math.max(30, RESULT_CHARS - serialize(receipt).length - 100));

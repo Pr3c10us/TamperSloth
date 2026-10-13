@@ -16,9 +16,10 @@ createRoot(document.getElementById('root')!).render(
   <HashRouter>
     <TooltipProvider delayDuration={300}>
       <Routes>
-          <Route path="/" element={<App />} />
+          <Route path="/" element={<Chat />} />
+          <Route path="/gallery" element={<App />} />
           <Route path="/settings" element={<Settings />} />
-          <Route path="/chat" element={<Chat />} />
+          <Route path="/chat" element={<Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </TooltipProvider>

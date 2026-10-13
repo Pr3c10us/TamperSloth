@@ -7,7 +7,6 @@ export type {ConversationSummary} from './conversationDB';
 const isChromeExtension = typeof chrome !== "undefined" && !!chrome?.storage?.local;
 
 const SELECTED_MODEL_KEY = "ts_selected_model";
-const CONVERSATIONS_KEY = "ts_conversations";
 const SCRIPTS_KEY = "ts_background_scripts";
 
 // ── Selected model ──────────────────────────────────────────
@@ -53,38 +52,12 @@ export interface StoredConversation {
     updatedAt: number;
 }
 
-// The old single-key archive can exceed hundreds of MB. Reading or overwriting
-// it broadcasts/clones the entire payload and has crashed Chrome's browser
-// process. Preserve it, but never read an oversized archive automatically.
-const MAX_LEGACY_HISTORY_BYTES = 2 * 1024 * 1024;
-const LEGACY_HISTORY_WARNING = 'Older chat history is too large to load safely and has been preserved. New chats are saved separately.';
-async function loadLegacyConversations(): Promise<{conversations: StoredConversation[]; warning?: string}> {
-    if (isChromeExtension) {
-        const bytes = await chrome.storage.local.getBytesInUse(CONVERSATIONS_KEY);
-        if (bytes > MAX_LEGACY_HISTORY_BYTES) return {conversations: [], warning: LEGACY_HISTORY_WARNING};
-        const result = await chrome.storage.local.get(CONVERSATIONS_KEY);
-        const stored = result[CONVERSATIONS_KEY];
-        return {conversations: Array.isArray(stored) ? (stored as StoredConversation[]) : []};
-    }
-    const raw = localStorage.getItem(CONVERSATIONS_KEY);
-    if (raw && raw.length > MAX_LEGACY_HISTORY_BYTES / 2) return {conversations: [], warning: LEGACY_HISTORY_WARNING};
-    return {conversations: raw ? JSON.parse(raw) : []};
+export async function loadConversationHistory(): Promise<ConversationSummary[]> {
+    return (await readChatSummaries()).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
-export async function loadConversationHistory(): Promise<{conversations: ConversationSummary[]; warning?: string}> {
-    const [summaries, legacy] = await Promise.all([readChatSummaries(), loadLegacyConversations()]);
-    const merged = new Map<string, ConversationSummary>();
-    for (const {id, title, createdAt, updatedAt} of legacy.conversations) merged.set(id, {id, title, createdAt, updatedAt});
-    for (const summary of summaries) merged.set(summary.id, summary);
-    return {conversations: [...merged.values()].sort((a, b) => b.updatedAt - a.updatedAt), warning: legacy.warning};
-}
-
-export async function loadStoredConversation(id: string): Promise<StoredConversation | null> {
-    const stored = await readChat(id);
-    if (stored) return stored;
-    const legacy = await loadLegacyConversations();
-    if (legacy.warning) throw new Error(legacy.warning);
-    return legacy.conversations.find(conversation => conversation.id === id) ?? null;
+export function loadStoredConversation(id: string): Promise<StoredConversation | null> {
+    return readChat(id);
 }
 
 export async function saveConversation(conversation: StoredConversation): Promise<void> {
@@ -103,12 +76,6 @@ export async function loadAttachment(id: string): Promise<Blob | null> {
 }
 
 export async function deleteConversation(id: string): Promise<void> {
-    const legacy = await loadLegacyConversations();
-    if (legacy.conversations.some(c => c.id === id)) {
-        const remaining = legacy.conversations.filter(c => c.id !== id);
-        if (isChromeExtension) await chrome.storage.local.set({[CONVERSATIONS_KEY]: remaining});
-        else localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(remaining));
-    }
     await removeChat(id);
 }
 
@@ -305,89 +272,5 @@ export async function deleteAllFilesForConversation(conversationId: string): Pro
         (k) => k.startsWith(FILE_PREFIX + conversationId + '/'),
     );
     if (keys.length > 0) await chrome.storage.local.remove(keys);
-}
-
-// ── Todos ───────────────────────────────────────────────────
-
-export type TodoStatus = "pending" | "in_progress" | "completed";
-export type TodoPriority = "high" | "medium" | "low";
-
-export interface TodoItem {
-    id: string;
-    content: string;
-    status: TodoStatus;
-    priority: TodoPriority;
-}
-
-const TODO_PREFIX = "ts_todos:";
-
-function todoKey(conversationId: string): string {
-    return TODO_PREFIX + conversationId;
-}
-
-export async function loadTodos(conversationId: string): Promise<TodoItem[]> {
-    const k = todoKey(conversationId);
-    if (isChromeExtension) {
-        const result = await chrome.storage.local.get(k);
-        const v = result[k];
-        return Array.isArray(v) ? (v as TodoItem[]) : [];
-    }
-    const raw = localStorage.getItem(k);
-    if (!raw) return [];
-    try {
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? (parsed as TodoItem[]) : [];
-    } catch {
-        return [];
-    }
-}
-
-export async function saveTodos(conversationId: string, todos: TodoItem[]): Promise<void> {
-    const k = todoKey(conversationId);
-    if (isChromeExtension) {
-        await chrome.storage.local.set({ [k]: todos });
-    } else {
-        localStorage.setItem(k, JSON.stringify(todos));
-    }
-}
-
-export async function clearTodos(conversationId: string): Promise<void> {
-    const k = todoKey(conversationId);
-    if (isChromeExtension) {
-        await chrome.storage.local.remove(k);
-    } else {
-        localStorage.removeItem(k);
-    }
-}
-
-export function subscribeTodos(
-    conversationId: string,
-    listener: (todos: TodoItem[]) => void,
-): () => void {
-    const k = todoKey(conversationId);
-    if (isChromeExtension) {
-        const handler = (
-            changes: Record<string, chrome.storage.StorageChange>,
-            area: chrome.storage.AreaName,
-        ) => {
-            if (area !== "local" || !(k in changes)) return;
-            const next = changes[k].newValue;
-            listener(Array.isArray(next) ? (next as TodoItem[]) : []);
-        };
-        chrome.storage.onChanged.addListener(handler);
-        return () => chrome.storage.onChanged.removeListener(handler);
-    }
-    const handler = (e: StorageEvent) => {
-        if (e.key !== k) return;
-        if (!e.newValue) return listener([]);
-        try {
-            const parsed = JSON.parse(e.newValue);
-            listener(Array.isArray(parsed) ? (parsed as TodoItem[]) : []);
-        } catch {
-            listener([]);
-        }
-    };
-    window.addEventListener("storage", handler);
-    return () => window.removeEventListener("storage", handler);
 }
 

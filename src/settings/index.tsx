@@ -16,19 +16,12 @@ function Settings() {
       <header className="flex items-center justify-between border-b border-muted px-3.5 py-3">
         <Button
           variant="ghost"
-          size="sm"
+          size="icon-lg"
           onClick={() => navigate(-1)}
-          className="gap-2 px-1.5"
+          aria-label="Back"
         >
-          <ArrowLeft strokeWidth={1.5} className="text-foreground" />
-          <img src="icon-white.svg" className="h-5 w-5" alt="" />
-          <span className="font-heading text-lg leading-none text-accent italic">
-            gallery
-          </span>
+          <ArrowLeft strokeWidth={2.25} className="size-5 text-foreground" />
         </Button>
-        <span className="font-mono text-[10.5px] tracking-[.12em] text-muted-foreground uppercase">
-          settings
-        </span>
       </header>
 
       <Tabs

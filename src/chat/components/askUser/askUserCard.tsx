@@ -2,7 +2,7 @@ import { AlertCircle, HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ToolCall } from "../../hooks/useAgent";
 import type { AskUserAnswer, AskUserOption } from "../../lib/askUserBus";
-import { Eyebrow, TODO_DUR, TODO_EASE } from "../todo/shared";
+import { Eyebrow, CARD_DUR, CARD_EASE } from "./shared";
 
 interface AskUserArgs {
     description?: string;
@@ -53,7 +53,7 @@ export function AskUserCard({ tc }: { tc: ToolCall }) {
         return (
             <article
                 className="rounded-md border border-destructive/40 bg-card p-3.5"
-                style={{ animation: `todoCardEnter ${TODO_DUR}ms ${TODO_EASE} both` }}
+                style={{ animation: `cardEnter ${CARD_DUR}ms ${CARD_EASE} both` }}
             >
                 <div className="flex items-center gap-2 text-sm text-destructive">
                     <AlertCircle className="size-3.5" strokeWidth={2} />
@@ -66,7 +66,7 @@ export function AskUserCard({ tc }: { tc: ToolCall }) {
     return (
         <article
             className="rounded-md border border-border bg-card p-3.5"
-            style={{ animation: `todoCardEnter ${TODO_DUR}ms ${TODO_EASE} both` }}
+            style={{ animation: `cardEnter ${CARD_DUR}ms ${CARD_EASE} both` }}
         >
             <header className="mb-2 flex items-center gap-2">
                 <HelpCircle className="size-3.5 text-muted-foreground" strokeWidth={1.75} />
@@ -80,7 +80,7 @@ export function AskUserCard({ tc }: { tc: ToolCall }) {
             {answer ? (
                 <div
                     className="mt-3 flex items-center gap-2 border-t border-border/60 pt-3"
-                    style={{ animation: `todoEnter ${TODO_DUR}ms ${TODO_EASE} both` }}
+                    style={{ animation: `cardItemEnter ${CARD_DUR}ms ${CARD_EASE} both` }}
                 >
                     {answer.emoji && (
                         <span aria-hidden className="text-base leading-none">

@@ -24,7 +24,6 @@ import {
     MAX_ATTACHMENTS,
     type PendingAttachment,
 } from "./AttachmentChip";
-import { ComposerTodoButton } from "./todo/composerTodoButton";
 import { AskUserOverlay } from "@/src/chat/components/askUser/askUserOverlay.tsx";
 
 interface ComposerProps {
@@ -42,7 +41,6 @@ interface ComposerProps {
     onSend: () => void;
     onCancel: () => void;
     tabId: number;
-    conversationId: string;
 }
 
 /** Label row for a group of attachments above the input: icon, name, count and "clear all". */
@@ -80,7 +78,6 @@ export function Composer({
     onSend,
     onCancel,
     tabId,
-    conversationId,
 }: ComposerProps) {
     const [isPicking, setIsPicking] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -118,7 +115,7 @@ export function Composer({
             setPickedElements,
         });
 
-    useEffect(() => {
+    const fitTextarea = () => {
         const ta = textareaRef.current;
         if (!ta) return;
         ta.style.height = "auto";
@@ -126,7 +123,24 @@ export function Composer({
         const maxHeight = lineHeight * 6;
         ta.style.height = `${Math.min(ta.scrollHeight, maxHeight)}px`;
         ta.style.overflowY = ta.scrollHeight > maxHeight ? "auto" : "hidden";
-    }, [draft]);
+    };
+
+    useEffect(fitTextarea, [draft]);
+
+    // The side panel can mount this while still opening (near-zero width), which wraps
+    // the placeholder into many lines; refit whenever the width settles.
+    useEffect(() => {
+        const ta = textareaRef.current;
+        if (!ta) return;
+        let lastWidth = ta.clientWidth;
+        const observer = new ResizeObserver(() => {
+            if (ta.clientWidth === lastWidth) return;
+            lastWidth = ta.clientWidth;
+            fitTextarea();
+        });
+        observer.observe(ta);
+        return () => observer.disconnect();
+    }, []);
 
     const canSend =
         !!selectedModel &&
@@ -300,7 +314,6 @@ export function Composer({
                                 Pick a page element
                             </TooltipContent>
                         </Tooltip>
-                        <ComposerTodoButton conversationId={conversationId} />
                         {isPicking && (
                             <span className="ml-1.5 flex min-w-0 items-center gap-1.5 font-mono text-[11px] text-accent">
                                 <span

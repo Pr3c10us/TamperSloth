@@ -9,6 +9,7 @@ import {Button} from "@/components/ui/button";
 import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
 import {formatElapsedTime} from "../lib/efficiency";
 import {estimateRunCost, formatCost} from "../lib/pricing";
+import {formatModelName} from "../lib/provider";
 
 type Block = ChatMessage["blocks"][number];
 type BlockGroup =
@@ -103,7 +104,7 @@ export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, 
             ? msg.runMetrics.steps.reduce((sum, step) => sum + (step.cacheRead ?? 0), 0) : undefined);
     const live = isLoading && isLast;
     const total = msg.runMetrics?.total;
-    const modelLabel = msg.runMetrics?.modelId ?? "model unknown";
+    const modelLabel = msg.runMetrics?.modelId ? formatModelName(msg.runMetrics.modelId) : "model unknown";
     const toolMetrics = showToolTokens
         ? new Map(msg.runMetrics?.tools.flatMap(metric => metric.id ? [[metric.id, metric] as const] : []))
         : undefined;

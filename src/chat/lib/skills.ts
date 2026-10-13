@@ -1,5 +1,5 @@
 export type SkillId =
-    | "verify_before_acting" | "virtual_file_system" | "task_tracking"
+    | "verify_before_acting" | "virtual_file_system"
     | "research_workflow" | "script_creation_workflow" | "script_format"
     | "injection_timing" | "persistent_storage" | "scope_confirmation"
     | "script_management" | "element_picker" | "quality_assurance" | "debugging_workflow";
@@ -14,10 +14,6 @@ export const skills: Record<SkillId, Skill> = {
     virtual_file_system: {
         description: "Virtual file conventions and surgical editing.",
         content: `Use one self-contained script per scripts/<kebab-case-name>.js file. createFileTool fails if it exists. viewCodeFiles reads numbered lines or lists a path ending in /. strReplaceTool edits a unique exact string; its edits array applies several replacements atomically in order. Line-number prefixes are display-only. Re-read only when contents are unknown or changed. Files persist across turns. Delete working files only after verified handoff, unless iteration continues. Saved scripts are separate; manage them with listScripts/toggleScript/removeScript.`,
-    },
-    task_tracking: {
-        description: "Track substantial multi-part work.",
-        content: `Use todos for substantial multi-part work or explicit planning requests; skip routine single-script tasks. Aim for 3–6 meaningful items. TodoWrite replaces the full list: preserve IDs and at most one in_progress item. Combine related status changes with the next useful tool batch. Read only if the current list is unknown. Mark completion accurately and clear after the overall task is finished.`,
     },
     research_workflow: {
         description: "Navigate, inspect, interact, report.",
@@ -63,7 +59,7 @@ Use ordinary variables for temporary page state.`,
     },
     quality_assurance: {
         description: "Verification before and after saving.",
-        content: `Verify requested behavior and missing-element handling before saving. Inspect console errors when diagnosing failures or risky execution. Use screenshots for visual changes; DOM checks for nonvisual changes. After saving, reload and verify actual injection. Delete the working file after handoff unless still iterating. Update existing todos to match completed work.`,
+        content: `Verify requested behavior and missing-element handling before saving. Inspect console errors when diagnosing failures or risky execution. Use screenshots for visual changes; DOM checks for nonvisual changes. After saving, reload and verify actual injection. Delete the working file after handoff unless still iterating.`,
     },
     debugging_workflow: {
         description: "Diagnose failures using targeted evidence.",

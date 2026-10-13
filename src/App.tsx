@@ -1,7 +1,7 @@
 import {useEffect, useRef, useState} from "react";
 import {Link, useNavigate} from "react-router-dom";
 import {
-    ArrowRight,
+    ArrowLeft,
     ChevronDown,
     Download,
     Pause,
@@ -125,9 +125,14 @@ function App() {
 
             {/* Header */}
             <header className="flex shrink-0 items-center justify-between px-4 py-3.5">
-                <div className="flex items-center gap-2.5">
-                    {/*<img src="favicon.svg" className="h-[22px] w-[22px]" alt=""/>*/}
-                </div>
+                <Button
+                    variant="ghost"
+                    size="icon-lg"
+                    onClick={() => navigate("/")}
+                    aria-label="Back to chat"
+                >
+                    <ArrowLeft strokeWidth={2.25} className="size-5 text-foreground"/>
+                </Button>
                 <TooltipProvider delayDuration={300}>
                     <div className="flex items-center gap-1.5">
                         {scripts.length > 0 && (
@@ -164,31 +169,6 @@ function App() {
             </header>
             {scripts.length > 0 && (
                 <>
-                    {/* CTA card */}
-                    <div className="shrink-0 px-4 pb-3">
-                        <button
-                            onClick={() => navigate("/chat")}
-                            className="flex w-full cursor-pointer items-center gap-3 rounded-[10px] border border-border bg-card px-3.5 py-3 text-left transition-transform active:scale-[0.99]"
-                        >
-                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-foreground">
-                                <img src="icon.svg" className="h-7 w-7" alt=""/>
-                            </div>
-                            <div className="min-w-0 flex-1">
-                                <div
-                                    className="mb-1 font-heading text-[19px] italic leading-[1.1] text-foreground">
-                                    Tell the sloth.
-                                </div>
-                                <div className="font-mono text-[10.5px] uppercase tracking-[.12em] text-muted-foreground">
-                                    What do you want to change?
-                                </div>
-                            </div>
-                            <ArrowRight
-                                strokeWidth={1.5}
-                                className="size-4 shrink-0 text-accent"
-                            />
-                        </button>
-                    </div>
-
                     {/* Search */}
                     <div className="shrink-0 px-4 pb-2.5">
                         <div className="relative flex items-center">
@@ -227,7 +207,7 @@ function App() {
                         </p>
                         <div className="flex w-full flex-col gap-2">
                             <Button asChild className="w-full gap-2">
-                                <Link to="/chat" className="no-underline">
+                                <Link to="/" className="no-underline">
                                     <Sparkles strokeWidth={1.5} className="size-3.5"/>
                                     Start a conversation
                                 </Link>
