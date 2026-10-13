@@ -1,7 +1,18 @@
 import { useEffect, useState } from "react";
 import { Trash2, FileCode, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   deleteFile,
   deleteAllFilesForConversation,
@@ -10,6 +21,7 @@ import {
   type CodeFileEntry,
   type ConversationSummary,
 } from "@/src/chat/lib/storage";
+import { SettingsGroup, SettingsSection, TabIntro } from "./Section";
 
 interface ConversationGroup {
   conversationId: string;
@@ -17,9 +29,12 @@ interface ConversationGroup {
   files: CodeFileEntry[];
 }
 
+const plural = (n: number, word: string) => `${n} ${word}${n !== 1 ? "s" : ""}`;
+
 export function CodeTab() {
   const [groups, setGroups] = useState<ConversationGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [confirmGroup, setConfirmGroup] = useState<ConversationGroup | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -43,7 +58,7 @@ export function CodeTab() {
     for (const [convId, fileList] of byConv) {
       result.push({
         conversationId: convId,
-        title: convMap.get(convId)?.title ?? convId.slice(0, 8) + "…",
+        title: convMap.get(convId)?.title || "Untitled conversation",
         files: fileList,
       });
     }
@@ -78,113 +93,126 @@ export function CodeTab() {
   const totalFiles = groups.reduce((sum, g) => sum + g.files.length, 0);
 
   return (
-    <>
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <h2 className="mb-1 font-heading text-3xl leading-tight">
-            Code files.
-          </h2>
-          <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Files written by the AI during chat sessions. Remove any that are no
-            longer needed.
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={load}
-          className="mt-1 shrink-0 px-2"
-          disabled={loading}
-        >
-          <RefreshCw
-            strokeWidth={1.5}
-            className={loading ? "size-3.5 animate-spin" : "size-3.5"}
-          />
-        </Button>
-      </div>
+    <div className="flex flex-col gap-6">
+      <TabIntro title={<>Code <em>files.</em></>}>
+        Files the sloth wrote during chats. Clear out any you no longer need.
+      </TabIntro>
 
-      {loading ? (
-        <div className="py-8 text-center text-[13px] text-muted-foreground">
-          Loading…
-        </div>
-      ) : groups.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 py-10 text-center">
-          <FileCode strokeWidth={1.5} className="size-8 text-muted-foreground/40" />
-          <p className="text-[13px] text-muted-foreground">No code files stored.</p>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-4">
-          <p className="text-[12px] text-muted-foreground">
-            {totalFiles} file{totalFiles !== 1 ? "s" : ""} across{" "}
-            {groups.length} conversation{groups.length !== 1 ? "s" : ""}
-          </p>
-
-          {groups.map((group) => (
-            <div
-              key={group.conversationId}
-              className="overflow-hidden rounded-lg border border-border bg-card"
-            >
-              {/* Group header */}
-              <div className="flex items-center justify-between border-b border-muted px-3 py-2">
-                <div className="min-w-0">
-                  <p className="truncate text-[13px] font-medium">
-                    {group.title}
-                  </p>
-                  <p className="font-mono text-[10px] text-muted-foreground/60">
-                    {group.conversationId}
-                  </p>
-                </div>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="ml-2 shrink-0 size-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
-                      onClick={() => handleDeleteAll(group.conversationId)}
-                    >
-                      <Trash2 strokeWidth={1.5} className="size-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Delete all files for this conversation</TooltipContent>
-                </Tooltip>
+      <SettingsSection
+        title={loading || groups.length === 0 ? "Files" : `${plural(totalFiles, "file")} · ${plural(groups.length, "chat")}`}
+        action={
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={load}
+                disabled={loading}
+                aria-label="Refresh"
+                className="text-muted-foreground"
+              >
+                <RefreshCw strokeWidth={1.5} className={loading ? "animate-spin" : undefined} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Refresh</TooltipContent>
+          </Tooltip>
+        }
+      >
+        {loading ? (
+          <SettingsGroup>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex items-center gap-3 px-3.5 py-3">
+                <Skeleton className="size-4 rounded" />
+                <Skeleton className="h-3.5 flex-1" />
               </div>
-
-              {/* File list */}
-              <ul className="divide-y divide-muted">
-                {group.files.map((file) => (
-                  <li
-                    key={file.path}
-                    className="flex items-center gap-2 px-3 py-2"
+            ))}
+          </SettingsGroup>
+        ) : groups.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 rounded-[10px] border border-dashed border-border px-6 py-10 text-center">
+            <FileCode strokeWidth={1.25} className="size-7 text-muted-foreground/50" />
+            <p className="font-heading text-[19px] italic leading-snug">Nothing stored.</p>
+            <p className="text-[12.5px] text-muted-foreground">
+              Files appear here when the sloth writes code in a chat.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {groups.map((group) => (
+              <SettingsGroup key={group.conversationId}>
+                <div className="flex items-center gap-2 py-2 pr-1.5 pl-3.5">
+                  <div className="min-w-0 flex-1" title={group.conversationId}>
+                    <p className="truncate text-[13px] font-medium">{group.title}</p>
+                    <p className="font-mono text-[10.5px] text-muted-foreground">
+                      {plural(group.files.length, "file")}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => setConfirmGroup(group)}
                   >
-                    <FileCode
-                      strokeWidth={1.5}
-                      className="size-3.5 shrink-0 text-muted-foreground/60"
-                    />
-                    <span className="flex-1 truncate font-mono text-[12px]">
-                      {file.path}
-                    </span>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="size-6 shrink-0 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                          onClick={() =>
-                            handleDeleteFile(file.conversationId, file.path)
-                          }
-                        >
-                          <Trash2 strokeWidth={1.5} className="size-3" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Delete file</TooltipContent>
-                    </Tooltip>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      )}
-    </>
+                    Delete all
+                  </Button>
+                </div>
+
+                <ul className="divide-y divide-muted bg-background/40">
+                  {group.files.map((file) => (
+                    <li
+                      key={file.path}
+                      className="group flex items-center gap-2.5 py-1.5 pr-1.5 pl-3.5"
+                    >
+                      <FileCode
+                        strokeWidth={1.5}
+                        className="size-3.5 shrink-0 text-muted-foreground/70"
+                      />
+                      <span className="flex-1 truncate font-mono text-[12px]" title={file.path}>
+                        {file.path}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={`Delete ${file.path}`}
+                        className="text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-destructive/10 hover:text-destructive [@media(hover:none)]:opacity-100"
+                        onClick={() => handleDeleteFile(file.conversationId, file.path)}
+                      >
+                        <Trash2 strokeWidth={1.5} />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </SettingsGroup>
+            ))}
+          </div>
+        )}
+      </SettingsSection>
+
+      <AlertDialog
+        open={!!confirmGroup}
+        onOpenChange={(open) => !open && setConfirmGroup(null)}
+      >
+        <AlertDialogContent className="max-w-xs rounded-[10px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-heading text-[22px] font-normal leading-tight">
+              Delete {confirmGroup && plural(confirmGroup.files.length, "file")}?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-[13px] leading-relaxed">
+              Everything written in “{confirmGroup?.title}” will be removed. This can't be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep them</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmGroup) void handleDeleteAll(confirmGroup.conversationId);
+              }}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }

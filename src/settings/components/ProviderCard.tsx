@@ -1,6 +1,7 @@
-import {KeyRound, Pencil, Trash2, X} from "lucide-react";
+import {ArrowUpRight, Plus} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
+import {cn} from "@/lib/utils";
 import type {Provider} from "./providers";
 
 type Props = {
@@ -18,9 +19,10 @@ type Props = {
 function maskKey(key: string): string {
     if (!key) return "";
     if (key.length <= 8) return "•".repeat(key.length);
-    return `${key.slice(0, 4)}${"•".repeat(Math.max(4, key.length - 8))}${key.slice(-4)}`;
+    return `${key.slice(0, 4)}${"•".repeat(Math.min(12, Math.max(4, key.length - 8)))}${key.slice(-4)}`;
 }
 
+/** One provider row inside the connections group. */
 export function ProviderCard({
     p,
     connected,
@@ -33,83 +35,96 @@ export function ProviderCard({
     onCancel,
 }: Props) {
     return (
-        <div
-            className={`mb-2.5 rounded-xl border border-border bg-card p-4`}
-        >
-            <div className="flex items-center gap-2.5">
-                <div
-                    className={`inline-flex shrink-0 items-center justify-center rounded-md border border-border bg-background font-heading text-foreground h-9 w-9 text-lg`}
-                >
-                    {p.logo}
-                </div>
-                <div className="min-w-0 flex-1">
-                    <div
-                        className={`font-medium text-foreground`}
-                    >
-                        {p.name}
+        <div className={cn("px-3.5 py-3 transition-colors duration-[160ms]", editing && "bg-background")}>
+            <div className="flex items-center gap-3">
+                <div className="relative shrink-0">
+                    <div className="flex size-9 items-center justify-center rounded-lg border border-border bg-background font-heading text-lg text-foreground">
+                        {p.logo}
                     </div>
-                    {connected && !editing ? (
-                        <div className="w-full mt-0.5 font-mono text-xs whitespace-nowrap text-muted-foreground overflow-hidden">
-                            {maskKey(apiKey)}
-                        </div>
-                    ) : (
-                        <div className="mt-0.5 font-mono text-xs text-muted-foreground">
-                            Get one at{" "}
-                            <a href={`https://${p.link}`} target="_blank">
-                                {p.link}
-                            </a>
-                        </div>
+                    {connected && (
+                        <span
+                            className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-card bg-accent"
+                            aria-hidden
+                        />
                     )}
                 </div>
-                {connected && !editing ? (
-                    <div className="flex items-center">
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={onEdit}
-                            aria-label="Edit API key"
+
+                <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13.5px] font-medium leading-snug text-foreground">{p.name}</div>
+                    {connected ? (
+                        <div className="truncate font-mono text-[11px] text-muted-foreground">
+                            {editing ? "Connected" : maskKey(apiKey)}
+                        </div>
+                    ) : (
+                        <a
+                            href={`https://${p.link}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-0.5 font-mono text-[11px] text-muted-foreground no-underline hover:text-foreground"
                         >
-                            <Pencil />
+                            {p.link}
+                            <ArrowUpRight strokeWidth={1.5} className="size-3" />
+                        </a>
+                    )}
+                </div>
+
+                {!editing && (
+                    connected ? (
+                        <Button variant="ghost" size="sm" onClick={onEdit} aria-label={`Manage ${p.name} API key`}>
+                            Manage
                         </Button>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={onDelete}
-                            aria-label="Delete API key"
-                        >
-                            <Trash2 />
+                    ) : (
+                        <Button variant="outline" size="sm" onClick={onEdit}>
+                            <Plus strokeWidth={1.75} />
+                            Add key
                         </Button>
-                    </div>
-                ) : editing ? null : (
-                    <Button variant="outline" size="sm" onClick={onEdit}>
-                        <KeyRound />
-                        API key
-                    </Button>
+                    )
                 )}
             </div>
 
             {editing && (
-                <div className="mt-2.5 flex gap-1.5">
+                <form
+                    className="mt-3 flex flex-col gap-2"
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        onSave();
+                    }}
+                    onKeyDown={(e) => {
+                        if (e.key === "Escape") onCancel();
+                    }}
+                >
                     <Input
                         type="password"
                         value={apiKey}
                         onChange={(e) => onSetKey(e.target.value)}
                         placeholder={`Paste your ${p.name} API key`}
-                        className="font-mono"
+                        aria-label={`${p.name} API key`}
+                        autoComplete="off"
+                        spellCheck={false}
+                        className="h-9 bg-card font-mono text-[12.5px]"
                         autoFocus
                     />
-                    <Button onClick={onSave} disabled={!apiKey}>
-                        Save
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={onCancel}
-                        aria-label="Cancel"
-                    >
-                        <X />
-                    </Button>
-                </div>
+                    <div className="flex items-center gap-1.5">
+                        {connected && (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={onDelete}
+                                className="-ml-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            >
+                                Remove key
+                            </Button>
+                        )}
+                        <div className="flex-1" />
+                        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+                            Cancel
+                        </Button>
+                        <Button type="submit" size="sm" disabled={!apiKey.trim()}>
+                            Save
+                        </Button>
+                    </div>
+                </form>
             )}
         </div>
     );

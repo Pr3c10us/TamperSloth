@@ -1,63 +1,160 @@
-import {useEffect, useState} from "react";
-import {Button} from "@/components/ui/button";
+import {useEffect, useRef, useState, type ReactNode} from "react";
+import {Check} from "lucide-react";
 import {Input} from "@/components/ui/input";
-import {Label} from "@/components/ui/label";
+import {Slider} from "@/components/ui/slider";
 import {Switch} from "@/components/ui/switch";
+import {cn} from "@/lib/utils";
 import {DEFAULT_AGENT_SETTINGS, loadAgentSettings, saveAgentSettings, type AgentSettings} from "@/src/chat/lib/agentSettings";
+import {SettingRow, SettingsGroup, SettingsSection, TabIntro} from "./Section";
+
+const BUDGET_PRESETS = [
+    {value: 100_000, label: "100k"},
+    {value: 250_000, label: "250k"},
+    {value: 500_000, label: "500k"},
+    {value: 1_000_000, label: "1M"},
+    {value: 0, label: "No limit"},
+];
+
+const REASONING_OPTIONS: {value: AgentSettings["reasoning"]; label: string; hint: string}[] = [
+    {value: "balanced", label: "Balanced", hint: "Lower effort, faster replies."},
+    {value: "thorough", label: "Thorough", hint: "Maximum effort on every step."},
+];
+
+type SaveState = "idle" | "saved" | "error";
+
+/** Pill-style single choice. Used for presets and the reasoning mode. */
+function Choice({selected, disabled, onSelect, children}: {
+    selected: boolean; disabled?: boolean; onSelect: () => void; children: ReactNode;
+}) {
+    return (
+        <button type="button" role="radio" aria-checked={selected} disabled={disabled} onClick={onSelect}
+            className={cn("h-7 rounded-md px-2.5 text-[12px] font-medium transition-colors duration-[160ms] outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
+                selected ? "bg-background text-foreground shadow-sm dark:bg-input/40" : "text-muted-foreground hover:text-foreground")}>
+            {children}
+        </button>
+    );
+}
 
 export function PreferencesTab() {
     const [settings, setSettings] = useState<AgentSettings>(DEFAULT_AGENT_SETTINGS);
     const [ready, setReady] = useState(false);
-    const [status, setStatus] = useState("");
+    const [saveState, setSaveState] = useState<SaveState>("idle");
+    // While the budget field is focused it shows raw digits; otherwise a formatted number.
+    const [budgetDraft, setBudgetDraft] = useState<string | null>(null);
+    const latest = useRef(settings);
+    const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     useEffect(() => { let active = true; void loadAgentSettings().then(value => {
-        if (active) { setSettings(value); setReady(true); }
+        if (active) { latest.current = value; setSettings(value); setReady(true); }
     }); return () => { active = false; }; }, []);
 
+    const persist = async () => {
+        timer.current = null;
+        try { await saveAgentSettings(latest.current); setSaveState("saved"); }
+        catch { setSaveState("error"); }
+    };
+
+    // Flush a pending save if the page closes mid-debounce.
+    useEffect(() => () => { if (timer.current) { clearTimeout(timer.current); void persist(); } }, []);
+
+    const update = (patch: Partial<AgentSettings>) => {
+        const next = {...latest.current, ...patch};
+        latest.current = next;
+        setSettings(next);
+        setSaveState("idle");
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => { void persist(); }, 400);
+    };
+
+    const budgetText = budgetDraft ?? (settings.tokenBudget > 0 ? settings.tokenBudget.toLocaleString() : "");
+
     return (
-        <form className="flex max-w-lg flex-col gap-6" onSubmit={async event => {
-            event.preventDefault();
-            try { await saveAgentSettings(settings); setStatus("Saved. Applies to the next run."); }
-            catch { setStatus("Could not save preferences. Please try again."); }
-        }}>
-            <div>
-                <h2 className="mb-2 font-heading text-3xl italic">Agent preferences</h2>
-                <p className="text-sm text-muted-foreground">Control how much work the agent can do in a single run.</p>
+        <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-2">
+                <TabIntro title={<>How hard should it <em>work?</em></>}>
+                    Limits and display options for the agent. Changes save automatically.
+                </TabIntro>
+                <p role="status" aria-live="polite" className={cn("flex h-4 items-center gap-1 px-0.5 font-mono text-[11px] transition-opacity duration-300",
+                    saveState === "idle" ? "opacity-0" : "opacity-100",
+                    saveState === "error" ? "text-destructive" : "text-muted-foreground")}>
+                    {saveState === "saved" && <><Check strokeWidth={2} className="size-3 text-accent" /> Saved · applies to the next run</>}
+                    {saveState === "error" && "Couldn't save preferences. Try again."}
+                </p>
             </div>
-            <div className="grid gap-2">
-                <Label htmlFor="maxSteps">Maximum steps</Label>
-                <Input id="maxSteps" type="number" min={5} max={200} required disabled={!ready} value={settings.maxSteps}
-                    onChange={e => { setStatus(""); setSettings({...settings, maxSteps: Number(e.target.value)}); }}/>
-                <p className="text-xs text-muted-foreground">A step is one model response and its tool calls.</p>
-            </div>
-            <div className="grid gap-2">
-                <Label htmlFor="tokenBudget">Token budget per run</Label>
-                <Input id="tokenBudget" type="number" min={0} step={1000} required disabled={!ready} value={settings.tokenBudget}
-                    onChange={e => { setStatus(""); setSettings({...settings, tokenBudget: Number(e.target.value)}); }}/>
-                <p className="text-xs text-muted-foreground">Counts input and output across steps, including cached input. Checked after each step, so the final step can exceed the budget. Set 0 for no token limit. You can continue stopped work with another message.</p>
-            </div>
-            <div className="grid gap-2">
-                <Label htmlFor="reasoning">DeepSeek reasoning</Label>
-                <select id="reasoning" className="rounded-md border border-input bg-background px-3 py-2 text-sm" disabled={!ready}
-                    value={settings.reasoning} onChange={e => { setStatus(""); setSettings({...settings, reasoning: e.target.value as AgentSettings["reasoning"]}); }}>
-                    <option value="balanced">Balanced</option><option value="thorough">Thorough</option>
-                </select>
-                <p className="text-xs text-muted-foreground">Balanced requests lower effort; thorough requests maximum effort. Other providers retain their existing settings.</p>
-            </div>
-            <div className="grid gap-3">
-                <div className="flex items-center justify-between gap-4">
-                    <Label htmlFor="showRunTokens">Show run token usage</Label>
-                    <Switch id="showRunTokens" disabled={!ready} checked={settings.showRunTokens}
-                        onCheckedChange={checked => { setStatus(""); setSettings({...settings, showRunTokens: checked}); }}/>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                    <Label htmlFor="showToolTokens">Show tool token usage</Label>
-                    <Switch id="showToolTokens" disabled={!ready} checked={settings.showToolTokens}
-                        onCheckedChange={checked => { setStatus(""); setSettings({...settings, showToolTokens: checked}); }}/>
-                </div>
-                <p className="text-xs text-muted-foreground">Run usage is the input and output total under each reply. Tool usage is the estimate on each tool call. Hiding them doesn't change the token budget.</p>
-            </div>
-            <Button className="self-start" type="submit" disabled={!ready}>Save preferences</Button>
-            {status && <p role="status" className="text-sm text-muted-foreground">{status}</p>}
-        </form>
+
+            <SettingsSection title="Run limits">
+                <SettingsGroup>
+                    <SettingRow stacked label="Maximum steps"
+                        description="A step is one model response and its tool calls.">
+                        <div className="flex items-center gap-3">
+                            <Slider id="maxSteps" aria-label="Maximum steps" min={5} max={200} step={5} disabled={!ready}
+                                value={[settings.maxSteps]} onValueChange={([value]) => update({maxSteps: value})} />
+                            <span className="w-9 shrink-0 text-right font-mono text-[13px] tabular-nums">{settings.maxSteps}</span>
+                        </div>
+                    </SettingRow>
+
+                    <SettingRow stacked label="Token budget per run" htmlFor="tokenBudget"
+                        description="Input and output across all steps, including cached input. Checked after each step, so the last one can run over. Continue stopped work with another message.">
+                        <div className="flex flex-col gap-2">
+                            <div className="relative">
+                                <Input id="tokenBudget" inputMode="numeric" autoComplete="off" disabled={!ready}
+                                    placeholder="No limit" value={budgetText}
+                                    className="h-9 bg-background pr-16 font-mono text-[13px] tabular-nums"
+                                    onFocus={() => setBudgetDraft(settings.tokenBudget > 0 ? String(settings.tokenBudget) : "")}
+                                    onBlur={() => setBudgetDraft(null)}
+                                    onChange={e => {
+                                        const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+                                        setBudgetDraft(digits);
+                                        update({tokenBudget: Number(digits || 0)});
+                                    }} />
+                                <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-[12px] text-muted-foreground">
+                                    tokens
+                                </span>
+                            </div>
+                            <div role="radiogroup" aria-label="Token budget presets" className="flex flex-wrap gap-0.5 self-start rounded-lg bg-muted p-[3px]">
+                                {BUDGET_PRESETS.map(preset => (
+                                    <Choice key={preset.value} disabled={!ready} selected={settings.tokenBudget === preset.value}
+                                        onSelect={() => { setBudgetDraft(null); update({tokenBudget: preset.value}); }}>
+                                        {preset.label}
+                                    </Choice>
+                                ))}
+                            </div>
+                        </div>
+                    </SettingRow>
+                </SettingsGroup>
+            </SettingsSection>
+
+            <SettingsSection title="Reasoning">
+                <SettingsGroup>
+                    <SettingRow stacked label="DeepSeek reasoning"
+                        description={`${REASONING_OPTIONS.find(o => o.value === settings.reasoning)!.hint} Other providers keep their own settings.`}>
+                        <div role="radiogroup" aria-label="DeepSeek reasoning" className="grid grid-cols-2 gap-0.5 rounded-lg bg-muted p-[3px]">
+                            {REASONING_OPTIONS.map(option => (
+                                <Choice key={option.value} disabled={!ready} selected={settings.reasoning === option.value}
+                                    onSelect={() => update({reasoning: option.value})}>
+                                    {option.label}
+                                </Choice>
+                            ))}
+                        </div>
+                    </SettingRow>
+                </SettingsGroup>
+            </SettingsSection>
+
+            <SettingsSection title="Display"
+                description="Hiding usage doesn't change the token budget.">
+                <SettingsGroup>
+                    <SettingRow label="Run token usage" htmlFor="showRunTokens"
+                        description="Input and output totals under each reply.">
+                        <Switch id="showRunTokens" disabled={!ready} checked={settings.showRunTokens}
+                            onCheckedChange={checked => update({showRunTokens: checked})} />
+                    </SettingRow>
+                    <SettingRow label="Tool token usage" htmlFor="showToolTokens"
+                        description="Estimated tokens on each tool call.">
+                        <Switch id="showToolTokens" disabled={!ready} checked={settings.showToolTokens}
+                            onCheckedChange={checked => update({showToolTokens: checked})} />
+                    </SettingRow>
+                </SettingsGroup>
+            </SettingsSection>
+        </div>
     );
 }
