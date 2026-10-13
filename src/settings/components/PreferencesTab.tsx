@@ -2,6 +2,7 @@ import {useEffect, useState} from "react";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
+import {Switch} from "@/components/ui/switch";
 import {DEFAULT_AGENT_SETTINGS, loadAgentSettings, saveAgentSettings, type AgentSettings} from "@/src/chat/lib/agentSettings";
 
 export function PreferencesTab() {
@@ -41,6 +42,19 @@ export function PreferencesTab() {
                     <option value="balanced">Balanced</option><option value="thorough">Thorough</option>
                 </select>
                 <p className="text-xs text-muted-foreground">Balanced requests lower effort; thorough requests maximum effort. Other providers retain their existing settings.</p>
+            </div>
+            <div className="grid gap-3">
+                <div className="flex items-center justify-between gap-4">
+                    <Label htmlFor="showRunTokens">Show run token usage</Label>
+                    <Switch id="showRunTokens" disabled={!ready} checked={settings.showRunTokens}
+                        onCheckedChange={checked => { setStatus(""); setSettings({...settings, showRunTokens: checked}); }}/>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                    <Label htmlFor="showToolTokens">Show tool token usage</Label>
+                    <Switch id="showToolTokens" disabled={!ready} checked={settings.showToolTokens}
+                        onCheckedChange={checked => { setStatus(""); setSettings({...settings, showToolTokens: checked}); }}/>
+                </div>
+                <p className="text-xs text-muted-foreground">Run usage is the input and output total under each reply. Tool usage is the estimate on each tool call. Hiding them doesn't change the token budget.</p>
             </div>
             <Button className="self-start" type="submit" disabled={!ready}>Save preferences</Button>
             {status && <p role="status" className="text-sm text-muted-foreground">{status}</p>}

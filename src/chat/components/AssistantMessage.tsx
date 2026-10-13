@@ -41,14 +41,21 @@ interface AssistantMessageProps {
     msg: ChatMessage;
     isLoading: boolean;
     isLast: boolean;
+    showRunTokens: boolean;
+    showToolTokens: boolean;
 }
 
 // Streaming re-renders the whole list on every delta; `msg` keeps its identity
 // for every message except the one being written, so memo skips the rest —
 // without it each token re-parses the markdown of the entire conversation.
-export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, isLast}: AssistantMessageProps) {
+export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, isLast, showRunTokens, showToolTokens}: AssistantMessageProps) {
     const [showCost, setShowCost] = useState(false);
     const cost = showCost && msg.runMetrics ? estimateRunCost(msg.runMetrics) : undefined;
+    // Cache reads are part of input tokens, billed at a fraction of the input rate.
+    const cachedInput = msg.runMetrics?.total?.cacheRead
+        ?? (msg.runMetrics?.steps.some(step => step.cacheRead !== undefined)
+            ? msg.runMetrics.steps.reduce((sum, step) => sum + (step.cacheRead ?? 0), 0) : undefined);
+    const toolMetrics = new Map(msg.runMetrics?.tools.flatMap(metric => metric.id ? [[metric.id, metric] as const] : []));
     const fullText = msg.blocks
         .filter((b): b is { type: "text"; text: string } => b.type === "text")
         .map((b) => b.text)
@@ -57,7 +64,7 @@ export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, 
     return (
         <div className="flex flex-col gap-2.5">
             <div className="flex items-center gap-2">
-                <img src="favicon.svg" alt="" className="size-4 opacity-85"/>
+                <img src="icon-white.svg" alt="" className="size-4 opacity-85"/>
                 <span className="font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground">
                     Sloth
                 </span>
@@ -66,7 +73,7 @@ export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, 
                 {msg.blocks.map((block, i) => {
                     if (block.type === "tool_call") {
                         const key = block.toolCall.id + ":" + i;
-                        return <ToolCallInline key={key} i={i} tc={block.toolCall}/>;
+                        return <ToolCallInline key={key} i={i} tc={block.toolCall} metric={showToolTokens ? toolMetrics.get(block.toolCall.id) : undefined}/>;
                     }
                     if (block.type === "thinking") {
                         const isLastBlock = i === msg.blocks.length - 1;
@@ -82,7 +89,10 @@ export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, 
                 })}
             </div>
             {isLoading && isLast && <StreamingDots/>}
-            {msg.runMetrics && !(isLoading && isLast) && (
+            {msg.runMetrics && !(isLoading && isLast) && !showRunTokens && (
+                <p className="text-xs text-muted-foreground">{formatElapsedTime(msg.runMetrics.elapsedMs)} elapsed</p>
+            )}
+            {msg.runMetrics && !(isLoading && isLast) && showRunTokens && (
                 <button
                     type="button"
                     onClick={() => setShowCost(previous => !previous)}
@@ -96,10 +106,12 @@ export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, 
                     {formatElapsedTime(msg.runMetrics.elapsedMs)} elapsed
                     {msg.runMetrics.total?.input !== undefined && (showCost
                         ? ` · ${formatCost(cost?.input)} input cost`
-                        : ` · ${msg.runMetrics.total.input.toLocaleString()} input tokens`)}
+                        : ` · ${msg.runMetrics.total.input.toLocaleString()} input tokens${cachedInput ? ` (${cachedInput.toLocaleString()} cached)` : ""}`)}
                     {msg.runMetrics.total?.output !== undefined && (showCost
                         ? ` · ${formatCost(cost?.output)} output cost`
                         : ` · ${msg.runMetrics.total.output.toLocaleString()} output tokens`)}
+                    {showCost && ` · ${formatCost(cost?.input !== undefined && cost.output !== undefined
+                        ? cost.input + cost.output : undefined)} total cost`}
                 </button>
             )}
             {fullText && !isLoading && isLast && <CopyMessageButton text={fullText}/>}

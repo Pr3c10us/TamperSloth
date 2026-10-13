@@ -4,10 +4,15 @@ export interface AgentSettings {
     maxSteps: number;
     tokenBudget: number;
     reasoning: "balanced" | "thorough";
+    /** Show the run's total input/output tokens under each reply. */
+    showRunTokens: boolean;
+    /** Show estimated tokens on each tool call. */
+    showToolTokens: boolean;
 }
 
 const KEY = "ts_agent_settings";
-export const DEFAULT_AGENT_SETTINGS: AgentSettings = {maxSteps: 200, tokenBudget: 250000, reasoning: "balanced"};
+export const DEFAULT_AGENT_SETTINGS: AgentSettings = {maxSteps: 200, tokenBudget: 250000, reasoning: "balanced",
+    showRunTokens: true, showToolTokens: true};
 
 export function runStopReason(settings: AgentSettings, steps: UsageRecord[], failure = ""): string {
     if (failure) return failure;
@@ -22,6 +27,8 @@ export function normalizeAgentSettings(value: Partial<AgentSettings> = {}): Agen
         maxSteps: Number.isFinite(value.maxSteps) ? Math.max(5, Math.min(200, Math.round(value.maxSteps!))) : 200,
         tokenBudget: Number.isFinite(value.tokenBudget) ? Math.max(0, Math.round(value.tokenBudget!)) : 250000,
         reasoning: value.reasoning === "thorough" ? "thorough" : "balanced",
+        showRunTokens: value.showRunTokens !== false,
+        showToolTokens: value.showToolTokens !== false,
     };
 }
 
@@ -40,3 +47,13 @@ export async function saveAgentSettings(settings: AgentSettings) {
     else localStorage.setItem(KEY, JSON.stringify(value));
 }
 
+
+/** Calls back with fresh settings whenever they are saved from another page. */
+export function onAgentSettingsChange(callback: (settings: AgentSettings) => void): () => void {
+    if (typeof chrome === "undefined" || !chrome.storage?.onChanged) return () => {};
+    const listener = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+        if (area === "local" && changes[KEY]) callback(normalizeAgentSettings(changes[KEY].newValue ?? {}));
+    };
+    chrome.storage.onChanged.addListener(listener);
+    return () => chrome.storage.onChanged.removeListener(listener);
+}

@@ -9,6 +9,31 @@ export const elementTarget = z.union([
     z.object({mark: z.number().int().positive(), snapshotId: z.string().min(1).max(200)}),
     point,
 ]);
+
+// Model-facing gesture schemas. Tool definitions are re-sent on every agent step,
+// so these stay flat and skip limits/defaults; the browser service re-parses each
+// call with browserSchemas.gesture, which applies defaults and enforces limits.
+const toolTarget = z.object({selector: z.string().optional(), role: z.string().optional(), name: z.string().optional(),
+    text: z.string().optional(), exact: z.boolean().optional(), index: z.number().int().optional(),
+    mark: z.number().int().optional(), snapshotId: z.string().optional(), x: z.number().optional(), y: z.number().optional()})
+    .refine(target => elementTarget.safeParse(target).success, 'Target needs selector, role+name, text, mark+snapshotId, or x+y');
+const toolScope = {tabId: z.number().int().optional(), sessionId: z.string().optional(), frameId: z.string().optional(),
+    contextId: z.number().int().optional(), feedbackMs: z.number().int().optional(), postScreenshot: z.boolean().optional()};
+/** Large enough for a whole sketch, including tool-switch key presses, in one call. */
+export const MAX_GESTURE_STEPS = 60;
+export const gestureStep = z.object({
+    action: z.enum(['click', 'hover', 'drag', 'scroll', 'type', 'press', 'pinch', 'rotate', 'selectRange']),
+    target: toolTarget.optional(), from: toolTarget.optional(), to: toolTarget.optional(), text: z.string().optional(), chord: z.string().optional(),
+    button: z.enum(['left', 'right', 'middle']).optional(), clickCount: z.number().int().optional(),
+    deltaX: z.number().optional(), deltaY: z.number().optional(), smooth: z.boolean().optional(),
+    duration: z.number().int().optional(), steps: z.number().int().optional(), humanize: z.boolean().optional(),
+    perKeyDelay: z.number().int().optional(), factor: z.number().optional(), angle: z.number().optional()});
+export const toolSchemas = {
+    clickTarget: z.object({...toolScope, target: toolTarget, button: z.enum(['left', 'right', 'middle']).optional(), clickCount: z.number().int().optional()}),
+    browserGesture: z.object({...toolScope, gestures: z.array(gestureStep).min(1).max(MAX_GESTURE_STEPS)
+        .describe(`Run in order; stops at the first failure. Up to ${MAX_GESTURE_STEPS} steps: batch every stroke of a drawing in one call, splitting only beyond that.`)}),
+};
+
 export const browserSchemas = {
     guidance: z.object({tabId, action:z.enum(['draw','remove','clear','start','poll','cancel','cue']),
         index:z.number().int().nonnegative().default(0), cue:z.enum(['click','type','scroll','hover']).default('hover'),
@@ -19,10 +44,12 @@ export const browserSchemas = {
         color:z.enum(['lime','moss','amber','sky','rose']).default('lime').describe('All guide drawings use the app lime accent. Other values are accepted for legacy calls.'), lineStyle:z.enum(['solid','dashed']).default('solid'),
         lineWidth:z.number().min(1).max(8).default(2.5), lifetimeMs:z.number().int().min(0).max(120000).default(0),
         annotationIds:z.array(z.string().min(1).max(100)).max(30).default([]),
+        region:point.extend({width:z.number().positive(),height:z.number().positive()}).optional().describe('Coordinate fallback: viewport CSS box measured from a screenshot, used instead of selector.'),
         completion:z.object({selector:z.string().min(1).max(1000),state:z.enum(['visible','absent','checked','selected','pressed'])}).optional(),
         instruction:z.string().min(1).max(300).optional(), event:z.enum(['click','input','change','submit','focusin','pointerup','state']).default('click'),
         expectedSelector:z.string().min(1).max(1000).optional(), expectedState:z.enum(['visible','absent','checked']).default('visible'),
-        timeoutMs:z.number().int().min(1000).max(120000).default(60000)}),
+        timeoutMs:z.number().int().min(1000).max(120000).default(60000),
+        idleTimeoutMs:z.number().int().min(3000).max(60000).default(20000).describe('End the wait early when the user shows no page activity at all for this long.')}),
     perception: z.object({tabId, sessionId, frameId: z.string().max(200).optional(), contextId: z.number().int().positive().optional(),
         mode: z.enum(['marks', 'grid', 'plain', 'contours']).default('marks'), maxMarks: z.number().int().min(1).max(50).default(50),
         region: z.union([z.string().regex(/^[A-Z]+[1-9][0-9]*$/), point.extend({width: z.number().positive(), height: z.number().positive()})]).optional(),
