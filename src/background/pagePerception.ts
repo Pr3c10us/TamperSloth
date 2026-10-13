@@ -157,7 +157,7 @@ export function pagePerception(args: any, anchored?: Element) {
         return {point, bbox: g.bbox, target: describe(el), hit: describe(g.hit), metrics: metrics()};
     }
     if (args.action === 'observeStart') {
-        const entry: any = {before: {url: location.href, focus: focus(), dialogs: Array.from(document.querySelectorAll('dialog[open],[role=dialog],[aria-modal=true]')).map(describe)}, mutations: [], mutationCount: 0, events: [], roots: new Set([document])};
+        const entry: any = {before: {url: location.href, focus: focus(), scroll: {x: scrollX, y: scrollY}, dialogs: Array.from(document.querySelectorAll('dialog[open],[role=dialog],[aria-modal=true]')).map(describe)}, mutations: [], mutationCount: 0, events: [], roots: new Set([document])};
         entry.observer = new MutationObserver(records => {
             entry.mutationCount += records.length;
             for (const r of records) if (entry.mutations.length < 20) entry.mutations.push({type: r.type, tag: (r.target as Element).tagName?.toLowerCase(), attribute: r.attributeName, added: r.addedNodes.length, removed: r.removedNodes.length});
@@ -179,7 +179,7 @@ export function pagePerception(args: any, anchored?: Element) {
         entry.cleanup(); state.observations.delete(args.id);
         const afterFocus = focus();
         const dialogs = Array.from(document.querySelectorAll('dialog[open],[role=dialog],[aria-modal=true]')).map(describe);
-        return {before: entry.before, after: {url: location.href, focus: afterFocus, dialogs}, focusMoved: JSON.stringify(afterFocus) !== JSON.stringify(entry.before.focus),
+        return {before: entry.before, after: {url: location.href, focus: afterFocus, scroll: {x: scrollX, y: scrollY}, dialogs}, focusMoved: JSON.stringify(afterFocus) !== JSON.stringify(entry.before.focus),
             urlChanged: entry.before.url !== location.href, newDialogs: dialogs.filter(d => !entry.before.dialogs.some((b: any) => b?.selector === d?.selector)),
             mutationCount: entry.mutationCount, mutations: entry.mutations, events: entry.events};
     }

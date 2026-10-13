@@ -1,49 +1,102 @@
-import { useState } from "react";
-import { Brain, ChevronDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import {memo, useLayoutEffect, useRef, useState} from "react";
+import {Brain, Lightbulb} from "lucide-react";
+import {cn} from "@/lib/utils";
+import {MarkdownContent} from "./Markdown";
+import {Step, useNow, useSmoothText} from "./steps/Step";
+import {thinkingDuration, type ThinkingContent} from "../lib/reasoning";
+import {formatElapsedTime} from "../lib/efficiency";
+
+// Only the tail is shown while streaming, so re-parsing stays cheap per frame.
+const PREVIEW_CHARS = 700;
+const THINKING_TEXT = "text-[12.5px] leading-relaxed text-muted-foreground [&_p]:my-1 [&_p]:text-[12.5px] [&_strong]:text-foreground/75 [&_h1]:text-[13px] [&_h2]:text-[13px] [&_h3]:text-[13px] [&_h4]:text-[13px] [&_li]:text-[12.5px]";
 
 interface ThinkingBlockProps {
-    text: string;
-    isStreaming?: boolean;
+    block: ThinkingContent;
+    /** True while this run is still streaming. */
+    live: boolean;
 }
 
-export function ThinkingBlock({ text, isStreaming = false }: ThinkingBlockProps) {
-    const [open, setOpen] = useState(false);
+function doneLabel(duration: number | undefined) {
+    if (duration === undefined) return "Thought";
+    if (duration < 1000) return "Thought briefly";
+    return `Thought for ${formatElapsedTime(duration)}`;
+}
 
+/** Cuts streamed text to its last few paragraphs without splitting a line. */
+function previewTail(text: string) {
+    if (text.length <= PREVIEW_CHARS) return text;
+    const tail = text.slice(-PREVIEW_CHARS);
+    const lineBreak = tail.indexOf("\n");
+    return lineBreak >= 0 && lineBreak < PREVIEW_CHARS / 2 ? tail.slice(lineBreak + 1) : tail;
+}
+
+/** Closes a half-streamed bold or code span so it renders instead of showing raw markers. */
+function closeOpenMarkdown(text: string) {
+    let closed = text;
+    if ((closed.match(/\*\*/g)?.length ?? 0) % 2) closed += "**";
+    if ((closed.replace(/```/g, "").match(/`/g)?.length ?? 0) % 2) closed += "`";
+    return closed;
+}
+
+/** Bottom-anchored live preview; the top fades only once older lines scroll out. */
+function ThinkingPreview({text}: { text: string }) {
+    const ref = useRef<HTMLDivElement>(null);
+    const [overflowing, setOverflowing] = useState(false);
+    useLayoutEffect(() => {
+        const element = ref.current;
+        if (element) setOverflowing(element.scrollHeight > element.clientHeight + 1);
+    }, [text]);
     return (
-        <div className="overflow-hidden rounded border border-border">
-            <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setOpen((v) => !v)}
-                className="group flex h-auto w-full items-center gap-2 rounded-none px-3 py-2 text-left hover:bg-muted/50"
-            >
-                {isStreaming ? (
-                    <span
-                        className="size-1.5 shrink-0 rounded-full bg-accent"
-                        style={{ animation: "slothPulse 1.4s cubic-bezier(.22,.61,.36,1) infinite" }}
-                    />
-                ) : (
-                    <Brain className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={1.5} />
-                )}
-                <span className="flex-1 font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground">
-                    Thinking
-                </span>
-                {!isStreaming && (
-                    <ChevronDown
-                        className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-[240ms]"
-                        style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
-                        strokeWidth={1.5}
-                    />
-                )}
-            </Button>
-            {open && !isStreaming && (
-                <div className="border-t border-border bg-muted/20 px-3 py-3">
-                    <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground">
-                        {text}
-                    </pre>
-                </div>
-            )}
+        <div ref={ref} className={cn("flex max-h-[7.5rem] flex-col justify-end overflow-hidden", overflowing && "ts-fade-top")}>
+            <MarkdownContent content={closeOpenMarkdown(previewTail(text))} className={THINKING_TEXT}/>
         </div>
     );
 }
+
+/** True when a finished block has nothing worth showing (empty and instant). */
+export function isTrivialThinking(block: ThinkingContent, live: boolean) {
+    if (block.text.trim() || block.redacted) return false;
+    if (live && block.endedAt === undefined) return false;
+    const duration = thinkingDuration(block);
+    return duration === undefined || duration < 1000;
+}
+
+export const ThinkingBlock = memo(function ThinkingBlock({block, live}: ThinkingBlockProps) {
+    // null: follow the default (preview while thinking, collapsed after).
+    const [userOpen, setUserOpen] = useState<boolean | null>(null);
+    const active = live && block.endedAt === undefined;
+    const now = useNow(active);
+    const text = block.text.trim();
+    const smooth = useSmoothText(text, active);
+    const duration = thinkingDuration(block, now);
+
+    // Default: a live preview of the latest reasoning while thinking, which
+    // collapses away when thinking ends. Opening shows the full text.
+    const open = userOpen ?? active;
+    let body;
+    if (text && userOpen) {
+        body = (
+            <div className="max-h-80 overflow-y-auto border-l border-border pl-3 [scrollbar-width:thin]">
+                <MarkdownContent content={active ? closeOpenMarkdown(smooth) : text} className={THINKING_TEXT}/>
+            </div>
+        );
+    } else if (text) {
+        body = <ThinkingPreview text={active ? smooth : text}/>;
+    } else if (block.redacted) {
+        body = <p className="text-[12px] italic text-muted-foreground">The provider encrypted this reasoning, so it can't be shown.</p>;
+    }
+
+    return (
+        <Step
+            icon={active ? Lightbulb : Brain}
+            state={active ? "active" : "done"}
+            titleKey={active ? "thinking" : "thought"}
+            title={active ? "Thinking" : doneLabel(thinkingDuration(block))}
+            meta={active && duration !== undefined ? formatElapsedTime(Math.max(duration, 1000)) : undefined}
+            open={open && body !== undefined}
+            onOpenChange={body !== undefined ? (next) => setUserOpen(next) : undefined}
+        >
+            {body}
+        </Step>
+    );
+});

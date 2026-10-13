@@ -60,11 +60,11 @@ export function ComposerTodoButton({ conversationId }: ComposerTodoButtonProps) 
                         <Button
                             type="button"
                             variant="ghost"
-                            size="icon-sm"
+                            size="icon-xs"
                             aria-label="View todos"
                             aria-pressed={open}
                             className={cn(
-                                "relative",
+                                "relative text-muted-foreground hover:text-foreground",
                                 open && "bg-foreground text-background hover:bg-foreground hover:text-background",
                             )}
                         >
@@ -72,7 +72,7 @@ export function ComposerTodoButton({ conversationId }: ComposerTodoButtonProps) 
                             {inProgress && !open && (
                                 <span
                                     aria-hidden
-                                    className="absolute right-1 top-1 size-1.5 rounded-full bg-accent"
+                                    className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-accent"
                                     style={{ animation: "slothPulse 1.6s infinite" }}
                                 />
                             )}

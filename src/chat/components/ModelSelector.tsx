@@ -74,9 +74,9 @@ export function ModelSelector({selected, onChange}: ModelSelectorProps) {
                 <Button
                     type="button"
                     variant="ghost"
-                    size="sm"
+                    size="xs"
                     aria-expanded={open}
-                    className="max-w-[160px] gap-1.5 overflow-hidden px-2.5 font-sans text-[12.5px] font-medium"
+                    className="max-w-[180px] gap-1 overflow-hidden px-1.5 font-sans text-[12.5px] font-normal text-muted-foreground hover:bg-transparent hover:text-foreground aria-expanded:text-foreground"
                 >
                     <span className="truncate">{label}</span>
                     {open ? (
@@ -88,7 +88,7 @@ export function ModelSelector({selected, onChange}: ModelSelectorProps) {
             </PopoverTrigger>
             <PopoverContent
                 side="top"
-                align="start"
+                align="end"
                 sideOffset={6}
                 className="flex max-h-[360px] w-[16rem] flex-col overflow-hidden p-0"
             >

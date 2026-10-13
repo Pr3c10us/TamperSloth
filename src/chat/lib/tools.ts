@@ -211,7 +211,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     .describe(
                         "Reference topic.",
                     ),
-                description: z.string().max(100).optional().describe("Optional progress label."),
             }),
             execute: async ({skill_id}) => {
                 const skill = skills[skill_id];
@@ -237,7 +236,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Replace the entire todo list. Preserve IDs; at most one item may be in_progress.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 items: todoListSchema.describe("The full todo list after this write."),
             }),
             execute: async ({items}) => {
@@ -260,7 +258,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
         TodoRead: tool({
             description: "Read the current todo list when unknown.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
             }),
             execute: async () => {
                 try {
@@ -275,7 +272,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
         TodoClear: tool({
             description: "Clear the current todo list.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
             }),
             execute: async () => {
                 try {
@@ -299,7 +295,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Read numbered file lines, or list files with a path ending in /. Line-number prefixes are display-only.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 path: z
                     .string()
                     .describe('Virtual path. End with "/" to list a "directory" (prefix scan).'),
@@ -363,7 +358,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Create a virtual file. Fails if it exists; edit existing files with strReplaceTool.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 path: z.string().describe('Virtual path where the new file should live'),
                 file_text: z.string().describe('Full content to write'),
             }),
@@ -389,7 +383,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Replace exact unique strings in a virtual file. Use old_str/new_str or an ordered edits array. Batch edits commit atomically. Empty replacement deletes.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 path: z.string().describe('Virtual path to edit'),
                 old_str: z.string().min(1).optional().describe('Exact unique string. Omit when using edits.'),
                 new_str: z.string().default('').describe('Replacement string (empty deletes old_str)'),
@@ -430,7 +423,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
         deleteFileTool: tool({
             description: "Delete a virtual working file; no-op if absent.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 path: z.string().describe('Virtual path to delete'),
             }),
             execute: async ({path}) => {
@@ -452,7 +444,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Refresh the attached tab URL and title. Initial tab metadata is already supplied.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
             }),
             execute: async () => {
                 const tab = await chrome.tabs.get(tabId);
@@ -464,7 +455,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Inspect scoped DOM for selectors and links. Prefer getPageText for text. Expand maxNodes or scope when truncated.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 selector: z
                     .string()
                     .optional()
@@ -605,7 +595,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Inspect elements matching a selector. Detailed includes HTML, positions and computed styles.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 selector: z.string(),
                 responseFormat: responseFormatSchema,
             }),
@@ -690,7 +679,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Read visible page text, scoped to selector or main/article. Follow nextOffset for more; offsets refer to current text.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 selector: z
                     .string()
                     .optional()
@@ -768,7 +756,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Capture the visible viewport as an image. Use for visual verification.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 detail: z.enum(["standard", "full"]).default("standard").describe('Standard caps width at 1280px; full preserves resolution for fine detail.'),
             }),
             execute: async ({detail}) => {
@@ -793,7 +780,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Read page local/session storage, optionally filtered by key prefix. Values are capped.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 storageType: z
                     .enum(["local", "session", "both"])
                     .optional()
@@ -868,7 +854,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Read cookies for the attached page, optionally filtered by name.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 nameFilter: z
                     .string()
                     .optional()
@@ -923,7 +908,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Run the named function in a virtual file on the attached page. Create the file first. Null may indicate failure.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 path: z
                     .string()
                     .describe(
@@ -971,7 +955,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Save a tested virtual file as a persistent browser script. Confirm URL scope with the user first.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 path: z
                     .string()
                     .describe(
@@ -1042,7 +1025,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "List saved script IDs, names, status and URL patterns; optionally filter to this conversation.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 conversationOnly: z
                     .boolean()
                     .optional()
@@ -1077,7 +1059,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
         toggleScript: tool({
             description: "Pause or resume a saved script by ID.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 scriptId: z.string().describe("The ID of the script to toggle"),
                 action: z
                     .enum(["pause", "resume"])
@@ -1099,7 +1080,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
         removeScript: tool({
             description: "Permanently delete a saved script by ID after user confirmation.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 scriptId: z.string().describe("The ID of the script to delete"),
             }),
             execute: async ({scriptId}) => {
@@ -1116,7 +1096,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Navigate the attached tab and wait for loading/readiness. Optionally readText afterward in the same call. Accepts absolute or relative URLs.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 url: z
                     .string()
                     .describe(
@@ -1269,7 +1248,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Go back or forward and wait for page load.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 direction: z
                     .enum(["back", "forward"])
                     .describe('Navigate "back" or "forward" in history.'),
@@ -1340,7 +1318,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Reload the attached tab and wait for load.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 bypassCache: z
                     .boolean()
                     .optional()
@@ -1401,7 +1378,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Click a selector match and report navigation. Choose index for multiple matches.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 selector: z
                     .string()
                     .describe(
@@ -1507,7 +1483,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Type into a matched input or editable element; optionally clear or press Enter.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 selector: z
                     .string()
                     .describe(
@@ -1687,7 +1662,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Select a native dropdown option by value, label or index.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 selector: z
                     .string()
                     .describe('CSS selector for the <select> element, e.g. "#country", "select[name=\\"size\\"]".'),
@@ -1796,7 +1770,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Scroll by direction/amount or to an element.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 direction: z
                     .enum(["up", "down", "left", "right", "top", "bottom"])
                     .optional()
@@ -1931,7 +1904,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Submit a form and wait for navigation. Obtain confirmation for consequential submissions.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 selector: z
                     .string()
                     .describe(
@@ -2035,7 +2007,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Wait for a selector to appear. Skip if navigation already waited for it.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 selector: z
                     .string()
                     .describe(
@@ -2124,7 +2095,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Observe console output and/or network activity. Console capture lasts 5s: reproduce during capture. Network hooks install on first call; filter with urlFilter.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 sources: z
                     .array(z.enum(["console", "network"]))
                     .describe(
@@ -2537,7 +2507,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             description:
                 "Ask a concrete question with 2–5 choices and wait. The UI adds Other; do not include it.",
             inputSchema: z.object({
-                description: z.string().max(100).optional().describe("Optional progress label."),
                 question: z.string().min(1).describe("The question to ask the user."),
                 options: z
                     .array(

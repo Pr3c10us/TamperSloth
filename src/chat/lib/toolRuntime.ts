@@ -3,6 +3,7 @@ import {z} from "zod";
 import {compactToolOutput, estimateImageTokens, estimateTextTokens, isFailed, resultReceipt, serialize, type ToolMetric} from "./efficiency";
 import {skills} from "./skills";
 import {browserImageOutput} from './browserTools';
+import {stripReason, withReason} from "./toolReason";
 
 export const TOOL_GROUPS = {
     browsing: ["clickElement", "typeText", "selectOption", "scrollPage", "submitForm", "waitForElement", "navigateHistory", "reloadPage"],
@@ -28,6 +29,11 @@ function needsPageBarrier(name: string, input: any) {
 }
 
 export interface ArchivedResult {name: string; input: unknown; output: unknown}
+
+// Structural check: tool schemas may come from a different zod module instance.
+function isZodObject(schema: unknown): schema is z.ZodObject {
+    return (schema as z.ZodObject | undefined)?._zod?.def?.type === "object";
+}
 
 export function initialToolGroups(request: string): Group[] {
     const groups: Group[] = [];
@@ -105,11 +111,13 @@ export function createToolRuntime(rawTools: ToolSet, options: {
         if (!execute) continue;
         const originalProjection = definition.toModelOutput;
         tools[name] = {...definition,
-            execute: async (input, callOptions) => {
+            ...(isZodObject(definition.inputSchema) ? {inputSchema: withReason(definition.inputSchema)} : {}),
+            execute: async (rawInput, callOptions) => {
                 if (callOptions.abortSignal?.aborted) throw new DOMException("Aborted", "AbortError");
-                // UI descriptions do not make otherwise identical calls different.
-                const {description: _description, ...argumentsOnly} = input as Record<string, unknown>;
-                const signature = name + serialize(argumentsOnly);
+                // The reason is a UI title: implementations never see it, and it
+                // does not make otherwise identical calls different.
+                const input = stripReason(rawInput) as any;
+                const signature = name + serialize(input);
                 const repeated = seen.has(signature);
                 seen.add(signature);
                 const start = performance.now();
@@ -143,7 +151,9 @@ export function createToolRuntime(rawTools: ToolSet, options: {
                 if (failures >= 3) repeatedFailure = `${name} failed three times with the same arguments. Inspect the error before retrying.`;
                 const entry = {name, input, output};
                 archive.set(callOptions.toolCallId, entry);
-                const inputText = serialize(input);
+                // A reason the model wrote counts toward argument tokens; the
+                // empty default filled in for a missing one does not.
+                const inputText = serialize((rawInput as {reason?: string}).reason ? rawInput : input);
                 metrics.set(callOptions.toolCallId, {id: callOptions.toolCallId, name, inputChars: inputText.length, outputChars: serialize(output).length,
                     modelOutputChars: 0, inputTokens: estimateTextTokens(inputText), modelOutputTokens: 0, elapsedMs: Math.round(performance.now() - start), failed, repeated});
                 options.onResult?.(callOptions.toolCallId, entry);
