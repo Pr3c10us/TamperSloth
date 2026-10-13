@@ -1,5 +1,7 @@
 import type { ProviderId } from "./provider.ts";
 import type { BackgroundScript } from "./types.ts";
+import {readChat, readChatSummaries, writeChat, removeChat, type ConversationSummary} from './conversationDB';
+export type {ConversationSummary} from './conversationDB';
 
 
 const isChromeExtension = typeof chrome !== "undefined" && !!chrome?.storage?.local;
@@ -51,38 +53,54 @@ export interface StoredConversation {
     updatedAt: number;
 }
 
-export async function loadConversations(): Promise<StoredConversation[]> {
+// The old single-key archive can exceed hundreds of MB. Reading or overwriting
+// it broadcasts/clones the entire payload and has crashed Chrome's browser
+// process. Preserve it, but never read an oversized archive automatically.
+const MAX_LEGACY_HISTORY_BYTES = 2 * 1024 * 1024;
+const LEGACY_HISTORY_WARNING = 'Older chat history is too large to load safely and has been preserved. New chats are saved separately.';
+async function loadLegacyConversations(): Promise<{conversations: StoredConversation[]; warning?: string}> {
     if (isChromeExtension) {
+        const bytes = await chrome.storage.local.getBytesInUse(CONVERSATIONS_KEY);
+        if (bytes > MAX_LEGACY_HISTORY_BYTES) return {conversations: [], warning: LEGACY_HISTORY_WARNING};
         const result = await chrome.storage.local.get(CONVERSATIONS_KEY);
         const stored = result[CONVERSATIONS_KEY];
-        return Array.isArray(stored) ? (stored as StoredConversation[]) : [];
+        return {conversations: Array.isArray(stored) ? (stored as StoredConversation[]) : []};
     }
     const raw = localStorage.getItem(CONVERSATIONS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (raw && raw.length > MAX_LEGACY_HISTORY_BYTES / 2) return {conversations: [], warning: LEGACY_HISTORY_WARNING};
+    return {conversations: raw ? JSON.parse(raw) : []};
 }
 
-async function saveConversations(conversations: StoredConversation[]): Promise<void> {
-    if (isChromeExtension) {
-        await chrome.storage.local.set({ [CONVERSATIONS_KEY]: conversations });
-    } else {
-        localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(conversations));
-    }
+export async function loadConversationHistory(): Promise<{conversations: ConversationSummary[]; warning?: string}> {
+    const [summaries, legacy] = await Promise.all([readChatSummaries(), loadLegacyConversations()]);
+    const merged = new Map<string, ConversationSummary>();
+    for (const {id, title, createdAt, updatedAt} of legacy.conversations) merged.set(id, {id, title, createdAt, updatedAt});
+    for (const summary of summaries) merged.set(summary.id, summary);
+    return {conversations: [...merged.values()].sort((a, b) => b.updatedAt - a.updatedAt), warning: legacy.warning};
+}
+
+export async function loadStoredConversation(id: string): Promise<StoredConversation | null> {
+    const stored = await readChat(id);
+    if (stored) return stored;
+    const legacy = await loadLegacyConversations();
+    if (legacy.warning) throw new Error(legacy.warning);
+    return legacy.conversations.find(conversation => conversation.id === id) ?? null;
 }
 
 export async function saveConversation(conversation: StoredConversation): Promise<void> {
-    const all = await loadConversations();
-    const idx = all.findIndex((c) => c.id === conversation.id);
-    if (idx >= 0) {
-        all[idx] = conversation;
-    } else {
-        all.unshift(conversation);
-    }
-    await saveConversations(all);
+    // One conversation per record; no chrome.storage.onChanged payloads and no
+    // read/modify/write of other chats. Transcript and summary commit atomically.
+    await writeChat(conversation);
 }
 
 export async function deleteConversation(id: string): Promise<void> {
-    const all = await loadConversations();
-    await saveConversations(all.filter((c) => c.id !== id));
+    const legacy = await loadLegacyConversations();
+    if (legacy.conversations.some(c => c.id === id)) {
+        const remaining = legacy.conversations.filter(c => c.id !== id);
+        if (isChromeExtension) await chrome.storage.local.set({[CONVERSATIONS_KEY]: remaining});
+        else localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(remaining));
+    }
+    await removeChat(id);
 }
 
 // ── Scripts ─────────────────────────────────────────────────
@@ -240,9 +258,9 @@ export async function fileExists(conversationId: string,path: string): Promise<b
 }
 
 export async function listFiles(conversationId: string,prefix = ''): Promise<string[]> {
-    const all = await chrome.storage.local.get(null);
+    const keys = await chrome.storage.local.getKeys();
     const wanted = FILE_PREFIX + conversationId + "/" + prefix;
-    return Object.keys(all)
+    return keys
         .filter((k) => k.startsWith(wanted))
         .map((k) => k.slice((FILE_PREFIX + conversationId + "/").length))
         .sort();
@@ -257,8 +275,8 @@ export interface CodeFileEntry {
 
 export async function listAllCodeFiles(): Promise<CodeFileEntry[]> {
     if (!isChromeExtension) return [];
-    const all = await chrome.storage.local.get(null);
-    return Object.keys(all)
+    const keys = await chrome.storage.local.getKeys();
+    return keys
         .filter((k) => k.startsWith(FILE_PREFIX))
         .map((k) => {
             const withoutPrefix = k.slice(FILE_PREFIX.length);
@@ -273,8 +291,8 @@ export async function listAllCodeFiles(): Promise<CodeFileEntry[]> {
 
 export async function deleteAllFilesForConversation(conversationId: string): Promise<void> {
     if (!isChromeExtension) return;
-    const all = await chrome.storage.local.get(null);
-    const keys = Object.keys(all).filter(
+    const allKeys = await chrome.storage.local.getKeys();
+    const keys = allKeys.filter(
         (k) => k.startsWith(FILE_PREFIX + conversationId + '/'),
     );
     if (keys.length > 0) await chrome.storage.local.remove(keys);

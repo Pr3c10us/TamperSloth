@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { MoreHorizontal, Search, SquarePen, Trash2 } from "lucide-react";
 import {
     deleteConversation,
-    loadConversations,
+    loadConversationHistory,
+    loadStoredConversation,
+    type ConversationSummary,
     type StoredConversation,
 } from "../lib/storage";
 import { Button } from "@/components/ui/button";
@@ -53,11 +55,16 @@ export function HistoryDrawer({
     onSelect,
     onNewChat,
 }: HistoryDrawerProps) {
-    const [conversations, setConversations] = useState<StoredConversation[]>([]);
+    const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+    const [error, setError] = useState('');
     const [query, setQuery] = useState("");
 
     useEffect(() => {
-        if (open) loadConversations().then(setConversations);
+        let live = true;
+        if (open) void loadConversationHistory().then(history => {
+            if (live) { setConversations(history.conversations); setError(history.warning ?? ''); }
+        }, error => { if (live) setError(error instanceof Error ? error.message : String(error)); });
+        return () => { live = false; };
     }, [open]);
 
     const filtered = useMemo(() => {
@@ -67,8 +74,19 @@ export function HistoryDrawer({
     }, [conversations, query]);
 
     const handleDelete = async (id: string) => {
-        await deleteConversation(id);
-        setConversations((prev) => prev.filter((c) => c.id !== id));
+        try {
+            await deleteConversation(id);
+            setConversations((prev) => prev.filter((c) => c.id !== id));
+        } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    };
+
+    const handleSelect = async (id: string) => {
+        try {
+            const conversation = await loadStoredConversation(id);
+            if (!conversation) throw new Error('This conversation is no longer available.');
+            onSelect(conversation);
+            onOpenChange(false);
+        } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
     };
 
     return (
@@ -112,6 +130,7 @@ export function HistoryDrawer({
                 </div>
 
                 <div className="flex-1 overflow-y-auto overflow-x-hidden">
+                    {error ? <p role="alert" className="px-3.5 py-2 text-xs text-muted-foreground">{error}</p> : null}
                     {filtered.length === 0 ? (
                         <div className="px-3.5 py-6 text-center text-[13px] text-muted-foreground">
                             {query ? "No matches" : "No conversations yet"}
@@ -130,10 +149,7 @@ export function HistoryDrawer({
                                     <Button
                                         type="button"
                                         variant="ghost"
-                                        onClick={() => {
-                                            onSelect(c);
-                                            onOpenChange(false);
-                                        }}
+                                        onClick={() => { void handleSelect(c.id); }}
                                         className="h-auto w-full min-w-0 flex-col items-start gap-1 rounded-none px-3.5 py-3 pr-10 text-left hover:bg-transparent"
                                     >
                                         <div

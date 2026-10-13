@@ -47,6 +47,20 @@ export interface ToolMeta {
 
 
 const toolMeta: Record<string, ToolMeta> = {
+    clickTarget: {displayName: 'Click target', activeLabel: 'Clicking target…', doneLabel: 'Target clicked', errorLabel: 'Target click failed', icon: MousePointerClick, category: 'web'},
+    browserGesture: {displayName: 'Browser gesture', activeLabel: 'Performing gesture…', doneLabel: 'Gesture verified', errorLabel: 'Gesture failed', icon: MousePointerClick, category: 'web'},
+    takeMarkedScreenshot: {displayName: 'Marked screenshot', activeLabel: 'Marking the page…', doneLabel: 'Screenshot ready', errorLabel: 'Screenshot failed', icon: Camera, category: 'media'},
+    browserTabs: {displayName: 'Browser tabs', activeLabel: 'Managing tabs…', doneLabel: 'Tabs updated', errorLabel: 'Tab action failed', icon: TabletSmartphone, category: 'web'},
+    evaluateJavaScript: {displayName: 'Evaluate JavaScript', activeLabel: 'Evaluating…', doneLabel: 'Evaluation returned', errorLabel: 'Evaluation failed', icon: SquareTerminal, category: 'compute'},
+    persistentStore: {displayName: 'Persistent storage', activeLabel: 'Accessing storage…', doneLabel: 'Storage ready', errorLabel: 'Storage failed', icon: Database, category: 'data'},
+    siteRecipes: {displayName: 'Site recipes', activeLabel: 'Accessing recipes…', doneLabel: 'Recipes ready', errorLabel: 'Recipe action failed', icon: BookOpen, category: 'data'},
+    accessibilityTree: {displayName: 'Accessibility tree', activeLabel: 'Reading accessibility…', doneLabel: 'Accessibility read', errorLabel: 'Accessibility read failed', icon: TreePine, category: 'web'},
+    clipboard: {displayName: 'Clipboard', activeLabel: 'Accessing clipboard…', doneLabel: 'Clipboard ready', errorLabel: 'Clipboard failed', icon: ClipboardList, category: 'utility'},
+    browserDownload: {displayName: 'Downloads', activeLabel: 'Managing download…', doneLabel: 'Download updated', errorLabel: 'Download failed', icon: Save, category: 'utility'},
+    browserNotify: {displayName: 'Notification', activeLabel: 'Sending notification…', doneLabel: 'Notification sent', errorLabel: 'Notification failed', icon: AlertCircle, category: 'communication'},
+    trustedInput: {displayName: 'Trusted input', activeLabel: 'Sending input…', doneLabel: 'Input sent', errorLabel: 'Input failed', icon: MousePointerClick, category: 'web'},
+    networkCapture: {displayName: 'Network capture', activeLabel: 'Inspecting network…', doneLabel: 'Network result ready', errorLabel: 'Network action failed', icon: MonitorDot, category: 'web'},
+    deepDOM: {displayName: 'Frames and shadow DOM', activeLabel: 'Inspecting frames…', doneLabel: 'Frames inspected', errorLabel: 'Frame action failed', icon: ScanSearch, category: 'web'},
     enableTools: {displayName: 'Enable tools', activeLabel: 'Enabling tools…', doneLabel: 'Tools ready', errorLabel: 'Could not enable tools', icon: Wrench, category: 'utility'},
     readToolResult: {displayName: 'Read earlier result', activeLabel: 'Reading earlier result…', doneLabel: 'Earlier result retrieved', errorLabel: 'Could not retrieve result', icon: FileSearch, category: 'data'},
     // ── Skills ──

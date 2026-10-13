@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/agent-efficiency.test.mjs tests/provider-compatibility.test.mjs tests/pricing.test.mjs",
+    "test": "node --test tests/agent-efficiency.test.mjs tests/provider-compatibility.test.mjs tests/pricing.test.mjs tests/browser-capabilities.test.mjs tests/visual-targeting.test.mjs tests/tab-context.test.mjs tests/screenshot-freshness.test.mjs tests/conversation-storage.test.mjs",
     "benchmark:context": "node tests/benchmark.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -46,6 +46,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "fake-indexeddb": "^6.2.5",
     "globals": "^17.5.0",
     "typescript": "~6.0.2",
     "vite": "^8.0.10"

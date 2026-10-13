@@ -35,7 +35,12 @@
     "userScripts",
     "alarms",
     "cookies",
-    "debugger"
+    "debugger",
+    "downloads",
+    "notifications",
+    "clipboardRead",
+    "clipboardWrite",
+    "offscreen"
   ],
   "host_permissions": ["<all_urls>"],
   "web_accessible_resources": [
