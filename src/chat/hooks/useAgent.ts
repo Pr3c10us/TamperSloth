@@ -11,6 +11,8 @@ import {clip, createStepMessagePreparer, isFailed, serialize, summarizeSelectedE
 import {createGuidanceGuard, GUIDANCE_RESUME_NOTE} from "../lib/guidanceGuard";
 import {loadAgentSettings, runStopReason} from "../lib/agentSettings";
 import {agentProviderOptions} from "../lib/providerCompatibility";
+import {createReasoningNormalizer, type NormalizedEvent, type ThinkingContent} from "../lib/reasoning";
+import {partialReason} from "../lib/toolReason";
 
 export interface StoredAttachment {
     kind: "image" | "file";
@@ -33,14 +35,17 @@ async function fileToDataUrl(file: File): Promise<string> {
 export interface ToolCall {
     id: string;
     name: string;
-    args: { description: string; [key: string]: unknown };
+    /** Model arguments; `reason` is the call's displayed title. */
+    args: { reason?: string; [key: string]: unknown };
     result: unknown;
     status: "calling" | "done" | "error";
+    startedAt?: number;
+    endedAt?: number;
 }
 
 export type ContentBlock =
     | { type: "text"; text: string }
-    | { type: "thinking"; text: string }
+    | ({ type: "thinking" } & ThinkingContent)
     | { type: "tool_call"; toolCall: ToolCall };
 
 export interface ChatMessage {
@@ -89,6 +94,30 @@ function markCachePrefix({messages}: { messages: ModelMessage[] }) {
             } as ModelMessage,
         ],
     };
+}
+
+/** Applies one normalized reasoning event to a message's blocks. */
+function applyThinkingEvent(blocks: ContentBlock[], event: Exclude<NormalizedEvent, { type: "text-delta" }>): ContentBlock[] {
+    const next = [...blocks];
+    const lastIndex = next.length - 1;
+    const last = next[lastIndex];
+    const openThinking = last?.type === "thinking" && last.endedAt === undefined ? last : undefined;
+    if (event.type === "thinking-start") {
+        if (!openThinking) next.push({type: "thinking", text: "", startedAt: event.at, ...(event.redacted ? {redacted: true} : {})});
+    } else if (event.type === "thinking-delta") {
+        if (openThinking) next[lastIndex] = {...openThinking, text: openThinking.text + event.text};
+        else next.push({type: "thinking", text: event.text, startedAt: Date.now()});
+    } else if (openThinking) {
+        next[lastIndex] = {...openThinking, endedAt: event.at};
+    }
+    return next;
+}
+
+/** Closes thinking blocks a stopped or failed run left open. */
+function closeThinking(blocks: ContentBlock[], at: number): ContentBlock[] {
+    return blocks.some(block => block.type === "thinking" && block.endedAt === undefined)
+        ? blocks.map(block => block.type === "thinking" && block.endedAt === undefined ? {...block, endedAt: at} : block)
+        : blocks;
 }
 
 function deriveTitle(messages: ChatMessage[]): string {
@@ -345,47 +374,71 @@ export function useAgent() {
                         providerOptions,
                     });
 
-                    for await (const part of result.stream) {
-                        if (part.type === "text-delta") {
-                            if (guard.holding()) held += part.text;
-                            else {flushHeld(); appendText(part.text);}
-                        } else if (part.type === "reasoning-delta") {
-                            const chunk = part.text;
-                            if (chunk) {
-                                updateAssistant((m) => {
-                                    const blocks = [...m.blocks];
-                                    const last = blocks[blocks.length - 1];
-                                    if (last?.type === "thinking") {
-                                        blocks[blocks.length - 1] = {type: "thinking", text: last.text + chunk};
-                                    } else {
-                                        blocks.push({type: "thinking", text: chunk});
-                                    }
-                                    return {...m, blocks};
-                                });
+                    // Every provider's reasoning shape (native parts or inline
+                    // <think> tags) arrives here as the same thinking events.
+                    const reasoning = createReasoningNormalizer();
+                    const handleNormalized = (events: NormalizedEvent[]) => {
+                        for (const event of events) {
+                            if (event.type === "text-delta") {
+                                if (guard.holding()) held += event.text;
+                                else {flushHeld(); appendText(event.text);}
+                            } else {
+                                updateAssistant(m => ({...m, blocks: applyThinkingEvent(m.blocks, event)}));
                             }
-                        } else if (part.type === "tool-input-start") {
+                        }
+                    };
+                    // Streamed argument JSON per call, so the reason can title the call early.
+                    const inputText = new Map<string, string>();
+                    for await (const part of result.stream) {
+                        handleNormalized(reasoning.push(part));
+                        if (part.type === "tool-input-start") {
                             flushHeld();
                             const tc: ToolCall = {
                                 id: part.id,
                                 name: part.toolName,
-                                args: {description: ""},
+                                args: {},
                                 result: null,
                                 status: "calling",
+                                startedAt: Date.now(),
                             };
                             updateAssistant((m) => ({
                                 ...m,
                                 toolCalls: [...m.toolCalls, tc],
                                 blocks: [...m.blocks, {type: "tool_call", toolCall: tc}],
                             }));
-                        } else if (part.type === "tool-call") {
-                            updateAssistant((m) => {
-                                const input = part.input as Record<string, unknown>;
-                                const mergedArgs = {description: "", ...input} as {
-                                    description: string;
-                                    [key: string]: unknown;
-                                };
+                        } else if (part.type === "tool-input-delta") {
+                            const text = (inputText.get(part.id) ?? "") + part.delta;
+                            inputText.set(part.id, text);
+                            const reason = partialReason(text);
+                            if (reason) updateAssistant((m) => {
+                                const current = m.toolCalls.find(tc => tc.id === part.id);
+                                if (!current || current.args.reason === reason) return m;
                                 const updatedTc = (tc: ToolCall): ToolCall =>
-                                    tc.id === part.toolCallId ? {...tc, args: mergedArgs} : tc;
+                                    tc.id === part.id ? {...tc, args: {...tc.args, reason}} : tc;
+                                return {
+                                    ...m,
+                                    toolCalls: m.toolCalls.map(updatedTc),
+                                    blocks: m.blocks.map((b) =>
+                                        b.type === "tool_call"
+                                            ? {type: "tool_call" as const, toolCall: updatedTc(b.toolCall)}
+                                            : b,
+                                    ),
+                                };
+                            });
+                        } else if (part.type === "tool-call") {
+                            flushHeld();
+                            inputText.delete(part.toolCallId);
+                            updateAssistant((m) => {
+                                const input = (part.input ?? {}) as Record<string, unknown>;
+                                // Providers that send whole calls skip tool-input-start.
+                                const known = m.toolCalls.some(tc => tc.id === part.toolCallId);
+                                const updatedTc = (tc: ToolCall): ToolCall =>
+                                    tc.id === part.toolCallId ? {...tc, args: input} : tc;
+                                if (!known) {
+                                    const tc: ToolCall = {id: part.toolCallId, name: part.toolName, args: input,
+                                        result: null, status: "calling", startedAt: Date.now()};
+                                    return {...m, toolCalls: [...m.toolCalls, tc], blocks: [...m.blocks, {type: "tool_call", toolCall: tc}]};
+                                }
                                 return {
                                     ...m,
                                     toolCalls: m.toolCalls.map(updatedTc),
@@ -401,7 +454,7 @@ export function useAgent() {
                             updateAssistant((m) => {
                                 const updatedTc = (tc: ToolCall): ToolCall =>
                                     tc.id === part.toolCallId
-                                        ? {...tc, result: part.output, status: isFailed(part.output) ? "error" as const : "done" as const}
+                                        ? {...tc, result: part.output, status: isFailed(part.output) ? "error" as const : "done" as const, endedAt: Date.now()}
                                         : tc;
                                 return {
                                     ...m,
@@ -463,7 +516,7 @@ export function useAgent() {
                             updateAssistant((m) => {
                                 const updatedTc = (tc: ToolCall): ToolCall =>
                                     tc.id === part.toolCallId
-                                        ? {...tc, result: (part as any).error, status: "error" as const}
+                                        ? {...tc, result: (part as any).error, status: "error" as const, endedAt: Date.now()}
                                         : tc;
                                 return {
                                     ...m,
@@ -477,6 +530,7 @@ export function useAgent() {
                             });
                         }
                     }
+                    handleNormalized(reasoning.flush());
                     if (held && !abortController.signal.aborted && !stopReason && guard.resume()) {
                         passMessages = [...passMessages, ...(await result.response).messages, {role: "user", content: GUIDANCE_RESUME_NOTE}];
                         continue;
@@ -493,8 +547,10 @@ export function useAgent() {
             } finally {
                 // Keep the cursor through idle tool pauses, then remove all run decorations.
                 await chrome.runtime.sendMessage({type:'BROWSER_RUN_END'}).catch(()=>{});
-                // A stopped run never receives "finish", so total it from completed steps.
-                updateAssistant(m => ({...m, runMetrics: m.runMetrics
+                // A stopped run never receives "finish", so total it from completed steps,
+                // and any reasoning it was in the middle of is over.
+                const endedAt = Date.now();
+                updateAssistant(m => ({...m, blocks: closeThinking(m.blocks, endedAt), runMetrics: m.runMetrics
                     ? {...m.runMetrics, total: m.runMetrics.total ?? sumUsage(m.runMetrics.steps),
                         elapsedMs: Math.round(performance.now() - started)} : undefined}));
                 abortRef.current = null;

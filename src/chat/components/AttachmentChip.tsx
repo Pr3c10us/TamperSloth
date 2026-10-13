@@ -3,6 +3,9 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
+/** Most files one message can carry. */
+export const MAX_ATTACHMENTS = 10;
+
 export interface PendingAttachment {
     kind: "image" | "file";
     name: string;
@@ -16,6 +19,8 @@ export interface PendingAttachment {
 interface AttachmentChipProps {
     att: PendingAttachment;
     onRemove?: () => void;
+    /** Larger, softer thumbnail used inside the composer card. */
+    large?: boolean;
 }
 
 function RemoveBtn({ onClick }: { onClick: () => void }) {
@@ -49,10 +54,15 @@ function PlaceholderImage({ label }: { label: string }) {
     );
 }
 
-export function AttachmentChip({ att, onRemove }: AttachmentChipProps) {
+export function AttachmentChip({ att, onRemove, large }: AttachmentChipProps) {
     if (att.kind === "image") {
         return (
-            <div className="relative flex size-20 items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
+            <div
+                className={cn(
+                    "relative flex items-center justify-center overflow-hidden border border-border bg-muted",
+                    large ? "size-28 rounded-xl shadow-xs" : "size-20 rounded-md",
+                )}
+            >
                 {att.url ? (
                     <img src={att.url} alt="" className="size-full object-cover" />
                 ) : (
@@ -65,7 +75,8 @@ export function AttachmentChip({ att, onRemove }: AttachmentChipProps) {
     return (
         <div
             className={cn(
-                "relative inline-flex max-w-[200px] items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5",
+                "relative inline-flex max-w-[200px] items-center gap-2 border border-border bg-card px-2.5 py-1.5",
+                large ? "rounded-xl" : "rounded-md",
                 onRemove && "pr-7",
             )}
         >

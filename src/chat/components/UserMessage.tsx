@@ -27,7 +27,7 @@ export const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage
                 </div>
             )}
             {picked.length > 0 && (
-                <div className="flex w-[85%] max-w-full flex-col gap-1.5">
+                <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
                     {picked.map((html, i) => (
                         <PickedElementChip key={i} html={html} />
                     ))}

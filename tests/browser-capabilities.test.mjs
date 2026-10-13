@@ -409,41 +409,30 @@ test('manifest and build entries include all platform permissions and clipboard 
     assert.ok(fs.readFileSync('vite.config.ts', 'utf8').includes('clipboard.html'));
 });
 
-test('gesture projection drops duplicates and keeps full detail only when suspicious', () => {
-    const {compactGestureOutput} = createLoader({globals: {chrome: {}}})('src/chat/lib/browserTools.ts');
+test('gesture projection keeps only outcome signals and flags problems', () => {
+    const {compactGestureOutput, compactGestureSteps} = createLoader({globals: {chrome: {}}})('src/chat/lib/browserTools.ts');
     const target = {tag: 'button', role: 'button', name: 'Send', selector: '#send'};
     const focus = {tag: 'input', role: 'textbox', name: 'Message', selector: '#msg'};
-    const result = (events, targetMatched = true) => ({ok: true, action: 'click',
+    const other = {tag: 'div', role: '', name: 'Overlay', selector: '#overlay'};
+    const result = (events, {targetMatched = true, actualHit = target, after = 'https://a.test/'} = {}) => ({ok: true, action: 'click',
         resolved: {point: {x: 5, y: 5}, localPoint: {x: 5, y: 5}, frameOffset: {x: 0, y: 0, scaleX: 1, scaleY: 1},
             bbox: {x: 0, y: 0, width: 10, height: 10}, target, hit: target, metrics: {url: 'https://a.test/', scroll: {x: 0, y: 0}}},
-        feedback: {before: {url: 'https://a.test/', focus: null, dialogs: []}, after: {url: 'https://a.test/', focus, dialogs: []},
-            focusMoved: true, urlChanged: false, newDialogs: [], mutationCount: 3, mutations: [{type: 'childList'}], events,
-            actualHit: target, expectedTarget: target, targetMatched, tabURL: {before: 'https://a.test/', after: 'https://a.test/'}, javascriptDialogs: []}});
+        feedback: {before: {url: 'https://a.test/', focus: null, scroll: {x: 0, y: 0}, dialogs: []}, after: {url: after, focus, scroll: {x: 0, y: 0}, dialogs: []},
+            focusMoved: true, urlChanged: after !== 'https://a.test/', newDialogs: [], mutationCount: 3, mutations: [{type: 'childList'}], events,
+            actualHit, expectedTarget: target, targetMatched, tabURL: {before: 'https://a.test/', after}, javascriptDialogs: []}});
     const events = [{type: 'mousedown', trusted: true, target, hit: target}, {type: 'click', trusted: true, target, hit: target}];
 
-    const slim = plain(compactGestureOutput(result(events)));
-    assert.equal(slim.feedback.events, undefined);
-    assert.equal(slim.feedback.mutations, undefined);
-    assert.equal(slim.feedback.before, undefined);
-    assert.equal(slim.feedback.expectedTarget, undefined);
-    assert.equal(slim.feedback.tabURL, undefined);
-    assert.equal(slim.feedback.url, 'https://a.test/');
-    assert.deepEqual(slim.feedback.eventTypes, ['mousedown', 'click']);
-    assert.deepEqual(slim.feedback.focus, focus);
-    assert.equal(slim.feedback.mutationCount, 3);
-    assert.equal(slim.feedback.targetMatched, true);
-    assert.deepEqual(slim.feedback.actualHit, target);
-    assert.equal(slim.resolved.hit, undefined);
-    assert.equal(slim.resolved.localPoint, undefined);
-    assert.equal(slim.resolved.metrics.url, undefined);
-    assert.ok(JSON.stringify(slim).length < JSON.stringify(result(events)).length / 2);
+    assert.deepEqual(plain(compactGestureOutput(result(events))), {target: 'button "Send"', focus: 'textbox "Message"', mutations: 3});
+    assert.equal(compactGestureOutput(result(events, {after: 'https://a.test/next'})).url, 'https://a.test/next');
+    assert.equal(compactGestureOutput(result(events, {targetMatched: false, actualHit: other})).landedOn, 'div "Overlay"');
+    assert.equal(compactGestureOutput(result([])).noInputEvents, true);
+    assert.deepEqual(plain(compactGestureOutput(result([{...events[0], trusted: false}])).untrustedEvents), ['mousedown']);
+    const lost = plain(compactGestureOutput({ok: true, action: 'click', resolved: {target}, feedback: {observationLost: true, tabURL: {before: 'https://a.test/', after: 'https://b.test/'}}}));
+    assert.deepEqual(lost, {target: 'button "Send"', observationLost: true, url: 'https://b.test/'});
 
-    for (const suspicious of [result(events, false), result([]), result([{...events[0], trusted: false}])]) {
-        const kept = plain(compactGestureOutput(suspicious));
-        assert.deepEqual(kept.feedback.events, suspicious.feedback.events);
-        assert.deepEqual(kept.feedback.mutations, suspicious.feedback.mutations);
-        assert.ok(kept.feedback.before);
-    }
+    const drag = {ok: true, action: 'drag', resolved: {from: {target: {tag: 'canvas', role: 'canvas', name: ''}}, to: {target: {tag: 'canvas', role: 'canvas', name: ''}}},
+        feedback: {events: [], mutationCount: 0, tabURL: {before: 'https://a.test/', after: 'https://a.test/'}}};
+    assert.deepEqual(plain(compactGestureSteps([drag, drag])), [{target: 'canvas', mutations: 0}, {mutations: 0}]);
 });
 
 test('browserGesture runs a batch in order and reports completed steps on failure', async () => {
@@ -455,7 +444,7 @@ test('browserGesture runs a batch in order and reports completed steps on failur
         const feedback = {events: [{type: 'mousedown', trusted: true}], mutationCount: 1, mutations: [{type: 'childList'}], targetMatched: true,
             tabURL: {before: 'https://a.test/', after: 'https://a.test/'}};
         return {ok: true, action: input.action, resolved: {point: {x: 1, y: 1}, metrics: {url: 'https://a.test/', scroll: {x: 0, y: 0}}}, feedback,
-            ...(input.postScreenshot ? {screenshot: 'data:image/png;base64,aW1hZ2U=', postAction: {metadata: {imagePixels: {width: 200, height: 150}}}} : {})};
+            ...(input.postScreenshot ? {screenshot: 'data:image/png;base64,aW1hZ2U=', postAction: {metadata: {imagePixels: {width: 200, height: 150}, cssRegion: {x: 0, y: 0, width: 200, height: 150}}}} : {})};
     }}};
     const load = createLoader({globals: {chrome}});
     const {browserSchemas} = load('src/chat/lib/browserSchemas.ts');
@@ -477,9 +466,8 @@ test('browserGesture runs a batch in order and reports completed steps on failur
     const projected = tools.browserGesture.toModelOutput({output});
     assert.equal(projected.type, 'content');
     const text = JSON.parse(projected.value[1].text);
-    assert.equal(text.results[0].resolved.metrics, undefined);
-    assert.ok(text.results[2].resolved.metrics);
-    assert.equal(text.results[0].feedback.events, undefined);
+    assert.deepEqual(text, {ok: true, results: [{mutations: 1}, {mutations: 1}, {mutations: 1}],
+        screenshotRegion: {x: 0, y: 0, width: 200, height: 150}});
 
     calls.length = 0; failAt = 1;
     const failed = await tools.browserGesture.execute(input, {abortSignal: new AbortController().signal});

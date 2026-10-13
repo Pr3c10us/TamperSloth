@@ -30,43 +30,54 @@ export function browserImageOutput(output: any) {
     ]};
 }
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+/** `button "Send"`: enough to confirm which element was used, without selectors or boxes. */
+const label = (element: any): string | undefined => {
+    if (!element) return undefined;
+    const name = String(element.name ?? '');
+    return (element.role || element.tag) + (name ? ` "${name.length > 60 ? name.slice(0, 57) + '...' : name}"` : '');
+};
 
-/** Model projection of gesture/clickTarget results. Duplicated fields are dropped
- * and, when nothing looks wrong, event/mutation lists become counts. Anything
- * suspicious keeps full detail; the UI and readToolResult keep the raw result. */
+/** Model projection of one gesture/clickTarget step: only what the action changed or
+ * what went wrong. The model already knows the action and target it sent, so points,
+ * boxes, metrics and routine event lists are dropped; the UI and readToolResult keep
+ * the raw result. */
 export function compactGestureOutput(output: any) {
     if (!output || typeof output !== 'object' || !output.feedback) return output;
-    const {feedback, resolved, ...rest} = output;
-    const {before, after, events = [], mutations, mutationCount, expectedTarget, tabURL, urlChanged, focusMoved,
-        newDialogs, javascriptDialogs, ...otherFeedback} = feedback;
-    const suspicious = feedback.observationLost || feedback.targetMatched === false
-        || events.some((event: any) => event.trusted === false)
-        || (['click', 'type', 'press'].includes(output.action ?? 'click') && !events.length);
-
-    let slimResolved = resolved;
-    if (resolved && typeof resolved === 'object') {
-        const {localPoint, frameOffset, hit, metrics, ...kept} = resolved;
-        const insideFrame = frameOffset && !same(frameOffset, {...frameOffset, x: 0, y: 0, scaleX: 1, scaleY: 1});
-        slimResolved = {...kept,
-            ...(hit && !same(hit, resolved.target) ? {hit} : {}),
-            ...(metrics ? {metrics: (({url: _url, ...m}) => m)(metrics)} : {}),
-            ...(insideFrame ? {localPoint, frameOffset} : {})};
-    }
-    const slimFeedback: Record<string, unknown> = {...otherFeedback, urlChanged, focusMoved, mutationCount,
-        ...(tabURL && tabURL.before !== tabURL.after ? {tabURL} : {url: tabURL?.after ?? after?.url}),
-        ...(focusMoved ? {focus: after?.focus} : {}),
-        ...(newDialogs?.length ? {newDialogs} : {}),
-        ...(javascriptDialogs?.length ? {javascriptDialogs} : {}),
-        ...(expectedTarget && !same(expectedTarget, resolved?.target) ? {expectedTarget} : {})};
-    if (suspicious) Object.assign(slimFeedback, {before, after, events, mutations});
-    else Object.assign(slimFeedback, {eventTypes: events.map((event: any) => event.type),
-        detail: 'Event/mutation details omitted; readToolResult(resultId) has the full result.'});
-    return {...rest, ...(slimResolved !== undefined ? {resolved: slimResolved} : {}), feedback: slimFeedback};
+    const {resolved, feedback: f, action = 'click'} = output;
+    const step: Record<string, unknown> = {};
+    const targets = resolved?.from ? [resolved.from.target, resolved.to?.target] : [resolved?.target];
+    const names = [...new Set(targets.map(label).filter(Boolean))];
+    if (names.length) step.target = names.join(' -> ');
+    if (f.observationLost) step.observationLost = true;
+    if (f.targetMatched === false) step.landedOn = label(f.actualHit);
+    const untrusted = (f.events ?? []).filter((event: any) => event.trusted === false).map((event: any) => event.type);
+    if (untrusted.length) step.untrustedEvents = untrusted;
+    if (['click', 'press'].includes(action) && !f.observationLost && !f.events?.length) step.noInputEvents = true;
+    const url = f.tabURL && f.tabURL.before !== f.tabURL.after ? f.tabURL.after : f.urlChanged ? f.after?.url : undefined;
+    if (url) step.url = url;
+    if (f.focusMoved) step.focus = label(f.after?.focus) ?? null;
+    const {before, after} = f;
+    if (before?.scroll && after?.scroll && (before.scroll.x !== after.scroll.x || before.scroll.y !== after.scroll.y)) step.scroll = after.scroll;
+    if (f.newDialogs?.length) step.dialogs = f.newDialogs.map(label);
+    if (f.javascriptDialogs?.length) step.jsDialogs = f.javascriptDialogs.map((event: any) => ({type: event.params?.type, message: event.params?.message}));
+    if (f.mutationCount !== undefined) step.mutations = f.mutationCount;
+    return step;
 }
 
-const gestureModelOutput = (output: any) =>
-    output.screenshot ? browserImageOutput(output) : {type: 'text' as const, value: JSON.stringify(output)};
+/** Batched steps usually hit the same element; name it only when it changes. */
+export function compactGestureSteps(results: any[]) {
+    let previous: unknown;
+    return results.map(result => {
+        const step = compactGestureOutput(result);
+        if (step?.target !== undefined && step.target === previous) delete step.target;
+        else previous = step?.target;
+        return step;
+    });
+}
+
+const gestureModelOutput = (output: any, postAction?: any) => output.screenshot
+    ? browserImageOutput({...output, ...(postAction?.metadata?.cssRegion ? {screenshotRegion: postAction.metadata.cssRegion} : {})})
+    : {type: 'text' as const, value: JSON.stringify(output)};
 
 export function createBrowserTools(getTabId: () => number, selectTab: (id: number) => void, abortSignal?: AbortSignal) {
     // Coordinate guidance cannot prove outcomes, so it unlocks only after selector-based guidance keeps failing.
@@ -233,7 +244,8 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
             description: 'Trusted click on target {selector[,index]}, {role,name[,exact]}, {text[,exact]}, {mark,snapshotId}, or viewport CSS {x,y} as fallback. Scrolls into view, rejects ambiguity/occlusion, returns actual hit/focus/DOM/URL feedback. postScreenshot adds a crop.',
             inputSchema: toolSchemas.clickTarget,
             execute: async input => browserCall('gesture', {...input, action: 'click', tabId: input.tabId ?? getTabId()}),
-            toModelOutput: ({output}: {output: any}) => gestureModelOutput(compactGestureOutput(output)),
+            toModelOutput: ({output}: {output: any}) => gestureModelOutput(
+                {ok: true, ...compactGestureOutput(output), ...(output.screenshot ? {screenshot: output.screenshot} : {})}, output.postAction),
         }),
         browserGesture: tool({
             description: 'Trusted gestures, batched. Each step: hover(target,duration) drag(from,to,steps,duration,humanize) scroll(target or deltaX/deltaY,smooth) type(text,perKeyDelay) press(chord e.g. Ctrl+Shift+K) pinch(target,factor) rotate(target,angle) selectRange(from,to) click(target). Targets as in clickTarget. Feedback waits 500ms per step by default; postScreenshot crops after the last step.',
@@ -248,20 +260,16 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
                         if (!results.length) throw error;
                         // Earlier steps already changed the page; report them so the model resumes rather than repeats.
                         return {error: error instanceof Error ? error.message : String(error), failedStep: index,
-                            completed: results.map(compactGestureOutput), hint: 'Steps before failedStep already ran; do not repeat them.'};
+                            completed: compactGestureSteps(results), hint: 'Steps before failedStep already ran; do not repeat them.'};
                     }
                 }
                 const {screenshot, postAction, ...last} = results.at(-1);
                 return {ok: true, steps: results.length, results: [...results.slice(0, -1), last],
                     ...(screenshot ? {screenshot, postAction} : {})};
             },
-            toModelOutput: ({output}: {output: any}) => gestureModelOutput({...output,
-                // Page metrics only matter after the final step.
-                results: output.results.map((result: any, index: number) => {
-                    const slim = compactGestureOutput(result);
-                    if (index < output.results.length - 1 && slim.resolved) delete slim.resolved.metrics;
-                    return slim;
-                })}),
+            // Results map to the gestures array by index, so steps carry no action or ok flag.
+            toModelOutput: ({output}: {output: any}) => gestureModelOutput({ok: true, results: compactGestureSteps(output.results),
+                ...(output.screenshot ? {screenshot: output.screenshot} : {})}, output.postAction),
         }),
         takeMarkedScreenshot: make('perception', 'Screenshot with marks and full selector/role/name/bbox legend; marks include only visible, non-occluded interactables, capped at 50. Click via clickTarget target {mark,snapshotId}. For canvas use mode grid (100 CSS px cells), then region C4 with snapshotId, scale 3 and gridSize 10 for precision. crosshair {x,y} previews a proposed point. Metadata reports CSS/device/image pixels, DPR, scroll, viewport, frame offsets and crop transforms. mode contours emits unverified visual shape marks (no OCR).'),
         browserTabs: make('tabs', 'List/create/select/close tabs or wait for a popup by openerTabId. Select/create changes the target of ALL page tools for this run; waitPopup reports the latest live popup, then select it.'),

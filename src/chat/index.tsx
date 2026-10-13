@@ -11,7 +11,7 @@ import {
     type SelectedModelEntry,
 } from "./components/ModelSelector";
 import { getApiKeys as loadApiKeys } from "../settings/lib/storage";
-import type { PendingAttachment } from "./components/AttachmentChip";
+import { MAX_ATTACHMENTS, type PendingAttachment } from "./components/AttachmentChip";
 import { clearPickedMarkers } from "./hooks/useElementPicker";
 
 const tabId = Number(new URLSearchParams(window.location.search).get("tabId")) || 0;
@@ -65,8 +65,12 @@ function Chat() {
         );
     };
 
+    /** Adds files up to MAX_ATTACHMENTS; returns how many were left out. */
     const addFiles = (files: File[]) => {
-        setPendingFiles((p) => [...p, ...files.map(makeAttachmentFromFile)]);
+        const room = Math.max(0, MAX_ATTACHMENTS - pendingFiles.length);
+        const accepted = files.slice(0, room);
+        if (accepted.length) setPendingFiles((p) => [...p, ...accepted.map(makeAttachmentFromFile)].slice(0, MAX_ATTACHMENTS));
+        return files.length - accepted.length;
     };
 
     const removeFile = (i: number) =>

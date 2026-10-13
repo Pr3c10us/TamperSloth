@@ -1,17 +1,20 @@
-import { useState } from "react";
-import { Check, Copy } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { getToolMeta, AlertCircle } from "../lib/toolMeta";
-import type { ToolCall } from "@/src/chat/hooks";
+import {memo, useState} from "react";
+import {Check, Copy} from "lucide-react";
+import {getToolMeta, AlertCircle} from "../lib/toolMeta";
+import type {ToolCall} from "@/src/chat/hooks";
 import {TodoWriteCard} from "@/src/chat/components/todo/todoWriteCard.tsx";
 import {TodoReadCard} from "@/src/chat/components/todo/todoReadCard.tsx";
 import {TodoClearCard} from "@/src/chat/components/todo/todoClearCard.tsx";
 import {AskUserCard} from "@/src/chat/components/askUser/askUserCard.tsx";
-import {guidanceStatusLabel} from '../lib/guidanceStatus';
 import {toolCallTokens, type ToolMetric} from "../lib/efficiency";
 import {IS_DEV} from "../lib/devMode";
+import {toolReason} from "../lib/toolReason";
+import {formatStepDuration, screenshotSource, toolErrorMessage} from "../lib/toolPreview";
+import {toolVerb} from "../lib/stepSummary";
+import {Step, useNow, type StepState} from "./steps/Step";
 
-const PULSE = "slothPulse 1.4s cubic-bezier(.22,.61,.36,1) infinite";
+/** Tools that render as their own cards rather than steps. */
+export const CARD_TOOLS = new Set(["TodoWrite", "TodoRead", "TodoClear", "askUser"]);
 
 function ToolTokens({ metric }: { metric?: ToolMetric }) {
     if (!metric) return null;
@@ -51,72 +54,62 @@ function CopyToolError({ tc }: { tc: ToolCall }) {
             type="button"
             onClick={copy}
             title="Copy tool error (dev only)"
-            className="inline-flex size-5 shrink-0 items-center justify-center rounded-[3px] text-destructive hover:bg-destructive/15"
+            className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-destructive hover:bg-destructive/15"
         >
             {copied ? <Check className="size-3" strokeWidth={2.5} /> : <Copy className="size-3" strokeWidth={2} />}
         </button>
     );
 }
 
-export function ToolCallInline({ tc, i, metric }: { tc: ToolCall, i: number, metric?: ToolMetric }) {
-    const meta = getToolMeta(tc.name);
-    const isPending = tc.status === "calling";
-    const isError = tc.status === "error";
-    const ToolIcon = meta.icon;
-    const key = tc.id + ":" + i;
+interface ToolCallInlineProps {
+    tc: ToolCall;
+    metric?: ToolMetric;
+    /** True while this run is still streaming. */
+    live: boolean;
+}
+
+/** One line: the model's reason for the call. Screenshots also show the image. */
+export const ToolCallInline = memo(function ToolCallInline({ tc, metric, live }: ToolCallInlineProps) {
+    const isPending = tc.status === "calling" && live;
+    const now = useNow(isPending);
     const name = tc.name;
 
-    if (name === "TodoWrite") return <WithTokens key={key} metric={metric}><TodoWriteCard tc={tc}/></WithTokens>;
-    if (name === "TodoRead") return <WithTokens key={key} metric={metric}><TodoReadCard tc={tc}/></WithTokens>;
-    if (name === "TodoClear") return <WithTokens key={key} metric={metric}><TodoClearCard tc={tc}/></WithTokens>;
-    if (name === "askUser") return <WithTokens key={key} metric={metric}><AskUserCard tc={tc}/></WithTokens>;
+    if (name === "TodoWrite") return <WithTokens metric={metric}><TodoWriteCard tc={tc}/></WithTokens>;
+    if (name === "TodoRead") return <WithTokens metric={metric}><TodoReadCard tc={tc}/></WithTokens>;
+    if (name === "TodoClear") return <WithTokens metric={metric}><TodoClearCard tc={tc}/></WithTokens>;
+    if (name === "askUser") return <WithTokens metric={metric}><AskUserCard tc={tc}/></WithTokens>;
 
-    const guidanceResult=['waitForUserAction','annotatePage'].includes(name) ? tc.result as Parameters<typeof guidanceStatusLabel>[0] : undefined;
-    const needsReview=guidanceResult?.status==='needsReview';
-    const label = isPending ? meta.activeLabel : isError ? meta.errorLabel : name==='annotatePage' && needsReview ? 'Guide drawing needs a new target'
-        : name==='waitForUserAction' ? guidanceStatusLabel(guidanceResult) : meta.doneLabel;
-    const description = tc.args?.description as string | undefined;
+    const meta = getToolMeta(name);
+    const reason = toolReason(tc.args);
+    const error = tc.status === "error" ? toolErrorMessage(tc.result) ?? "The tool failed." : undefined;
+    const state: StepState = isPending ? "active" : tc.status === "error" ? "error" : tc.status === "calling" ? "stopped" : "done";
+    const elapsed = isPending && tc.startedAt !== undefined ? now - tc.startedAt : undefined;
+    const screenshot = tc.status === "done" ? screenshotSource(name, tc.result) : undefined;
+
+    // Until the model has written its reason the title is a placeholder bar,
+    // not a generic label. Calls without any reason say what the tool did.
+    const verb = toolVerb(name, tc.args);
+    const title = reason ?? (isPending
+        ? <span aria-label={`Preparing ${meta.displayName}`} className="inline-block h-2.5 w-28 translate-y-px rounded-full bg-muted-foreground/20 align-middle"/>
+        : verb.charAt(0).toUpperCase() + verb.slice(1));
 
     return (
-        <div className="flex flex-col items-start gap-1.5">
-            <div
-                className={cn(
-                    "inline-flex w-full items-center gap-2.5 rounded-md border bg-card px-2.5 py-1.5 font-heading text-sm transition-colors cursor-default",
-                    isError ? "border-destructive/40" : "border-border",
-                )}
-            >
-                <span
-                    aria-hidden
-                    className={cn(
-                        "inline-flex size-5 shrink-0 items-center justify-center rounded-[3px]",
-                        isPending && "bg-accent/15 text-accent",
-                        isError && "bg-destructive/15 text-destructive",
-                        !isPending && !isError && "bg-foreground/10 text-foreground/80",
-                    )}
-                    style={isPending ? { animation: PULSE } : undefined}
-                >
-                    {isError ? (
-                        <AlertCircle className="size-3" strokeWidth={2} />
-                    ) : (
-                        <ToolIcon className="size-3" strokeWidth={2} />
-                    )}
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                    <span className={cn("truncate", isError ? "text-destructive" : "text-foreground/80")}>
-                        {description || label}
-                    </span>
-                {/*    {description && (*/}
-                {/*    <span className="truncate font-mono text-[10px] uppercase tracking-[.14em] text-muted-foreground">*/}
-                {/*            {label}*/}
-                {/*        </span>*/}
-                {/*)}*/}
-                </span>
-                <ToolTokens metric={metric}/>
-                {IS_DEV && isError && <CopyToolError tc={tc}/>}
-                {!isPending && !isError && !needsReview && guidanceResult?.status!=='cancelled' && guidanceResult?.status!=='visualCheck' && (
-                    <Check className="size-3 shrink-0 text-accent" strokeWidth={2.5} />
-                )}
-            </div>
-        </div>
+        <Step
+            icon={error ? AlertCircle : meta.icon}
+            state={state}
+            title={title}
+            titleKey={reason ? "reason" : "pending"}
+            hint={error ? `${meta.displayName} failed: ${error}` : state === "stopped" ? `${meta.displayName} was stopped` : meta.displayName}
+            meta={elapsed !== undefined && elapsed >= 1000 ? formatStepDuration(elapsed) : metric ? <ToolTokens metric={metric}/> : undefined}
+            extra={screenshot && (
+                <img
+                    src={screenshot}
+                    alt={reason ? `Screenshot: ${reason}` : "Captured screenshot"}
+                    loading="lazy"
+                    className="ts-enter max-h-56 w-auto max-w-full rounded-md border border-border object-contain object-left-top"
+                />
+            )}
+            trailing={IS_DEV && error ? <CopyToolError tc={tc}/> : undefined}
+        />
     );
-}
+});
