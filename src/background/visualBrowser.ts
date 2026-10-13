@@ -1,5 +1,6 @@
 import type {CDPManager} from './cdp';
 import {pagePerception} from './pagePerception';
+import {runPageGuidance} from './pageGuidance';
 import {pageScreenshotState, withFreshScreenshot} from './screenshotCapture';
 import {boundedRegion, gridRegion, columnLabel, detectContours, gesturePath, parseChord, type Box, type Point} from './visualGeometry';
 
@@ -267,6 +268,7 @@ export class VisualBrowser {
         const eventCursor = this.cdp.read(args.tabId).cursor;
         const before = await this.page(a, {action: 'observeStart', id});
         let resolved: any, feedback: any;
+        await this.lockInput(args.tabId, true);
         const click = async (target: any) => {
             resolved = await resolve(target);
             await send('Input.dispatchMouseEvent', {type: 'mouseMoved', ...resolved.point});
@@ -349,6 +351,7 @@ export class VisualBrowser {
             }
             await pause(args.feedbackMs);
         } finally {
+            await this.lockInput(args.tabId, false);
             try { feedback = await this.page(a, {action: 'observeEnd', id}); }
             catch { feedback = {observationLost: true, before}; }
         }
@@ -366,14 +369,19 @@ export class VisualBrowser {
         }
         return output;
     }
+    /** Pause the user's site input while the agent's own input is in flight; decoration only. */
+    private lockInput(tabId: number, locked: boolean) {
+        return runPageGuidance(tabId, {action: 'agentLock', locked}).catch(() => {});
+    }
     async observeRaw(args: any, perform: () => Promise<any>) {
         const root = await this.world({tabId: args.tabId}), id = crypto.randomUUID();
         const beforeURL = (await chrome.tabs.get(args.tabId)).url;
         const metadata = await this.page(root, {action: 'metrics'});
         await this.page(root, {action: 'observeStart', id});
         let feedback: any, result: any;
+        await this.lockInput(args.tabId, true);
         try { result = await perform(); await new Promise(resolve => setTimeout(resolve, args.feedbackMs)); }
-        finally { try { feedback = await this.page(root, {action: 'observeEnd', id}); } catch { feedback = {observationLost: true}; } }
+        finally { await this.lockInput(args.tabId, false); try { feedback = await this.page(root, {action: 'observeEnd', id}); } catch { feedback = {observationLost: true}; } }
         const afterURL = (await chrome.tabs.get(args.tabId)).url;
         return {...result, metadata: {...metadata, coordinateSpace: 'root viewport CSS pixels'}, feedback: {...feedback, tabURL: {before: beforeURL, after: afterURL}, urlChanged: beforeURL !== afterURL || feedback.urlChanged}};
     }

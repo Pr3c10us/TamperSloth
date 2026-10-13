@@ -25,7 +25,8 @@ function fixture({animate=false,measurable=true}={}) {
         removeEventListener:(type,fn)=>listeners.get(type)?.delete(fn),
     };
     const window={addEventListener(type,fn){if(!windowListeners.has(type)) windowListeners.set(type,new Set());windowListeners.get(type).add(fn);},removeEventListener(type,fn){windowListeners.get(type)?.delete(fn);}};
-    const load=createLoader({globals:{document,window,location:{href:'https://example.com'},innerWidth:800,innerHeight:600,
+    const storage=new Map(),sessionStorage={getItem:k=>storage.get(k) ?? null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)};
+    const load=createLoader({globals:{document,window,sessionStorage,location:{href:'https://example.com'},innerWidth:800,innerHeight:600,
         getComputedStyle:()=>({visibility:'visible'}),matchMedia:()=>({matches:!animate}),
         requestAnimationFrame:fn=>{if(!animate){fn();return 0;}const id=++sequence;frames.set(id,fn);return id;},cancelAnimationFrame:id=>frames.delete(id),
         MutationObserver:class{observe(){}disconnect(){}},ResizeObserver:class{observe(){}unobserve(){}disconnect(){}},
@@ -248,6 +249,59 @@ test('timeouts distinguish a missing action from a missing resulting change',()=
     assert.equal(f.intervals.size,0);assert.equal(f.listeners.get('change').size,0);
 });
 
+test('an idle user ends the wait early while page activity restarts the idle window',()=>{
+    const f=fixture();
+    f.run({action:'start',id:'idle',selector:'#target',event:'click',instruction:'Select Rectangle',timeoutMs:60000,idleTimeoutMs:5000});
+    const idleTimer=()=>[...f.timers.values()].find(timer=>timer.ms===5000);
+    const first=idleTimer();f.fire('keyup',f.expected);
+    assert.ok(first);assert.equal([...f.timers.values()].includes(first),false);
+    assert.equal(f.run({action:'poll',id:'idle'}).status,'waiting');
+    idleTimer().fn();
+    const result=f.run({action:'poll',id:'idle'});
+    assert.equal(result.status,'timeout');assert.equal(result.idle,true);assert.equal(result.actionObserved,false);
+    assert.equal(f.intervals.size,0);
+    const label=createLoader()('src/chat/lib/guidanceStatus.ts').guidanceStatusLabel;
+    assert.equal(label({status:'needsReview',observationPhase:'timedOut',actionObserved:false,idle:true}),'No activity yet; still watching');
+    assert.equal(label({status:'needsReview',observationPhase:'timedOut',actionObserved:false,idle:true,checkInAllowed:true}),'No activity; checking in');
+});
+
+test('the guidance guard holds text-only fallbacks after an observer failure and resumes the overlay',()=>{
+    const {createGuidanceGuard}=createLoader()('src/chat/lib/guidanceGuard.ts');
+    const guard=createGuidanceGuard();
+    assert.equal(guard.holding(),false);
+    guard.observe('waitForUserAction',{status:'needsReview',observationPhase:'notStarted'});
+    assert.equal(guard.holding(),true);
+    assert.equal(guard.resume(),true);
+    // A fresh observed step releases the hold so the model can finish normally.
+    guard.observe('waitForUserAction',{status:'completed'});
+    assert.equal(guard.holding(),false);assert.equal(guard.resume(),false);
+    // The first idle round must re-wait; a later one may check in and end the turn.
+    guard.observe('waitForUserAction',{status:'needsReview',idle:true,checkInAllowed:false});
+    assert.equal(guard.holding(),true);
+    guard.observe('waitForUserAction',{status:'needsReview',idle:true,checkInAllowed:true});
+    assert.equal(guard.holding(),false);
+    // askUser about the stuck step is a legitimate way to end the turn.
+    guard.observe('annotatePage',{status:'needsReview'});
+    guard.observe('askUser',{answer:'x'});
+    assert.equal(guard.holding(),false);
+});
+
+test('the guidance guard stops nudging after repeated failures',()=>{
+    const {createGuidanceGuard}=createLoader()('src/chat/lib/guidanceGuard.ts');
+    const guard=createGuidanceGuard();
+    for(let i=0;i<3;i++) guard.observe('waitForUserAction',{status:'needsReview',observationPhase:'timedOut'});
+    assert.equal(guard.holding(),false);assert.equal(guard.resume(),false);
+});
+
+test('an observed action disables the idle timeout',()=>{
+    const f=fixture();
+    f.run({action:'start',id:'acted',selector:'#target',event:'click',instruction:'Continue',expectedSelector:'#expected',timeoutMs:60000,idleTimeoutMs:5000});
+    f.fire('click');
+    const idle=[...f.timers.values()].find(timer=>timer.ms===5000);
+    idle?.fn();
+    assert.equal(f.run({action:'poll',id:'acted'}).status,'waiting');
+});
+
 test('an untouched step reports no action and status labels never imply progress during recovery',()=>{
     const f=fixture();
     f.run({action:'start',id:'untouched',selector:'#target',event:'click',instruction:'Select Rectangle',timeoutMs:1000});
@@ -275,7 +329,7 @@ test('cursor uses actual event coordinates and has action-specific cues',()=>{
     f.run({action:'cursor',method:'Input.dispatchMouseEvent',params:{type:'mouseWheel',x:230,y:150}});
     const cursor=f.window.__tamperSlothGuidance.cursor;
     assert.equal(cursor.style.transform,'translate(230px,150px)');assert.equal(f.window.__tamperSlothGuidance.cursorName.textContent,'Sloth · scroll');
-    f.run({action:'cursor',method:'Input.insertText',params:{}});assert.equal(f.window.__tamperSlothGuidance.cursorName.textContent,'Sloth · typing');
+    f.target.tagName='INPUT';f.run({action:'cursor',method:'Input.insertText',params:{}});assert.equal(f.window.__tamperSlothGuidance.cursorName.textContent,'Sloth · typing');
     f.run({action:'clear'});assert.equal(cursor.hidden,false);
 });
 
@@ -436,7 +490,7 @@ test('Escape and the lock watchdog both release drawing input guards',()=>{
 
 test('ordinary typing focus cues do not pause site input',()=>{
     const f=fixture({animate:true});
-    f.run({action:'cursor',method:'Input.insertText',params:{}});
+    f.target.tagName='INPUT';f.run({action:'cursor',method:'Input.insertText',params:{}});
     const state=f.window.__tamperSlothGuidance;
     assert.equal(state.inputLocked,false);assert.equal(state.inputGuard.hidden,true);
     assert.equal(state.marks.get('__focus').drawn,true);
@@ -452,6 +506,10 @@ test('ending a run disposes the cursor and an unfocused keyboard event does not 
     f.document.body=f.target;
     f.run({action:'cursor',method:'Input.dispatchKeyEvent',params:{type:'keyDown'}});
     assert.equal(state.cursor.style.transform,position);
+    // Shortcuts on a focused canvas or app container leave the cursor where it last acted.
+    f.target.box={x:300,y:200,width:500,height:400};f.document.body=undefined;
+    f.run({action:'cursor',method:'Input.dispatchKeyEvent',params:{type:'keyDown',key:'o'}});
+    assert.equal(state.cursor.style.transform,position);assert.equal(state.marks.has('__focus'),false);
     f.run({action:'dispose'});
     assert.equal(state.cursor.hidden,true);assert.equal(state.host.removed,true);
     assert.equal(f.window.__tamperSlothGuidance,undefined);
@@ -495,4 +553,180 @@ test('tool waits cancel on abort and return current page metadata after completi
     setTimeout(()=>controller.abort(),10);
     await assert.rejects(pending,/Aborted/);assert.ok(calls.some(c=>c.action==='cancel'));
     assert.throws(()=>tools.annotatePage.inputSchema.parse({action:'start'}));
+});
+
+test('hidden duplicates do not make a visible target ambiguous',()=>{
+    const f=fixture(),hidden=f.document.createElement('button');hidden.box={x:0,y:0,width:0,height:0};
+    const query=f.document.querySelectorAll;
+    f.document.querySelectorAll=selector=>selector==='[aria-label="Frame"]' ? [hidden,f.target] : query(selector);
+    const result=f.run({action:'start',id:'frame',selector:'[aria-label="Frame"]',event:'click',instruction:'Pick the Frame tool',timeoutMs:1000});
+    assert.equal(result.status,'waiting');
+    f.fire('click');assert.equal(f.run({action:'poll',id:'frame'}).status,'completed');
+    f.document.querySelectorAll=selector=>selector==='.dup' ? [f.target,f.expected] : query(selector);
+    assert.throws(()=>f.run({action:'start',id:'dup',selector:'.dup',event:'click',instruction:'Click',timeoutMs:1000}),/ambiguous \(2 matches\)/);
+});
+
+test('a rendered target scrolled out of view is not ambiguous with a hidden duplicate',()=>{
+    const f=fixture(),hidden=f.document.createElement('a');hidden.box={x:0,y:0,width:0,height:0};
+    f.target.box={x:20,y:900,width:160,height:30};
+    const query=f.document.querySelectorAll;
+    f.document.querySelectorAll=selector=>selector==='a[href="/settings/apps"]' ? [hidden,f.target] : query(selector);
+    const result=f.run({action:'start',id:'dev',selector:'a[href="/settings/apps"]',event:'click',instruction:'Open Developer settings',timeoutMs:1000});
+    assert.equal(result.status,'waiting');
+});
+
+test('an action followed by a full page load is still reported as observed',()=>{
+    const f=fixture();
+    f.run({action:'start',id:'nav',selector:'#target',event:'click',instruction:'Open Developer settings',expectedSelector:'#expected',timeoutMs:60000});
+    f.fire('pointerdown');
+    delete f.window.__tamperSlothGuidance;
+    const result=f.run({action:'poll',id:'nav'});
+    assert.equal(result.status,'lost');assert.equal(result.actionObserved,true);
+    assert.equal(f.run({action:'poll',id:'nav'}).actionObserved,undefined);
+    assert.equal(f.run({action:'poll',id:'other'}).actionObserved,undefined);
+    const label=createLoader()('src/chat/lib/guidanceStatus.ts').guidanceStatusLabel;
+    assert.equal(label({status:'needsReview',observationPhase:'navigated',actionObserved:true}),'Step observed; page changed');
+});
+
+test('a click made before the wait starts is observed without a prior annotation',()=>{
+    const f=fixture();
+    f.run({action:'draw',id:'other',kind:'rectangle',box:{x:5,y:5,width:10,height:10}});f.run({action:'remove',id:'other'});
+    f.fire('pointerdown');f.fire('click');
+    const result=f.run({action:'start',id:'early',selector:'#target',event:'click',instruction:'Pick the Frame tool',timeoutMs:1000});
+    assert.equal(result.status,'completed');assert.equal(result.actionObserved,true);
+    const next=f.run({action:'start',id:'next',selector:'#target',event:'click',instruction:'Pick it again',timeoutMs:1000});
+    assert.equal(next.status,'waiting');
+});
+
+test('a press on a toolbar button that re-renders counts as its click',()=>{
+    const f=fixture(),parent=f.document.createElement('div');
+    f.run({action:'start',id:'tool',selector:'#target',event:'click',instruction:'Pick the Frame tool',timeoutMs:1000});
+    f.fire('pointerdown');f.fire('click',parent);
+    const result=f.run({action:'poll',id:'tool'});
+    assert.equal(result.status,'completed');assert.equal(result.unexpectedActions,0);
+});
+
+test('a page that stops propagation before document listeners is still observed',()=>{
+    const f=fixture();
+    f.run({action:'start',id:'tool',selector:'#target',event:'click',instruction:'Pick the Frame tool',timeoutMs:1000});
+    f.window.addEventListener('click',event=>event.stopImmediatePropagation());
+    f.fire('click');assert.equal(f.run({action:'poll',id:'tool'}).status,'waiting');
+    for(const fn of f.intervals.values()) fn();
+    assert.equal(f.run({action:'poll',id:'tool'}).status,'completed');
+});
+
+test('region steps draw at measured coordinates and observe presses inside them',()=>{
+    const f=fixture(),region={x:300,y:200,width:40,height:40};
+    const started=f.run({action:'start',id:'frame',region,event:'click',instruction:'Pick the Frame tool',timeoutMs:1000});
+    assert.equal(started.status,'waiting');
+    const state=f.window.__tamperSlothGuidance;assert.deepEqual(state.marks.get('__step').box,region);
+    f.fire('click',f.expected,true,{clientX:10,clientY:10});
+    assert.equal(f.run({action:'poll',id:'frame'}).unexpectedActions,1);
+    f.fire('pointerup',f.expected,true,{clientX:10,clientY:10});
+    assert.equal(f.run({action:'poll',id:'frame'}).interactions,1);
+    f.fire('pointerdown',f.expected,true,{clientX:320,clientY:215});
+    const result=f.run({action:'poll',id:'frame'});
+    assert.equal(result.status,'completed');assert.equal(result.verification,'visual');assert.equal(state.marks.size,0);
+});
+
+test('coordinate fallback unlocks only after repeated selector failures and returns a screenshot to judge',async()=>{
+    const starts=[];
+    const chrome={runtime:{sendMessage:async msg=>{
+        if(msg.operation==='guidance' && msg.input.action==='start'){starts.push(msg.input);return msg.input.region ? {status:'completed',actionObserved:true,verification:'visual'} : {error:'Guidance target not found'};}
+        if(msg.operation==='perception') return {screenshot:'data:image/png;base64,aW1hZ2U=',metadata:{}};
+        if(msg.operation==='accessibility') return {nodes:[]};
+        return {ok:true};
+    }},tabs:{get:async()=>({url:'https://figma.com',title:'Figma'})}};
+    const tools=createLoader({globals:{chrome}})('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{});
+    const schema=tools.waitForUserAction.inputSchema,options={abortSignal:new AbortController().signal};
+    const regional=schema.parse({region:{x:300,y:200,width:40,height:40},instruction:'Pick the Frame tool'});
+    await assert.rejects(tools.waitForUserAction.execute(regional,options),/unlocks after 2/);
+    assert.throws(()=>schema.parse({region:{x:1,y:1,width:0,height:5},instruction:'x'}));
+    const first=await tools.waitForUserAction.execute(schema.parse({selector:'#frame',instruction:'Pick the Frame tool'}),options);
+    assert.doesNotMatch(first.hint,/fall back to coordinates/);
+    const second=await tools.waitForUserAction.execute(schema.parse({selector:'#frame-tool',instruction:'Pick the Frame tool'}),options);
+    assert.match(second.hint,/fall back to coordinates/);
+    await assert.rejects(tools.waitForUserAction.execute({...regional,selector:'#frame'},options),/either selector or region/);
+    const result=await tools.waitForUserAction.execute(regional,options);
+    assert.equal(result.status,'visualCheck');assert.equal(result.trigger,'regionAction');assert.equal(result.actionObserved,true);
+    assert.ok(result.screenshot);assert.match(result.hint,/Judge from this screenshot/);
+    assert.deepEqual(starts.at(-1).region,regional.region);
+    const label=createLoader()('src/chat/lib/guidanceStatus.ts').guidanceStatusLabel;
+    assert.equal(label(result),'Click seen; checking screenshot');
+});
+
+test('region steps check a screenshot once the user interacts elsewhere and pauses',async()=>{
+    let failing=true;
+    const chrome={runtime:{sendMessage:async msg=>{
+        if(msg.operation==='guidance' && msg.input.action==='start') return failing ? {error:'Guidance target not found'} : {status:'waiting',ready:true};
+        if(msg.operation==='guidance' && msg.input.action==='poll') return {status:'waiting',ready:true,interactions:1};
+        if(msg.operation==='perception') return {screenshot:'data:image/png;base64,aW1hZ2U=',metadata:{}};
+        return {ok:true};
+    }},tabs:{get:async()=>({url:'https://figma.com',title:'Figma'})}};
+    const tools=createLoader({globals:{chrome}})('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{});
+    const schema=tools.waitForUserAction.inputSchema,options={abortSignal:new AbortController().signal};
+    for(const selector of ['#a','#b']) await tools.waitForUserAction.execute(schema.parse({selector,instruction:'Draw a frame'}),options);
+    failing=false;
+    const result=await tools.waitForUserAction.execute(schema.parse({region:{x:100,y:100,width:400,height:300},event:'pointerup',instruction:'Draw a frame',checkAfterMs:3000}),options);
+    assert.equal(result.status,'visualCheck');assert.equal(result.trigger,'interactionPause');assert.equal(result.actionObserved,null);assert.ok(result.screenshot);
+});
+
+test('agent gestures pause user input, let announced agent input through, and show a corner indicator',()=>{
+    const f=fixture();
+    f.run({action:'agentLock',locked:true});
+    const state=f.window.__tamperSlothGuidance;
+    assert.equal(state.lockPill.hidden,false);assert.equal(state.lockTitle.textContent,'Sloth is working');
+    f.run({action:'cursor',method:'Input.dispatchMouseEvent',params:{type:'mousePressed',x:230,y:150}});
+    assert.equal(f.fire('mousedown',f.target,true,{clientX:230,clientY:150}).defaultPrevented,false);
+    assert.equal(f.fire('mousedown',f.target,true,{clientX:40,clientY:500}).defaultPrevented,true);
+    f.run({action:'cursor',method:'Input.dispatchKeyEvent',params:{type:'keyDown',key:'o',code:'KeyO'}});
+    assert.equal(f.fire('keydown',f.target,true,{key:'o',code:'KeyO'}).defaultPrevented,false);
+    assert.equal(f.fire('keydown',f.target,true,{key:'x',code:'KeyX'}).defaultPrevented,true);
+    // Untrusted page script events are never the user's and are left alone.
+    assert.equal(f.fire('mousedown',f.target,false,{clientX:40,clientY:500}).defaultPrevented,false);
+    // Batched actions relock within the grace period without the indicator flashing.
+    f.run({action:'agentLock',locked:false});
+    assert.equal(state.lockPill.hidden,false);assert.equal(state.agentLocked,true);
+    f.run({action:'agentLock',locked:true});assert.equal(state.lockPill.hidden,false);
+    f.run({action:'agentLock',locked:false});
+    f.timers.get(state.agentLockTimer).fn();
+    assert.equal(state.lockPill.hidden,true);
+    assert.equal(f.fire('mousedown',f.target,true,{clientX:40,clientY:500}).defaultPrevented,false);
+});
+
+test('escape hands control back during an agent gesture, and the lock has a watchdog',()=>{
+    const f=fixture();
+    f.run({action:'agentLock',locked:true});
+    const state=f.window.__tamperSlothGuidance;
+    assert.equal(f.fire('keydown',f.target,true,{key:'Escape'}).defaultPrevented,true);
+    assert.equal(state.agentLocked,false);assert.equal(state.lockPill.hidden,true);
+    assert.equal(f.fire('click',f.target,true,{clientX:40,clientY:500}).defaultPrevented,false);
+    f.run({action:'agentLock',locked:true});
+    f.timers.get(state.agentLockTimer).fn();
+    assert.equal(state.agentLocked,false);
+});
+
+test('unlocking does not create the overlay on a page that has none',()=>{
+    const f=fixture();
+    assert.equal(f.run({action:'agentLock',locked:false}).ok,true);
+    assert.equal(f.window.__tamperSlothGuidance,undefined);
+});
+
+test('off-screen guidance targets scroll into view before drawing',()=>{
+    const f=fixture();let scrolled=0;
+    f.target.scrollIntoView=()=>{scrolled++;f.target.box.y=280;};
+    f.target.box.y=1400;
+    f.run({action:'draw',kind:'bracket',selector:'#target',id:'below'});
+    assert.equal(scrolled,1);assert.equal(f.window.__tamperSlothGuidance.marks.get('below').currentBox.y,280);
+    f.run({action:'draw',kind:'bracket',selector:'#target',id:'visible'});
+    assert.equal(scrolled,1,'visible targets do not scroll');
+    f.window.scrollX=0;f.window.scrollY=0;
+    f.window.scrollBy=({left,top})=>{f.window.scrollX+=left;f.window.scrollY+=top;};
+    f.run({action:'draw',kind:'rectangle',box:{x:100,y:1500,width:50,height:20},id:'box'});
+    assert.deepEqual({...f.window.__tamperSlothGuidance.marks.get('box').box},{x:100,y:290,width:50,height:20});
+    const started=f.run({action:'start',id:'region',region:{x:300,y:2000,width:40,height:40},event:'click',instruction:'Pick it',timeoutMs:1000});
+    assert.equal(started.status,'waiting');
+    assert.deepEqual({...f.window.__tamperSlothGuidance.marks.get('__step').box},{x:300,y:280,width:40,height:40});
+    f.fire('pointerdown',f.expected,true,{clientX:320,clientY:300});
+    assert.equal(f.run({action:'poll',id:'region'}).status,'completed');
 });

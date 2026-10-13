@@ -35,6 +35,110 @@ const responseFormatSchema = z
     .default("concise")
     .describe('Use detailed only for additional attributes, styles, or diagnostics.');
 
+/**
+ * querySelector throws a SyntaxError inside the injected script for Playwright/jQuery
+ * syntax or unescaped utility classes (".hover:bg-muted", ".w-[32px]"); the model then
+ * only sees an opaque injection failure. Validate here so it gets a fixable hint.
+ */
+function selectorError(selector: string | null | undefined) {
+    if (!selector || typeof document === "undefined") return null;
+    try {
+        document.createDocumentFragment().querySelector(selector);
+        return null;
+    } catch {
+        return {
+            error: `Invalid CSS selector: ${selector}`,
+            hint: "Use standard CSS only (no :has-text(), :contains() or text=). Escape special characters in class names " +
+                "(.hover\\:bg-muted) or use attribute selectors such as [aria-label=\"Profile\"], [data-testid=\"avatar\"] or [class~=\"w-[32px]\"].",
+        };
+    }
+}
+
+/**
+ * Runs in the page after a selector misses. Models guess site markup ("summary",
+ * "img.avatar"); sending them back to getPageStructure loops when the capture stops
+ * above the target. Returns real controls they can select directly instead.
+ */
+function explainNoMatch(sel: string) {
+    const split = (text: string, isSep: (ch: string) => boolean) => {
+        const out: string[] = [];
+        let cur = "", quote = "", nest = 0;
+        for (const ch of text) {
+            if (quote) { if (ch === quote) quote = ""; }
+            else if (ch === '"' || ch === "'") quote = ch;
+            else if (ch === "[" || ch === "(") nest++;
+            else if (ch === "]" || ch === ")") nest--;
+            else if (nest === 0 && isSep(ch)) { if (cur.trim()) out.push(cur.trim()); cur = ""; continue; }
+            cur += ch;
+        }
+        if (cur.trim()) out.push(cur.trim());
+        return out;
+    };
+    const visible = (el: Element) => {
+        const r = el.getBoundingClientRect();
+        const s = getComputedStyle(el);
+        return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none";
+    };
+    const quoteAttr = (v: string) => '"' + v.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+    const selectorFor = (el: Element) => {
+        const tag = el.tagName.toLowerCase();
+        if (el.id) return "#" + CSS.escape(el.id);
+        for (const attr of ["data-testid", "aria-label", "alt", "title", "name"]) {
+            const v = el.getAttribute(attr);
+            if (v && v.length <= 80) return tag + "[" + attr + "=" + quoteAttr(v) + "]";
+        }
+        const href = el.getAttribute("href");
+        if (href && href.length <= 80) return tag + "[href=" + quoteAttr(href) + "]";
+        return tag + (el.classList[0] ? "." + CSS.escape(el.classList[0]) : "");
+    };
+    const describe = (el: Element) => {
+        const selector = selectorFor(el);
+        const label = (el.getAttribute("aria-label") || el.getAttribute("alt") || el.textContent || "")
+            .trim().replace(/\s+/g, " ").slice(0, 60);
+        return {selector, matches: document.querySelectorAll(selector).length, ...(label && {label})};
+    };
+    const INTERACTIVE = 'a[href],button,summary,[role="button"],[role="menuitem"],[role="link"],input,select,textarea,img[alt],[aria-label]';
+
+    // Deepest existing ancestor of any alternative, e.g. "header.GlobalNav".
+    let scope: Element | null = null, scopeSelector = "";
+    for (const part of split(sel, ch => ch === ",")) {
+        const tokens = split(part, ch => /\s/.test(ch));
+        for (let k = tokens.length - 1; k > 0 && !scope; k--) {
+            const prefix = tokens.slice(0, k).join(" ").replace(/\s*[>+~]$/, "");
+            try { scope = document.querySelector(prefix); } catch { /* not a valid prefix */ }
+            if (scope) scopeSelector = prefix;
+        }
+        if (scope) break;
+    }
+
+    // Quoted attribute values ("profile", "Account") matched against real labels.
+    const words = Array.from(sel.matchAll(/["']([^"']{3,})["']/g), m => m[1].toLowerCase());
+    const labelMatches = words.length ? Array.from(document.querySelectorAll(INTERACTIVE)).filter(el => {
+        if (!visible(el)) return false;
+        const hay = ["aria-label", "alt", "title", "data-testid"].map(a => el.getAttribute(a) ?? "").join(" ").toLowerCase();
+        return words.some(w => hay.includes(w));
+    }).slice(0, 6).map(describe) : [];
+    const controlsInScope = scope ? Array.from(scope.querySelectorAll(INTERACTIVE)).filter(visible).slice(0, 12).map(describe) : [];
+
+    if (!labelMatches.length && !controlsInScope.length) return {};
+    return {
+        ...(labelMatches.length && {labelMatches}),
+        ...(controlsInScope.length && {scope: scopeSelector, controlsInScope}),
+        hint: "Do not guess markup. Use a selector from labelMatches or controlsInScope (matches = how many elements it hits).",
+    };
+}
+
+async function withSelectorHelp<T>(tabId: number, selector: string | null | undefined, output: T): Promise<T> {
+    const error = (output as {error?: unknown} | null)?.error;
+    if (!selector || typeof error !== "string" || !error.startsWith("No element")) return output;
+    try {
+        const [help] = await chrome.scripting.executeScript({target: {tabId}, func: explainNoMatch, args: [selector]});
+        return {...output, ...help.result};
+    } catch {
+        return output;
+    }
+}
+
 function numberLines(content: string, startLine: number, endLine: number): string {
     const lines = content.split('\n');
     const slice = lines.slice(startLine - 1, endLine);
@@ -371,6 +475,8 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 maxNodes: z.number().int().min(20).max(1500).default(MAX_DOM_NODES),
             }),
             execute: async ({selector, responseFormat, maxNodes}) => {
+                const invalid = selectorError(selector);
+                if (invalid) return invalid;
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId},
                     func: (sel: string | null, format: string, maxNodes: number) => {
@@ -419,7 +525,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                             if (concise) {
                                 if (el.id) info.id = el.id;
                                 if (el.classList.length) info.class = Array.from(el.classList).join(" ").slice(0, 160);
-                                for (const attr of ["href", "role", "aria-label", "name", "type", "placeholder"]) {
+                                for (const attr of ["href", "role", "aria-label", "data-testid", "name", "type", "placeholder"]) {
                                     if (el.hasAttribute(attr)) info[attr] = el.getAttribute(attr)!.slice(0, 180);
                                 }
                                 const label = Array.from(el.childNodes).filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent?.trim()).filter(Boolean).join(" ");
@@ -504,6 +610,8 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 responseFormat: responseFormatSchema,
             }),
             execute: async ({selector, responseFormat}) => {
+                const invalid = selectorError(selector);
+                if (invalid) return invalid;
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId},
                     func: (sel: string, format: string) => {
@@ -574,7 +682,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     },
                     args: [selector, responseFormat ?? "concise"],
                 });
-                return result.result;
+                return withSelectorHelp(tabId, selector, result.result);
             },
         }),
 
@@ -599,6 +707,8 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 responseFormat: responseFormatSchema,
             }),
             execute: async ({selector, maxLength, responseFormat, offset}) => {
+                const invalid = selectorError(selector);
+                if (invalid) return invalid;
                 const effectiveMax = maxLength ?? (responseFormat === "detailed" ? 10000 : 3000);
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId},
@@ -1315,6 +1425,8 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 responseFormat: responseFormatSchema,
             }),
             execute: async ({selector, index, waitAfter, responseFormat}) => {
+                const invalid = selectorError(selector);
+                if (invalid) return invalid;
                 await browserCall('guidance',{tabId,action:'cue',selector,index,cue:'click'}).catch(()=>{});
                 const beforeTab = await chrome.tabs.get(tabId);
 
@@ -1381,7 +1493,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 const navigated = afterTab.url !== beforeTab.url;
 
                 return {
-                    ...result.result,
+                    ...await withSelectorHelp(tabId, selector, result.result),
                     navigated,
                     ...(navigated && {
                         newUrl: afterTab.url,
@@ -1429,6 +1541,8 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 responseFormat: responseFormatSchema,
             }),
             execute: async ({selector, text, clearFirst, pressEnter, index, responseFormat}) => {
+                const invalid = selectorError(selector);
+                if (invalid) return invalid;
                 await browserCall('guidance',{tabId,action:'cue',selector,index,cue:'type'}).catch(()=>{});
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId},
@@ -1565,7 +1679,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                         responseFormat ?? "concise",
                     ],
                 });
-                return result.result;
+                return withSelectorHelp(tabId, selector, result.result);
             },
         }),
 
@@ -1598,6 +1712,8 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 responseFormat: responseFormatSchema,
             }),
             execute: async ({selector, value, label, index, responseFormat}) => {
+                const invalid = selectorError(selector);
+                if (invalid) return invalid;
                 await browserCall('guidance',{tabId,action:'cue',selector,index,cue:'click'}).catch(()=>{});
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId},
@@ -1708,6 +1824,8 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 responseFormat: responseFormatSchema,
             }),
             execute: async ({direction, amount, selector, behavior, responseFormat}) => {
+                const invalid = selectorError(selector);
+                if (invalid) return invalid;
                 await browserCall('guidance',{tabId,action:'cue',selector,cue:'scroll'}).catch(()=>{});
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId},
@@ -1805,7 +1923,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                         responseFormat ?? "concise",
                     ],
                 });
-                return result.result;
+                return withSelectorHelp(tabId, selector, result.result);
             },
         }),
 
@@ -1830,6 +1948,8 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 responseFormat: responseFormatSchema,
             }),
             execute: async ({selector, timeout, responseFormat}) => {
+                const invalid = selectorError(selector);
+                if (invalid) return invalid;
                 await browserCall('guidance',{tabId,action:'cue',selector,cue:'click'}).catch(()=>{});
                 const timeoutMs = timeout ?? 5000;
                 const beforeTab = await chrome.tabs.get(tabId);
@@ -1928,6 +2048,8 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     .describe("Maximum wait time in ms (default: 5000)"),
             }),
             execute: async ({selector, timeout}) => {
+                const invalid = selectorError(selector);
+                if (invalid) return invalid;
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId},
                     func: (sel: string, ms: number) => {

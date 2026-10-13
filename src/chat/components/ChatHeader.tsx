@@ -26,7 +26,7 @@ export function ChatHeader({
         <header className="fixed top-0 inset-x-0 flex shrink-0 items-center justify-between border-b border-muted bg-background px-3.5 py-3">
             <Button variant="ghost" size="sm" onClick={onBack} className="gap-2 px-1.5">
                 <ArrowLeft strokeWidth={1.5} className="text-foreground" />
-                <img src="icon-white.svg" className="h-5 w-5" alt="" />
+                {/*<img src="icon-white.svg" className="h-5 w-5" alt="" />*/}
                 <span className="font-heading text-lg italic leading-none tracking-[-0.02em] text-accent">
                     gallery
                 </span>

@@ -47,11 +47,14 @@ export class CDPManager {
         this.trackInput(target.tabId!, method, params);
         if (/^Input\.(dispatchMouseEvent|dispatchTouchEvent|dispatchKeyEvent|insertText|dispatchDragEvent)$/.test(method)) {
             // Decoration must never prevent real input on a restricted or navigating page.
-            const p=params as any;
-            await runPageGuidance(target.tabId!, {action:'cursor', method, params:{type:p.type,x:p.x,y:p.y,buttons:p.buttons,
-                touchPoints:p.touchPoints?.map((point:any)=>({x:point.x,y:point.y}))}}).catch(() => {});
+            await this.announce(target.tabId!, method, params);
         }
         return chrome.debugger.sendCommand(target, method, params);
+    }
+    // The page lets announced agent input through its gesture lock and blocks everything else.
+    private announce(tabId: number, method: string, p: any) {
+        return runPageGuidance(tabId, {action:'cursor', method, params:{type:p.type,x:p.x,y:p.y,buttons:p.buttons,key:p.key,code:p.code,
+            touchPoints:p.touchPoints?.map((point:any)=>({x:point.x,y:point.y}))}}).catch(() => {});
     }
     private trackInput(tabId: number, method: string, params: any) {
         const held = this.tabs.get(tabId)?.held;
@@ -68,12 +71,14 @@ export class CDPManager {
         }
         if (method === 'Input.dispatchTouchEvent') held.touch = params.type !== 'touchEnd' && params.type !== 'touchCancel';
     }
-    async release(tabId: number, method: string, params: any) {
+    async release(tabId: number, method: string, params: any, announce = true) {
         const allowed = method === 'Input.dispatchKeyEvent' && params.type === 'keyUp' || method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased'
             || method === 'Input.dispatchTouchEvent' && ['touchEnd', 'touchCancel'].includes(params.type) || method === 'Input.setInterceptDrags' && params.enabled === false;
         if (!allowed) throw new Error('Only held-input cleanup is allowed');
         if (!this.tabs.has(tabId)) return;
         this.trackInput(tabId, method, params);
+        // Cleanup after the overlay is disposed must not recreate it.
+        if (announce && !this.panelClosed && method !== 'Input.setInterceptDrags') await this.announce(tabId, method, params);
         await chrome.debugger.sendCommand({tabId}, method, params).catch(() => {});
     }
     private async enable(target: Session) {
@@ -138,9 +143,9 @@ export class CDPManager {
     async detach(tabId: number) {
         if (!this.tabs.has(tabId)) return;
         const held = this.tabs.get(tabId)!.held;
-        for (const key of [...held.keys.values()].reverse()) await this.release(tabId, 'Input.dispatchKeyEvent', {...key, type: 'keyUp', modifiers: 0});
-        for (const mouse of [...held.mouse.values()]) await this.release(tabId, 'Input.dispatchMouseEvent', {...mouse, type: 'mouseReleased', buttons: 0});
-        if (held.touch) await this.release(tabId, 'Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
+        for (const key of [...held.keys.values()].reverse()) await this.release(tabId, 'Input.dispatchKeyEvent', {...key, type: 'keyUp', modifiers: 0}, false);
+        for (const mouse of [...held.mouse.values()]) await this.release(tabId, 'Input.dispatchMouseEvent', {...mouse, type: 'mouseReleased', buttons: 0}, false);
+        if (held.touch) await this.release(tabId, 'Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []}, false);
         this.tabs.delete(tabId);
         await chrome.debugger.detach({tabId}).catch(() => {});
     }

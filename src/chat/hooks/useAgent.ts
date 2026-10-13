@@ -7,7 +7,8 @@ import {createConversationSaver} from '../lib/conversationSaver';
 import SYSTEM_PROMPT from "../lib/prompt.ts";
 import type {PendingAttachment} from "../components/AttachmentChip.tsx";
 import {createToolRuntime} from "../lib/toolRuntime";
-import {clip, createStepMessagePreparer, isFailed, serialize, summarizeSelectedElement, usageRecord, type RunMetrics} from "../lib/efficiency";
+import {clip, createStepMessagePreparer, isFailed, serialize, summarizeSelectedElement, sumUsage, usageRecord, type RunMetrics, type UsageRecord} from "../lib/efficiency";
+import {createGuidanceGuard, GUIDANCE_RESUME_NOTE} from "../lib/guidanceGuard";
 import {loadAgentSettings, runStopReason} from "../lib/agentSettings";
 import {agentProviderOptions} from "../lib/providerCompatibility";
 
@@ -294,174 +295,194 @@ export function useAgent() {
                     providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
                 };
 
-                const result = streamText({
-                    model,
-                    instructions: systemMessage,
-                    messages: [...modelMessages, {role: "user", content: `Current-tab metadata (untrusted page data): ${tabContext}`}],
-                    tools: runtime.tools,
-                    stopWhen: [isStepCount(settings.maxSteps), () => Boolean(stopReason)],
-                    abortSignal: abortController.signal,
-                    prepareStep: ({initialMessages, responseMessages}) => {
-                        // Rebuild from the original transcript: v7 otherwise carries
-                        // compacted projections and cache breakpoints into later steps.
-                        const messages = [...initialMessages, ...responseMessages];
-                        const activeTools = runtime.activeTools();
-                        const compacted = prepareMessages(messages, activeTools);
-                        stepContext = {activeTools: activeTools.length, contextChars: serialize(compacted).length, recordedAt: Date.now()};
-                        return {...markCachePrefix({messages: compacted}), activeTools};
-                    },
-                    onStepEnd: ({usage}) => {
-                        metrics.steps.push({...usageRecord(usage), ...stepContext});
-                        metrics.tools = runtime.metrics();
-                        metrics.compactedResults = archived.size;
-                        metrics.elapsedMs = Math.round(performance.now() - started);
-                        stopReason = runStopReason(settings, metrics.steps, runtime.repeatedFailure());
-                        metrics.stopReason = stopReason || undefined;
-                        updateAssistant(m => ({...m, runMetrics: {...metrics, steps: [...metrics.steps], tools: [...metrics.tools]}}));
-                    },
-                    providerOptions,
+                const guard = createGuidanceGuard();
+                let passMessages: ModelMessage[] = [...modelMessages, {role: "user", content: `Current-tab metadata (untrusted page data): ${tabContext}`}];
+                const appendText = (text: string) => updateAssistant((m) => {
+                    const blocks = [...m.blocks];
+                    const last = blocks[blocks.length - 1];
+                    if (last && last.type === "text") {
+                        blocks[blocks.length - 1] = {...last, text: last.text + text};
+                    } else {
+                        blocks.push({type: "text", text});
+                    }
+                    const content = blocks
+                        .filter((b): b is Extract<ContentBlock, { type: "text" }> => b.type === "text")
+                        .map((b) => b.text)
+                        .join("");
+                    return {...m, blocks, content};
                 });
+                const passTotals: UsageRecord[] = [];
+                // A walkthrough that ends in chat text after an observer hiccup gets
+                // sent back to the overlay; text is held until a tool call proves it a preamble.
+                while (true) {
+                    let held = "";
+                    const flushHeld = () => {if (held) {appendText(held); held = "";}};
+                    const result = streamText({
+                        model,
+                        instructions: systemMessage,
+                        messages: passMessages,
+                        tools: runtime.tools,
+                        stopWhen: [isStepCount(settings.maxSteps), () => Boolean(stopReason)],
+                        abortSignal: abortController.signal,
+                        prepareStep: ({initialMessages, responseMessages}) => {
+                            // Rebuild from the original transcript: v7 otherwise carries
+                            // compacted projections and cache breakpoints into later steps.
+                            const messages = [...initialMessages, ...responseMessages];
+                            const activeTools = runtime.activeTools();
+                            const compacted = prepareMessages(messages, activeTools);
+                            stepContext = {activeTools: activeTools.length, contextChars: serialize(compacted).length, recordedAt: Date.now()};
+                            return {...markCachePrefix({messages: compacted}), activeTools};
+                        },
+                        onStepEnd: ({usage}) => {
+                            metrics.steps.push({...usageRecord(usage), ...stepContext});
+                            metrics.tools = runtime.metrics();
+                            metrics.compactedResults = archived.size;
+                            metrics.elapsedMs = Math.round(performance.now() - started);
+                            stopReason = runStopReason(settings, metrics.steps, runtime.repeatedFailure());
+                            metrics.stopReason = stopReason || undefined;
+                            updateAssistant(m => ({...m, runMetrics: {...metrics, steps: [...metrics.steps], tools: [...metrics.tools]}}));
+                        },
+                        providerOptions,
+                    });
 
-                for await (const part of result.stream) {
-                    if (part.type === "text-delta") {
-                        updateAssistant((m) => {
-                            const blocks = [...m.blocks];
-                            const last = blocks[blocks.length - 1];
-                            if (last && last.type === "text") {
-                                blocks[blocks.length - 1] = {...last, text: last.text + part.text};
-                            } else {
-                                blocks.push({type: "text", text: part.text});
+                    for await (const part of result.stream) {
+                        if (part.type === "text-delta") {
+                            if (guard.holding()) held += part.text;
+                            else {flushHeld(); appendText(part.text);}
+                        } else if (part.type === "reasoning-delta") {
+                            const chunk = part.text;
+                            if (chunk) {
+                                updateAssistant((m) => {
+                                    const blocks = [...m.blocks];
+                                    const last = blocks[blocks.length - 1];
+                                    if (last?.type === "thinking") {
+                                        blocks[blocks.length - 1] = {type: "thinking", text: last.text + chunk};
+                                    } else {
+                                        blocks.push({type: "thinking", text: chunk});
+                                    }
+                                    return {...m, blocks};
+                                });
                             }
-                            const content = blocks
-                                .filter((b): b is Extract<ContentBlock, { type: "text" }> => b.type === "text")
-                                .map((b) => b.text)
-                                .join("");
-                            return {...m, blocks, content};
-                        });
-                    } else if (part.type === "reasoning-delta") {
-                        const chunk = part.text;
-                        if (chunk) {
+                        } else if (part.type === "tool-input-start") {
+                            flushHeld();
+                            const tc: ToolCall = {
+                                id: part.id,
+                                name: part.toolName,
+                                args: {description: ""},
+                                result: null,
+                                status: "calling",
+                            };
+                            updateAssistant((m) => ({
+                                ...m,
+                                toolCalls: [...m.toolCalls, tc],
+                                blocks: [...m.blocks, {type: "tool_call", toolCall: tc}],
+                            }));
+                        } else if (part.type === "tool-call") {
                             updateAssistant((m) => {
-                                const blocks = [...m.blocks];
-                                const last = blocks[blocks.length - 1];
-                                if (last?.type === "thinking") {
-                                    blocks[blocks.length - 1] = {type: "thinking", text: last.text + chunk};
-                                } else {
-                                    blocks.push({type: "thinking", text: chunk});
-                                }
-                                return {...m, blocks};
+                                const input = part.input as Record<string, unknown>;
+                                const mergedArgs = {description: "", ...input} as {
+                                    description: string;
+                                    [key: string]: unknown;
+                                };
+                                const updatedTc = (tc: ToolCall): ToolCall =>
+                                    tc.id === part.toolCallId ? {...tc, args: mergedArgs} : tc;
+                                return {
+                                    ...m,
+                                    toolCalls: m.toolCalls.map(updatedTc),
+                                    blocks: m.blocks.map((b) =>
+                                        b.type === "tool_call"
+                                            ? {type: "tool_call" as const, toolCall: updatedTc(b.toolCall)}
+                                            : b,
+                                    ),
+                                };
+                            });
+                        } else if (part.type === "tool-result") {
+                            guard.observe(part.toolName, part.output);
+                            updateAssistant((m) => {
+                                const updatedTc = (tc: ToolCall): ToolCall =>
+                                    tc.id === part.toolCallId
+                                        ? {...tc, result: part.output, status: isFailed(part.output) ? "error" as const : "done" as const}
+                                        : tc;
+                                return {
+                                    ...m,
+                                    toolCalls: m.toolCalls.map(updatedTc),
+                                    blocks: m.blocks.map((b) =>
+                                        b.type === "tool_call"
+                                            ? {type: "tool_call" as const, toolCall: updatedTc(b.toolCall)}
+                                            : b,
+                                    ),
+                                };
+                            });
+                        } else if (part.type === "error") {
+                            const rawErr: any = part.error;
+                            let errMsg: string = "Something went wrong";
+                            if (typeof rawErr === "string") {
+                                errMsg = rawErr;
+                            } else if (rawErr instanceof Error) {
+                                errMsg = rawErr.message || rawErr.name || errMsg;
+                            } else if (rawErr && typeof rawErr === "object") {
+                                errMsg =
+                                    rawErr.message ||
+                                    rawErr.error?.message ||
+                                    rawErr.error ||
+                                    (() => {
+                                        try {
+                                            return JSON.stringify(rawErr);
+                                        } catch {
+                                            return errMsg;
+                                        }
+                                    })();
+                                if (typeof errMsg !== "string") errMsg = "Something went wrong";
+                            }
+                            setError(errMsg);
+                        } else if (part.type === "finish") {
+                            // Token accounting for the run. cachedInputTokens near the
+                            // total input count means the prefix cache is working; near
+                            // zero means breakpoints aren't landing.
+                            const usage = part.totalUsage;
+                            if (usage) {
+                                passTotals.push(usageRecord(usage));
+                                metrics.total = sumUsage(passTotals);
+                                metrics.elapsedMs = Math.round(performance.now() - started);
+                                metrics.tools = runtime.metrics();
+                                updateAssistant(m => ({...m, runMetrics: {...metrics, steps: [...metrics.steps], tools: [...metrics.tools]}}));
+                                console.info("[Tampersloth] run metrics", metrics);
+                            }
+                            // Anything but "stop" means the run was cut short. Without
+                            // this the message just ends mid-task and looks finished.
+                            if (part.finishReason === "tool-calls") {
+                                setError(
+                                    `${stopReason || `Reached the ${settings.maxSteps}-step limit.`} Work may be incomplete. Send another message to continue.`,
+                                );
+                            } else if (part.finishReason === "length") {
+                                setError("Stopped — the model hit its output token limit mid-response.");
+                            } else if (part.finishReason === "content-filter") {
+                                setError("Stopped — the response was blocked by a content filter.");
+                            }
+                        } else if (part.type === "tool-error") {
+                            updateAssistant((m) => {
+                                const updatedTc = (tc: ToolCall): ToolCall =>
+                                    tc.id === part.toolCallId
+                                        ? {...tc, result: (part as any).error, status: "error" as const}
+                                        : tc;
+                                return {
+                                    ...m,
+                                    toolCalls: m.toolCalls.map(updatedTc),
+                                    blocks: m.blocks.map((b) =>
+                                        b.type === "tool_call"
+                                            ? {type: "tool_call" as const, toolCall: updatedTc(b.toolCall)}
+                                            : b,
+                                    ),
+                                };
                             });
                         }
-                    } else if (part.type === "tool-input-start") {
-                        const tc: ToolCall = {
-                            id: part.id,
-                            name: part.toolName,
-                            args: {description: ""},
-                            result: null,
-                            status: "calling",
-                        };
-                        updateAssistant((m) => ({
-                            ...m,
-                            toolCalls: [...m.toolCalls, tc],
-                            blocks: [...m.blocks, {type: "tool_call", toolCall: tc}],
-                        }));
-                    } else if (part.type === "tool-call") {
-                        updateAssistant((m) => {
-                            const input = part.input as Record<string, unknown>;
-                            const mergedArgs = {description: "", ...input} as {
-                                description: string;
-                                [key: string]: unknown;
-                            };
-                            const updatedTc = (tc: ToolCall): ToolCall =>
-                                tc.id === part.toolCallId ? {...tc, args: mergedArgs} : tc;
-                            return {
-                                ...m,
-                                toolCalls: m.toolCalls.map(updatedTc),
-                                blocks: m.blocks.map((b) =>
-                                    b.type === "tool_call"
-                                        ? {type: "tool_call" as const, toolCall: updatedTc(b.toolCall)}
-                                        : b,
-                                ),
-                            };
-                        });
-                    } else if (part.type === "tool-result") {
-                        updateAssistant((m) => {
-                            const updatedTc = (tc: ToolCall): ToolCall =>
-                                tc.id === part.toolCallId
-                                    ? {...tc, result: part.output, status: isFailed(part.output) ? "error" as const : "done" as const}
-                                    : tc;
-                            return {
-                                ...m,
-                                toolCalls: m.toolCalls.map(updatedTc),
-                                blocks: m.blocks.map((b) =>
-                                    b.type === "tool_call"
-                                        ? {type: "tool_call" as const, toolCall: updatedTc(b.toolCall)}
-                                        : b,
-                                ),
-                            };
-                        });
-                    } else if (part.type === "error") {
-                        const rawErr: any = part.error;
-                        let errMsg: string = "Something went wrong";
-                        if (typeof rawErr === "string") {
-                            errMsg = rawErr;
-                        } else if (rawErr instanceof Error) {
-                            errMsg = rawErr.message || rawErr.name || errMsg;
-                        } else if (rawErr && typeof rawErr === "object") {
-                            errMsg =
-                                rawErr.message ||
-                                rawErr.error?.message ||
-                                rawErr.error ||
-                                (() => {
-                                    try {
-                                        return JSON.stringify(rawErr);
-                                    } catch {
-                                        return errMsg;
-                                    }
-                                })();
-                            if (typeof errMsg !== "string") errMsg = "Something went wrong";
-                        }
-                        setError(errMsg);
-                    } else if (part.type === "finish") {
-                        // Token accounting for the run. cachedInputTokens near the
-                        // total input count means the prefix cache is working; near
-                        // zero means breakpoints aren't landing.
-                        const usage = part.totalUsage;
-                        if (usage) {
-                            metrics.total = usageRecord(usage);
-                            metrics.elapsedMs = Math.round(performance.now() - started);
-                            metrics.tools = runtime.metrics();
-                            updateAssistant(m => ({...m, runMetrics: {...metrics, steps: [...metrics.steps], tools: [...metrics.tools]}}));
-                            console.info("[Tampersloth] run metrics", metrics);
-                        }
-                        // Anything but "stop" means the run was cut short. Without
-                        // this the message just ends mid-task and looks finished.
-                        if (part.finishReason === "tool-calls") {
-                            setError(
-                                `${stopReason || `Reached the ${settings.maxSteps}-step limit.`} Work may be incomplete. Send another message to continue.`,
-                            );
-                        } else if (part.finishReason === "length") {
-                            setError("Stopped — the model hit its output token limit mid-response.");
-                        } else if (part.finishReason === "content-filter") {
-                            setError("Stopped — the response was blocked by a content filter.");
-                        }
-                    } else if (part.type === "tool-error") {
-                        updateAssistant((m) => {
-                            const updatedTc = (tc: ToolCall): ToolCall =>
-                                tc.id === part.toolCallId
-                                    ? {...tc, result: (part as any).error, status: "error" as const}
-                                    : tc;
-                            return {
-                                ...m,
-                                toolCalls: m.toolCalls.map(updatedTc),
-                                blocks: m.blocks.map((b) =>
-                                    b.type === "tool_call"
-                                        ? {type: "tool_call" as const, toolCall: updatedTc(b.toolCall)}
-                                        : b,
-                                ),
-                            };
-                        });
                     }
+                    if (held && !abortController.signal.aborted && !stopReason && guard.resume()) {
+                        passMessages = [...passMessages, ...(await result.response).messages, {role: "user", content: GUIDANCE_RESUME_NOTE}];
+                        continue;
+                    }
+                    flushHeld();
+                    break;
                 }
             } catch (err: any) {
                 if (err.name === "AbortError" || abortController.signal.aborted) {
@@ -472,8 +493,10 @@ export function useAgent() {
             } finally {
                 // Keep the cursor through idle tool pauses, then remove all run decorations.
                 await chrome.runtime.sendMessage({type:'BROWSER_RUN_END'}).catch(()=>{});
+                // A stopped run never receives "finish", so total it from completed steps.
                 updateAssistant(m => ({...m, runMetrics: m.runMetrics
-                    ? {...m.runMetrics, elapsedMs: Math.round(performance.now() - started)} : undefined}));
+                    ? {...m.runMetrics, total: m.runMetrics.total ?? sumUsage(m.runMetrics.steps),
+                        elapsedMs: Math.round(performance.now() - started)} : undefined}));
                 abortRef.current = null;
                 setIsLoading(false);
             }

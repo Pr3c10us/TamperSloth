@@ -1,8 +1,15 @@
 /** Serialized into Chrome's isolated world; keep every dependency inside this function. */
 export function pageGuidance(args: any): any {
     const win = window as any;
+    const actionTypes=['click','input','change','submit','focusin','pointerup','pointerdown'];
     let state = win.__tamperSlothGuidance;
-    if (!state && ['poll', 'cancel', 'clear', 'dispose'].includes(args.action)) return {status: 'lost', hint: 'Page changed; inspect it and re-anchor the next step.'};
+    if (!state && args.action==='agentLock' && !args.locked) return {ok:true};
+    if (!state && ['poll', 'cancel', 'clear', 'dispose'].includes(args.action)) {
+        // A full page load wipes window state; the acted marker survives same-origin navigations.
+        let actionObserved=false;
+        try{actionObserved=!!args.id && sessionStorage.getItem('__tamperSlothActed')===args.id;if(actionObserved) sessionStorage.removeItem('__tamperSlothActed');}catch{}
+        return {status: 'lost', ...(actionObserved ? {actionObserved} : {}), hint: 'Page changed; inspect it and re-anchor the next step.'};
+    }
     if (!state) {
         const host = document.createElement('div');
         host.id = 'tampersloth-guidance';
@@ -35,8 +42,12 @@ export function pageGuidance(args: any): any {
             .cursor-description[data-typing="true"]::after{content:'';display:inline-block;height:1em;border-left:2px solid #a8bd85;margin-left:2px;vertical-align:-2px;animation:caret 1s steps(2,end) infinite}
             .ripple{position:fixed;width:30px;height:30px;border:1.5px solid #a8bd85;border-radius:50%;box-shadow:0 0 0 2px #0f0f0e66;animation:pulse .45s cubic-bezier(.22,.61,.36,1) forwards}
             @keyframes arrive{from{opacity:0}to{opacity:1}} @keyframes pulse{to{transform:scale(1.9);opacity:0}}
+            .lock-pill{position:fixed;right:12px;bottom:12px;display:flex;align-items:center;gap:6px;padding:5px 9px;background:#0f0f0ebf;color:#f6f4efd9;border-radius:6px;font:400 11px/1.3 'TamperSloth Geist','Geist Variable',system-ui,sans-serif;-webkit-font-smoothing:antialiased;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);opacity:1;transition:opacity 180ms ease,visibility 0s}
+            .lock-pill[hidden]{display:flex;opacity:0;visibility:hidden;transition:opacity 180ms ease,visibility 0s 180ms}
+            .lock-dot{flex:none;width:5px;height:5px;border-radius:50%;background:#a8bd85}
+            .lock-hint{color:#f6f4ef80}
             @keyframes caret{50%{opacity:0}}
-            @media(prefers-reduced-motion:reduce){.mark,.ripple,.cursor-description::after{animation:none}.cursor,.cursor svg{transition:none}}
+            @media(prefers-reduced-motion:reduce){.mark,.ripple,.cursor-description::after{animation:none}.cursor,.cursor svg,.lock-pill{transition:none}}
         `;
         root.append(style);
         const inputGuard=document.createElement('div');inputGuard.className='input-guard';inputGuard.hidden=true;inputGuard.setAttribute('aria-hidden','true');root.append(inputGuard);
@@ -53,20 +64,53 @@ export function pageGuidance(args: any): any {
         const cursorContent=document.createElement('div');cursorContent.className='cursor-tag-content';
         const cursorBody=document.createElement('div');cursorBody.className='cursor-description';cursorBody.hidden=true;
         cursorContent.append(cursorBody);cursorTag.append(cursorContent);cursor.append(cursorTag);
-        root.append(cursor); document.documentElement.append(host);
-        state = win.__tamperSlothGuidance = {host, root, svg, status, cursor,cursorTag,cursorName,cursorBody,inputGuard, marks: new Map(), wait: null,drawQueue:[],drawing:null};
+        // Visible while site input is paused, so a blocked click is never a mystery.
+        const lockPill=document.createElement('div');lockPill.className='lock-pill';lockPill.hidden=true;lockPill.setAttribute('role','status');
+        const lockDot=document.createElement('span');lockDot.className='lock-dot';
+        const lockTitle=document.createElement('span');const lockHint=document.createElement('span');lockHint.className='lock-hint';
+        lockPill.append(lockDot,lockTitle,lockHint);
+        root.append(cursor,lockPill); document.documentElement.append(host);
+        state = win.__tamperSlothGuidance = {host, root, svg, status, cursor,cursorTag,cursorName,cursorBody,inputGuard,lockPill,lockTitle,lockHint, marks: new Map(), wait: null,drawQueue:[],drawing:null,agentPoints:[],agentKeys:[]};
+        state.renderLock=()=>{
+            lockPill.hidden=!state.inputLocked && !state.agentLocked;
+            if(state.inputLocked){lockTitle.textContent='Drawing guide';lockHint.textContent='Esc';}
+            else if(state.agentLocked){lockTitle.textContent='Sloth is working';lockHint.textContent='Esc';}
+            lockPill.setAttribute('aria-label',state.inputLocked ? 'Drawing guide. Input paused. Escape cancels.' : 'Sloth is working. Input paused. Escape to take over.');
+        };
+        // Gestures arrive through CDP as trusted events, so a guard overlay would swallow
+        // them too. Instead, only input matching what the agent announced gets through.
+        // Batched actions unlock and relock back to back. Linger briefly so the gap
+        // neither flashes the indicator nor lets a stray click land mid-batch.
+        state.setAgentLocked=(locked: boolean,linger=false)=>{
+            clearTimeout(state.agentLockTimer);
+            if(locked) state.agentLockTimer=setTimeout(()=>state.setAgentLocked(false),15000);
+            else if(linger && state.agentLocked){state.agentLockTimer=setTimeout(()=>state.setAgentLocked(false),900);return;}
+            if(state.agentLocked===locked) return;
+            state.agentLocked=locked;state.renderLock();
+        };
+        state.isAgentInput=(event: Event)=>{
+            const now=performance.now(),e=event as any;
+            if(/^key/.test(event.type)) return state.agentKeys.some((k: any)=>now-k.at<1500 && (k.key===e.key || !!k.code && k.code===e.code));
+            const t=e.changedTouches?.[0] ?? e.touches?.[0] ?? e;
+            // Derived events (input, change, submit) only follow input that was already filtered.
+            if(!Number.isFinite(t.clientX)) return true;
+            return state.agentPoints.some((p: any)=>now-p.at<1500 && Math.abs(p.x-t.clientX)<=2 && Math.abs(p.y-t.clientY)<=2);
+        };
         state.setInputLocked=(locked: boolean)=>{
             if(state.inputLocked===locked) return;
-            state.inputLocked=locked;inputGuard.hidden=!locked;
+            state.inputLocked=locked;inputGuard.hidden=!locked;state.renderLock();
             clearTimeout(state.inputLockTimer);
             if(locked){state.message('Drawing the guide','Site input is briefly paused. Escape cancels.');state.inputLockTimer=setTimeout(()=>pageGuidance({action:'clear'}),7000);}
         };
         state.blockInput=(event: Event)=>{
-            if(!state.inputLocked || !event.isTrusted) return;
-            if(event.type==='keydown' && (event as KeyboardEvent).key==='Escape') pageGuidance({action:'clear'});
+            if(!event.isTrusted) return;
+            const escape=event.type==='keydown' && (event as KeyboardEvent).key==='Escape';
+            if(state.inputLocked){if(escape) pageGuidance({action:'clear'});}
+            else if(!state.agentLocked || state.isAgentInput(event)) return;
+            else if(escape) state.setAgentLocked(false);
             event.preventDefault();event.stopImmediatePropagation();
         };
-        state.lockEvents=['pointerdown','pointermove','pointerup','mousedown','mousemove','mouseup','click','dblclick','dragstart','dragover','drop','touchstart','touchmove','touchend','wheel','keydown','keyup','keypress','beforeinput','input','change','submit'];
+        state.lockEvents=['pointerdown','pointermove','pointerup','mousedown','mousemove','mouseup','click','dblclick','auxclick','contextmenu','dragstart','dragover','drop','touchstart','touchmove','touchend','wheel','keydown','keyup','keypress','beforeinput','input','change','submit'];
         for(const type of state.lockEvents) window.addEventListener(type,state.blockInput,{capture:true,passive:false});
         state.reduced=()=>typeof matchMedia==='undefined' || matchMedia('(prefers-reduced-motion: reduce)').matches;
         state.positionTooltip=()=>{
@@ -229,6 +273,27 @@ export function pageGuidance(args: any): any {
             if(best){node.style.left=`${best.x}px`;node.style.top=`${best.y}px`;}
             return best;
         };
+        // Bring guidance targets into view before drawing. Partly clipped targets that fit
+        // the viewport scroll too; oversized ones only scroll when entirely off screen.
+        state.outOfView=(b: any)=>{
+            const right=b.x+b.width,bottom=b.y+b.height;
+            if(right<=0 || bottom<=0 || b.x>=innerWidth || b.y>=innerHeight) return true;
+            return (b.x<0 || b.y<0 || right>innerWidth || bottom>innerHeight) && b.width<=innerWidth && b.height<=innerHeight;
+        };
+        state.reveal=(el: Element)=>{
+            const b=el.getBoundingClientRect();if(!state.outOfView(b)) return;
+            const block=b.y<0 || b.y+b.height>innerHeight ? 'center' : 'nearest',inline=b.x<0 || b.x+b.width>innerWidth ? 'center' : 'nearest';
+            el.scrollIntoView({block,inline,behavior:'instant' as ScrollBehavior});
+        };
+        // Boxes and points are viewport coordinates, so return how far the page moved to shift them.
+        state.revealBox=(b: any)=>{
+            if(!state.outOfView(b) || typeof win.scrollBy!=='function') return {x:0,y:0};
+            const x0=win.scrollX ?? 0,y0=win.scrollY ?? 0;
+            // Center only the axis that is clipped, so a vertical reveal never pans sideways.
+            const clipped=(start: number,size: number,view: number)=>start<0 || start+size>view ? start+size/2-view/2 : 0;
+            win.scrollBy({left:clipped(b.x,b.width,innerWidth),top:clipped(b.y,b.height,innerHeight),behavior:'instant'});
+            return {x:(win.scrollX ?? 0)-x0,y:(win.scrollY ?? 0)-y0};
+        };
         state.message = (title: string, text: string) => {
             status.replaceChildren(); const strong = document.createElement('strong'); strong.textContent = title;
             status.append(strong, document.createTextNode(text)); status.hidden = false;
@@ -240,9 +305,42 @@ export function pageGuidance(args: any): any {
                 for (const el of root.querySelectorAll('*')) if (el.shadowRoot) visit(el.shadowRoot);
             };
             visit(document);
-            if (matches.length !== 1) throw new Error(matches.length ? 'Guidance selector is ambiguous' : 'Guidance target not found');
+            // Apps such as Figma keep hidden duplicates (tooltips, menus); a single rendered match is unambiguous,
+            // even when it is scrolled out of view (e.g. GitHub's desktop + collapsed mobile settings nav).
+            if (matches.length > 1) {
+                const rendered=matches.filter(el=>{const b=el.getBoundingClientRect();return b.width>0 && b.height>0 && getComputedStyle(el).visibility!=='hidden';});
+                if (rendered.length === 1) return rendered[0];
+                const visible=rendered.filter(el=>{const b=el.getBoundingClientRect();return b.x<innerWidth && b.y<innerHeight && b.x+b.width>0 && b.y+b.height>0;});
+                if (visible.length === 1) return visible[0];
+            }
+            if (matches.length !== 1) throw new Error(matches.length ? `Guidance selector is ambiguous (${matches.length} matches)` : 'Guidance target not found');
             return matches[0];
         };
+        // A re-rendered node is still the target when the event path contains an element matching its selector.
+        state.hits=(event: Event,selector: string,el?: Element | null)=>{
+            const path=event.composedPath();
+            if(el && path.includes(el)) return true;
+            return path.some((node: any)=>{try{return node?.nodeType===1 && node.matches?.(selector);}catch{return false;}});
+        };
+        // Toolbars that re-render on press retarget the click to an ancestor; the press itself proves intent.
+        state.sameAction=(type: string,wanted: string)=>type===wanted || (wanted==='click' && type==='pointerdown');
+        // Remember trusted actions between steps, at window capture so page handlers cannot hide them.
+        state.recent=[];
+        state.recordAction=(event: Event)=>{
+            if(!event.isTrusted || state.inputLocked) return;
+            const e=event as any;
+            state.recent.push({type:event.type,path:event.composedPath(),x:e.clientX,y:e.clientY});
+            if(state.recent.length>20) state.recent.shift();
+            // Coordinate-fallback steps cannot verify outcomes themselves; count interactions for a later screenshot check.
+            if(state.wait && !state.wait.result && ['pointerup','input','change','submit','keyup'].includes(event.type)) state.wait.interactions++;
+            // Any user activity means they are engaged, so restart the short idle window.
+            if(state.wait && !state.wait.result) state.wait.armIdle?.();
+        };
+        state.inRegion=(p: any,box: any)=>Number.isFinite(p.x) && Number.isFinite(p.y) && p.x>=box.x-6 && p.x<=box.x+box.width+6 && p.y>=box.y-6 && p.y<=box.y+box.height+6;
+        state.recentRegionHit=(box: any,wanted: string)=>state.recent.some((entry: any)=>state.sameAction(entry.type,wanted) && state.inRegion(entry,box));
+        state.recentHit=(selector: string,el: Element | null,wanted: string)=>state.recent.some((entry: any)=>state.sameAction(entry.type,wanted) && state.hits({composedPath:()=>entry.path} as any,selector,el));
+        state.recordEvents=['pointerdown','click','input','change','submit','focusin','pointerup','keyup'];
+        for(const type of state.recordEvents) window.addEventListener(type,state.recordAction,{capture:true,passive:true});
         state.sketch = (mark: any, box: any) => {
             const {width:w,height:h}=box;
             const path=(pass: number,dashed=mark.lineStyle==='dashed')=>{
@@ -335,14 +433,13 @@ export function pageGuidance(args: any): any {
         state.resize.observe(status);
         state.mutations = new MutationObserver(state.schedule);
         state.mutations.observe(document.documentElement, {subtree:true,childList:true,attributes:true});
-        const actionTypes=['click','input','change','submit','focusin','pointerup'];
         state.annotationListener=(event: Event)=>{
             if(!event.isTrusted || state.inputLocked) return;
             for(const mark of state.marks.values()) {
                 if(!mark.selector) continue;
-                let target;try{target=state.find(mark.selector);}catch{continue;}
-                if(event.composedPath().includes(target)) {
-                    mark.actions.add(event.type);
+                let target;try{target=state.find(mark.selector);}catch{target=null;}
+                if(state.hits(event,mark.selector,target)) {
+                    mark.actions.add(event.type);if(event.type==='pointerdown') mark.actions.add('click');
                     if(mark.label && (!state.wait || state.wait.result || event.type===state.wait.event)) mark.label.hidden=true;
                     if(state.guideOwner===mark.id && (!state.wait || state.wait.result || event.type===state.wait.event)) {
                         clearTimeout(state.typingTimer);cursorBody.hidden=true;state.guideOwner=undefined;state.positionTooltip();
@@ -371,8 +468,8 @@ export function pageGuidance(args: any): any {
         };
         state.finish = (result: any) => {
             const w = state.wait; if (!w || w.result) return;
-            w.result = {...result, actionObserved:w.acted && w.event!=='state', elapsedMs:Date.now()-w.started, unexpectedActions:w.unexpected, url:location.href};
-            clearTimeout(w.timer); clearInterval(w.check);
+            w.result = {...result, actionObserved:w.acted && w.event!=='state', elapsedMs:Date.now()-w.started, unexpectedActions:w.unexpected, interactions:w.interactions, url:location.href,...(w.region ? {verification:'visual'} : {})};
+            clearTimeout(w.timer); clearTimeout(w.idleTimer); clearInterval(w.check); state.recent=[];
             for (const type of [...actionTypes,'keydown']) document.removeEventListener(type,w.listener,true);
             for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);
             if(result.status==='completed') {status.hidden=true;}
@@ -385,6 +482,7 @@ export function pageGuidance(args: any): any {
         state.cursor.hidden=true;
         window.removeEventListener('scroll',state.schedule,true);window.removeEventListener('resize',state.schedule);
         for(const type of state.lockEvents) window.removeEventListener(type,state.blockInput,true);
+        for(const type of state.recordEvents) window.removeEventListener(type,state.recordAction,true);
         state.host.remove();delete win.__tamperSlothGuidance;
         return {ok:true};
     }
@@ -395,11 +493,22 @@ export function pageGuidance(args: any): any {
         return pageGuidance({action:'cursor',method:args.cue==='type' ? 'Input.insertText' : 'Input.dispatchMouseEvent',params:{x:b?.width ? b.x+b.width/2 : innerWidth/2,y:b?.height ? b.y+b.height/2 : innerHeight/2,type:args.cue==='scroll' ? 'mouseWheel' : args.cue==='click' ? 'mousePressed' : 'mouseMoved'}});
     }
     if (args.action === 'cursor') {
-        const p = args.params ?? {}, type = p.type ?? '';
+        const p = args.params ?? {}, type = p.type ?? '', now = performance.now();
         let point = p.touchPoints?.[0] ?? (Number.isFinite(p.x) ? p : null);
-        if (!point && /Key|insertText/.test(args.method)) {
-            const box = document.activeElement?.getBoundingClientRect();
-            if (box?.width && document.activeElement!==document.body && document.activeElement!==document.documentElement) {
+        for (const at of p.touchPoints ?? (point ? [point] : [])) state.agentPoints.push({x:at.x,y:at.y,at:now});
+        if (p.key || p.code) state.agentKeys.push({key:p.key,code:p.code,at:now});
+        state.agentPoints=state.agentPoints.filter((a: any)=>now-a.at<1500).slice(-64);
+        state.agentKeys=state.agentKeys.filter((a: any)=>now-a.at<1500).slice(-16);
+        if (state.agentLocked) state.setAgentLocked(true);
+        // Keys only relocate the cursor into a text field. Shortcuts on canvases or
+        // app containers keep it at its last action instead of jumping to their edge.
+        const active = document.activeElement as HTMLElement | null;
+        const editable = !!active && (/^(INPUT|TEXTAREA|SELECT)$/i.test(active.tagName) || active.isContentEditable);
+        if (!point && editable && /Key|insertText/.test(args.method)) {
+            const box = active!.getBoundingClientRect();
+            const caret = active!.isContentEditable && getSelection()?.rangeCount ? getSelection()!.getRangeAt(0).getBoundingClientRect() : null;
+            if (caret?.height) point = {x:caret.right,y:caret.top+caret.height/2};
+            else if (box.width) {
                 point = {x:box.right,y:box.top+box.height/2};
                 pageGuidance({action:'draw',id:'__focus',kind:'bracket',box:{x:box.x,y:box.y,width:box.width,height:box.height},lifetimeMs:1000,animate:false});
             }
@@ -420,13 +529,14 @@ export function pageGuidance(args: any): any {
         if (state.wait && !state.wait.result) state.finish({status:'cancelled',hint:'Guidance cleared.'});
         for (const id of [...state.marks.keys()]) state.remove(id);
         clearTimeout(state.cursorTimer); clearTimeout(state.statusTimer);clearTimeout(state.rotationTimer);
-        state.setInputLocked(false);
+        state.setInputLocked(false);state.setAgentLocked(false);
         state.resize.disconnect(); state.mutations.disconnect();
         state.cursorName.textContent='Sloth';
         state.clearing=false;
         state.status.hidden=true; return {ok:true};
     }
     if (args.action === 'remove') {state.remove(args.id); return {ok:true};}
+    if (args.action === 'agentLock') {state.setAgentLocked(!!args.locked,true); return {ok:true};}
     if (args.action === 'draw') {
         state.resize.observe(document.documentElement);
         state.resize.observe(state.status);
@@ -436,6 +546,15 @@ export function pageGuidance(args: any): any {
         if (args.kind==='label' && !args.label) throw new Error('Label annotations require label text');
         if (args.kind==='freehand' && !args.points?.length) throw new Error('Freehand annotations require points');
         const el=args.selector ? state.find(args.selector) : null;
+        if(el && args.reveal!==false) state.reveal(el);
+        else if(!el && args.reveal!==false && (args.box || args.points?.length)) {
+            const xs=[...(args.box ? [args.box.x,args.box.x+args.box.width] : []),...(args.points ?? []).map((p: any)=>p.x)];
+            const ys=[...(args.box ? [args.box.y,args.box.y+args.box.height] : []),...(args.points ?? []).map((p: any)=>p.y)];
+            const d=state.revealBox({x:Math.min(...xs),y:Math.min(...ys),width:Math.max(...xs)-Math.min(...xs),height:Math.max(...ys)-Math.min(...ys)});
+            if(d.x || d.y) {
+                args={...args,box:args.box && {...args.box,x:args.box.x-d.x,y:args.box.y-d.y},points:args.points?.map((p: any)=>({...p,x:p.x-d.x,y:p.y-d.y}))};
+            }
+        }
         const box=el?.getBoundingClientRect() ?? args.box;
         if (!box && !args.points?.length) throw new Error('Supply a selector, box, or path points');
         const ns='http://www.w3.org/2000/svg';
@@ -462,7 +581,7 @@ export function pageGuidance(args: any): any {
         const mark={...args,id,seed,box:box ?? {x:args.points[0].x,y:args.points[0].y,width:0,height:0},group,shape,echo,hatch,clipShape,label,actions:new Set(),stepId:state.wait && !state.wait.result ? state.wait.id : undefined,timer:undefined as any};
         state.marks.set(id,mark);
         if(!state.annotationListening) {
-            for(const type of ['click','input','change','submit','focusin','pointerup']) document.addEventListener(type,state.annotationListener,true);
+            for(const type of actionTypes) document.addEventListener(type,state.annotationListener,true);
             state.annotationListening=true;
         }
         state.render();
@@ -493,11 +612,20 @@ export function pageGuidance(args: any): any {
                 hint:'The declared completion condition is already true. Inspect the current page and continue from the first unfinished step; do not repeat this action.'};
         }
         const target=args.selector ? state.find(args.selector) : null;
-        if (args.event !== 'state' && !target) throw new Error('An action step requires a unique target selector');
-        let alreadyActed=false;
+        let region=!args.selector && args.region ? args.region : null;
+        if (args.event !== 'state' && !target && !region) throw new Error('An action step requires a unique target selector or a measured region');
+        // The user may act before the wait starts, e.g. while the agent is still inspecting.
+        let alreadyActed=args.event!=='state' && (region ? state.recentRegionHit(region,args.event) : state.recentHit(args.selector,target,args.event));
+        state.recent=[];
+        // Scroll an off-screen region into view and keep its hit area aligned with the page.
+        if(region && !alreadyActed) {
+            const d=state.revealBox(region);
+            if(d.x || d.y) region={...region,x:region.x-d.x,y:region.y-d.y};
+        }
         const retained=new Set(args.annotationIds ?? []);
         for(const [id,mark] of state.marks) {
-            if(mark.selector===args.selector && mark.actions.has(args.event)) alreadyActed=true;
+            let markTarget=null;if(mark.selector) try{markTarget=state.find(mark.selector);}catch{}
+            if((mark.selector===args.selector || (target && markTarget===target)) && mark.actions.has(args.event)) alreadyActed=true;
             if(retained.has(id)) {mark.stepId=args.id;}
             else state.remove(id);
         }
@@ -510,33 +638,47 @@ export function pageGuidance(args: any): any {
             if (args.expectedState==='checked') return el.checked === true || el.getAttribute('aria-checked')==='true';
             const b=el.getBoundingClientRect(); return b.width>0 && b.height>0 && getComputedStyle(el).visibility!=='hidden';
         };
-        const w: any=state.wait={id:args.id,event:args.event,started:Date.now(),waitingForDraw:true,unexpected:0,acted:alreadyActed || args.event==='state',result:null,timer:null,check:null,listener:null};
-        if(alreadyActed) for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);
+        const w: any=state.wait={id:args.id,event:args.event,region,interactions:0,started:Date.now(),waitingForDraw:true,unexpected:0,acted:alreadyActed || args.event==='state',result:null,timer:null,check:null,listener:null};
+        // Persist the action so a poll after a full page load (link click) still knows the user acted.
+        const markActed=()=>{w.acted=true;try{sessionStorage.setItem('__tamperSlothActed',w.id);}catch{}};
+        if(alreadyActed){markActed();for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);}
         w.listener=(event:any)=> {
             if (!event.isTrusted || state.inputLocked) return;
             if (event.type==='keydown' && event.key==='Escape') {state.finish({status:'cancelled',hint:'Cancelled with Escape.'});return;}
             // Framework updates may replace the original DOM node while drawing.
             let currentTarget=target;try{if(args.selector) currentTarget=state.find(args.selector);}catch{currentTarget=null;}
-            const hit=event.composedPath().includes(currentTarget);
-            if (event.type===args.event && hit) {
-                w.acted=true;
+            const hit=region ? state.inRegion({x:event.clientX,y:event.clientY},region) : !!args.selector && state.hits(event,args.selector,currentTarget);
+            if (state.sameAction(event.type,args.event) && hit) {
+                markActed();
                 // Remove the instruction immediately, even if its resulting state takes time.
                 for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);
                 if (matches()) state.finish({status:'completed'});
                 else state.message('Checking the page','Waiting for the expected change');
             }
-            else if (event.type==='click' && !hit) {w.unexpected++;state.message('Try the marked control','Tab to focus · Enter to activate · Escape to pause');}
+            else if (event.type==='click' && !hit && !w.acted) {w.unexpected++;state.message('Try the marked control','Tab to focus · Enter to activate · Escape to pause');}
         };
         if(w.acted && matches()) {state.finish({status:'completed'});return w.result;}
-        for (const type of ['click','input','change','submit','focusin','pointerup','keydown']) document.addEventListener(type,w.listener,true);
-        w.check=setInterval(()=>{if(w.acted && matches()) state.finish({status:'completed'});},200);
+        for (const type of [...actionTypes,'keydown']) document.addEventListener(type,w.listener,true);
+        w.check=setInterval(()=>{
+            // Fall back to the window-level log when the page stops propagation before document listeners run.
+            if(!w.acted && region && state.recentRegionHit(region,args.event)){markActed();for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);}
+            if(!w.acted && args.selector && state.recentHit(args.selector,(()=>{try{return state.find(args.selector);}catch{return target;}})(),args.event)){markActed();for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);}
+            if(w.acted && matches()) state.finish({status:'completed'});
+        },200);
         w.armTimeout=()=>{
             if(w.result || w.timer) return;
             w.waitingForDraw=false;
             w.timer=setTimeout(()=>state.finish({status:'timeout',hint:w.acted ? 'The action happened, but the expected page change did not. Check validation or loading, then retry.' : 'Try Tab to focus the marked control and Enter or Space to activate it, or ask for a smaller step.'}),args.timeoutMs);
+            w.armIdle();
+        };
+        // Stop early when the user shows no activity at all, instead of holding the full timeout.
+        w.armIdle=()=>{
+            clearTimeout(w.idleTimer);
+            if(w.result || w.acted || w.waitingForDraw || !args.idleTimeoutMs) return;
+            w.idleTimer=setTimeout(()=>{if(!w.acted) state.finish({status:'timeout',idle:true,hint:'No user activity was seen on the page. Check in with the user briefly instead of waiting longer.'});},args.idleTimeoutMs);
         };
         state.message(alreadyActed ? 'Checking the page' : 'Your turn',alreadyActed ? 'Waiting for the expected change' : 'Use the marked control · Escape to pause');
-        if (target && !w.acted) {
+        if ((target || region) && !w.acted) {
             // A supplied canvas region can be more precise than its full element bounds.
             if(retained.size) {
                 const mark=[...state.marks.values()].find(m=>m.stepId===w.id);
@@ -545,7 +687,7 @@ export function pageGuidance(args: any): any {
                     if(mark.drawn){state.describe(mark);state.park(mark);}
                 }
                 state.render();
-            } else pageGuidance({action:'draw',id:'__step',kind:'bracket',selector:args.selector,label:args.instruction});
+            } else pageGuidance({action:'draw',id:'__step',kind:'bracket',...(region ? {box:region} : {selector:args.selector}),label:args.instruction});
         }
         if(!state.inputLocked) w.armTimeout();
         return {status:'waiting',id:w.id,ready:!w.waitingForDraw};
@@ -553,7 +695,7 @@ export function pageGuidance(args: any): any {
     if (args.action === 'poll' || args.action === 'cancel') {
         if (!state.wait || state.wait.id!==args.id) return {status:'lost',hint:'This step was replaced or the page navigated. Inspect the current page.'};
         if(args.action==='cancel') state.finish({status:'cancelled',hint:'Guidance cancelled.'});
-        return state.wait.result ?? {status:'waiting',ready:!state.wait.waitingForDraw,actionObserved:state.wait.acted && state.wait.event!=='state',unexpectedActions:state.wait.unexpected};
+        return state.wait.result ?? {status:'waiting',ready:!state.wait.waitingForDraw,actionObserved:state.wait.acted && state.wait.event!=='state',unexpectedActions:state.wait.unexpected,interactions:state.wait.interactions};
     }
     throw new Error('Unknown guidance action');
 }

@@ -123,6 +123,22 @@ test('output projection caps large data while preserving errors and UI payloads'
     const recovered = (await invoke(runtime.tools, 'readToolResult', {resultId: 'large', offset: 8000})).output;
     assert.equal(recovered.text, JSON.stringify(payload).slice(8000, 11000));
     assert.equal(runtime.metrics()[0].modelOutputChars, JSON.stringify(result.projected).length);
+    assert.equal(runtime.metrics()[0].modelOutputTokens, Math.ceil(result.projected.value.length / 4));
+    assert.equal(runtime.metrics()[0].inputTokens, 1);
+    assert.equal(runtime.metrics()[0].id, 'large');
+});
+
+test('per-call token estimates fall back to characters for older records', async () => {
+    const {load} = fixture();
+    const {toolCallTokens, estimateImageTokens} = load('src/chat/lib/efficiency.ts');
+    const current = toolCallTokens({name: 'getPageText', inputChars: 40, outputChars: 0, modelOutputChars: 0, inputTokens: 10, modelOutputTokens: 700});
+    assert.equal(current.input, 10);
+    assert.equal(current.output, 700);
+    const older = toolCallTokens({name: 'clickElement', inputChars: 80, outputChars: 0, modelOutputChars: 400});
+    assert.equal(older.input, 20);
+    assert.equal(older.output, 100);
+    assert.equal(estimateImageTokens({width: 750, height: 100}), 100);
+    assert.equal(estimateImageTokens({width: 1280, height: 4000}), 1600);
 });
 
 test('todo projection keeps rich UI data without echoing old and new lists', async () => {
@@ -338,10 +354,22 @@ test('Anthropic SDK sends valid history after deferred tool activation', async (
 test('settings validate budgets and usage does not double-count cached/reasoning tokens', () => {
     const load = createLoader();
     const {normalizeAgentSettings} = load('src/chat/lib/agentSettings.ts');
-    assert.deepEqual(plain(normalizeAgentSettings({maxSteps: 9999, tokenBudget: -10})), {maxSteps: 200, tokenBudget: 0, reasoning: 'balanced'});
+    assert.deepEqual(plain(normalizeAgentSettings({maxSteps: 9999, tokenBudget: -10})), {maxSteps: 200, tokenBudget: 0, reasoning: 'balanced', showRunTokens: true, showToolTokens: true});
     const {usageRecord} = load('src/chat/lib/efficiency.ts');
     assert.deepEqual(plain(usageRecord({inputTokens: 100, outputTokens: 40, inputTokenDetails: {cacheReadTokens: 80, cacheWriteTokens: 10}, outputTokenDetails: {reasoningTokens: 30}})),
         {input: 100, output: 40, cacheRead: 80, cacheWrite: 10, reasoning: 30});
+});
+
+test('stopped runs total completed steps and token display toggles persist', () => {
+    const load = createLoader();
+    const {sumUsage} = load('src/chat/lib/efficiency.ts');
+    assert.equal(sumUsage([]), undefined);
+    assert.deepEqual(plain(sumUsage([{input: 100, output: 20, cacheRead: 50}, {input: 200, output: 30}])),
+        {input: 300, output: 50, cacheRead: 50});
+    const {normalizeAgentSettings} = load('src/chat/lib/agentSettings.ts');
+    const hidden = normalizeAgentSettings({showRunTokens: false, showToolTokens: false});
+    assert.equal(hidden.showRunTokens, false);
+    assert.equal(hidden.showToolTokens, false);
 });
 
 test('output budgets include JSON escaping and oversized structured errors', () => {

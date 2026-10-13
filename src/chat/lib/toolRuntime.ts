@@ -1,6 +1,6 @@
 import {tool, type ToolSet} from "ai";
 import {z} from "zod";
-import {compactToolOutput, isFailed, resultReceipt, serialize, type ToolMetric} from "./efficiency";
+import {compactToolOutput, estimateImageTokens, estimateTextTokens, isFailed, resultReceipt, serialize, type ToolMetric} from "./efficiency";
 import {skills} from "./skills";
 import {browserImageOutput} from './browserTools';
 
@@ -143,15 +143,21 @@ export function createToolRuntime(rawTools: ToolSet, options: {
                 if (failures >= 3) repeatedFailure = `${name} failed three times with the same arguments. Inspect the error before retrying.`;
                 const entry = {name, input, output};
                 archive.set(callOptions.toolCallId, entry);
-                metrics.set(callOptions.toolCallId, {name, inputChars: serialize(input).length, outputChars: serialize(output).length,
-                    modelOutputChars: 0, elapsedMs: Math.round(performance.now() - start), failed, repeated});
+                const inputText = serialize(input);
+                metrics.set(callOptions.toolCallId, {id: callOptions.toolCallId, name, inputChars: inputText.length, outputChars: serialize(output).length,
+                    modelOutputChars: 0, inputTokens: estimateTextTokens(inputText), modelOutputTokens: 0, elapsedMs: Math.round(performance.now() - start), failed, repeated});
                 options.onResult?.(callOptions.toolCallId, entry);
                 return output;
             },
             toModelOutput: async ({toolCallId, input, output}: ModelOutputOptions) => {
                 // Screenshot data is image content, never a base64 text payload.
                 let projection;
-                if (output && typeof output === "object" && "screenshot" in output) {
+                type Pixels = {width?: number; height?: number};
+                const shot = output && typeof output === "object" && "screenshot" in output
+                    ? output as {metadata?: {imagePixels?: Pixels}; postAction?: {metadata?: {imagePixels?: Pixels}}} : undefined;
+                const imageTokens = shot ? estimateImageTokens(shot.metadata?.imagePixels ?? shot.postAction?.metadata?.imagePixels) : 0;
+                // Tools with their own projection (e.g. gesture trimming) also handle screenshots.
+                if (shot && (!originalProjection || isFailed(output))) {
                     projection = browserImageOutput(output);
                 } else if (originalProjection && !isFailed(output)) {
                     projection = await originalProjection({toolCallId, input, output});
@@ -159,7 +165,14 @@ export function createToolRuntime(rawTools: ToolSet, options: {
                     projection = {type: "text" as const, value: serialize(compactToolOutput(name, output, toolCallId))};
                 }
                 const metric = metrics.get(toolCallId);
-                if (metric) metric.modelOutputChars = serialize(projection).length;
+                if (metric) {
+                    metric.modelOutputChars = serialize(projection).length;
+                    // Base64 image data is not billed as text; count only text parts plus the image estimate.
+                    const text = projection.type === "content"
+                        ? projection.value.map(part => part.type === "text" ? part.text : "").join("")
+                        : "value" in projection ? serialize(projection.value) : serialize(projection);
+                    metric.modelOutputTokens = estimateTextTokens(text) + imageTokens;
+                }
                 return projection;
             },
         };
