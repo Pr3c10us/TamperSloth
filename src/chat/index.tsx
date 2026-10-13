@@ -77,6 +77,9 @@ function Chat() {
     const removeFile = (i: number) =>
         setPendingFiles((p) => p.filter((_, idx) => idx !== i));
 
+    const firstPrompt = messages.find((m) => m.role === "user");
+    const title = firstPrompt ? firstPrompt.content.trim() || "Untitled" : null;
+
     const handleNewChat = () => {
         clear();
         setDraft("");
@@ -86,7 +89,7 @@ function Chat() {
     };
 
     return (
-        <div className="relative flex h-full w-full flex-col overflow-hidden border-l border-border bg-background font-sans text-foreground pt-12">
+        <div className="relative flex h-full w-full flex-col overflow-hidden border-l border-border bg-background font-sans text-foreground">
             <style>{`
                 @keyframes slothPulse {
                     0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); }
@@ -99,6 +102,9 @@ function Chat() {
             `}</style>
 
             <ChatHeader
+                title={title}
+                isLoading={isLoading}
+                onNewChat={handleNewChat}
                 onBack={() => navigate("/gallery")}
                 historyOpen={historyOpen}
                 onToggleHistory={() => setHistoryOpen((o) => !o)}
