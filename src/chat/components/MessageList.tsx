@@ -5,6 +5,7 @@ import type { ChatMessage } from "../hooks/useAgent";
 import { UserMessage } from "./UserMessage";
 import { AssistantMessage } from "./AssistantMessage";
 import { EmptyState } from "./EmptyState";
+import { Hint } from "./Hint";
 import {DEFAULT_AGENT_SETTINGS, loadAgentSettings, onAgentSettingsChange} from "../lib/agentSettings";
 
 interface MessageListProps {
@@ -138,22 +139,23 @@ export const MessageList = forwardRef<HTMLDivElement, MessageListProps>(
                         )}
                     </div>
                 </div>
-                <button
-                    type="button"
-                    onClick={jumpToBottom}
-                    aria-label="Scroll to bottom"
-                    title="Scroll to bottom"
-                    aria-hidden={!showJump}
-                    tabIndex={showJump ? 0 : -1}
-                    className={cn(
-                        "fixed left-1/2 cursor-pointer z-30 inline-flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-md",
-                        "bottom-[calc(var(--composer-height,8rem)+1rem)] transition-[opacity,transform,background-color] duration-200 hover:bg-muted",
-                        "focus-visible:outline-2 focus-visible:outline-offset-2 motion-reduce:transition-none",
-                        showJump ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-1.5 opacity-0",
-                    )}
-                >
-                    <ArrowDown className="size-4" strokeWidth={1.75} />
-                </button>
+                <Hint label={showJump ? "Scroll to bottom" : undefined}>
+                    <button
+                        type="button"
+                        onClick={jumpToBottom}
+                        aria-label="Scroll to bottom"
+                        aria-hidden={!showJump}
+                        tabIndex={showJump ? 0 : -1}
+                        className={cn(
+                            "fixed left-1/2 cursor-pointer z-30 inline-flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-md",
+                            "bottom-[calc(var(--composer-height,8rem)+1rem)] transition-[opacity,transform,background-color] duration-200 hover:bg-muted",
+                            "focus-visible:outline-2 focus-visible:outline-offset-2 motion-reduce:transition-none",
+                            showJump ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-1.5 opacity-0",
+                        )}
+                    >
+                        <ArrowDown className="size-4" strokeWidth={1.75} />
+                    </button>
+                </Hint>
             </>
         );
     }

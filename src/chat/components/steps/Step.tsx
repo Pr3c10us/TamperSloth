@@ -1,6 +1,7 @@
 import {Children, isValidElement, useEffect, useId, useRef, useState, type ReactNode} from "react";
 import {ChevronRight, type LucideIcon} from "lucide-react";
 import {cn} from "@/lib/utils";
+import {Hint} from "../Hint";
 
 /**
  * Shared anatomy for the agent's work trace — thinking and tool calls render as
@@ -133,24 +134,26 @@ export function Step({icon, state, title, titleKey, hint, meta, children, open =
             {expandable && <Chevron open={open}/>}
         </>
     );
-    const headerClass = "group/step flex w-full items-center gap-2.5 rounded-md px-1.5 py-1 text-left";
+    const headerClass = "group/step flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1.5 py-1 text-left";
 
     return (
         <div>
-            <div className="flex items-center gap-1" title={hint}>
-                {expandable ? (
-                    <button
-                        type="button"
-                        aria-expanded={open}
-                        aria-controls={bodyId}
-                        onClick={() => onOpenChange(!open)}
-                        className={cn(headerClass, "cursor-pointer transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-offset-0")}
-                    >
-                        {header}
-                    </button>
-                ) : (
-                    <div className={headerClass}>{header}</div>
-                )}
+            <div className="flex min-w-0 items-center gap-1">
+                <Hint label={hint} align="start">
+                    {expandable ? (
+                        <button
+                            type="button"
+                            aria-expanded={open}
+                            aria-controls={bodyId}
+                            onClick={() => onOpenChange(!open)}
+                            className={cn(headerClass, "cursor-pointer transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-offset-0")}
+                        >
+                            {header}
+                        </button>
+                    ) : (
+                        <div className={headerClass}>{header}</div>
+                    )}
+                </Hint>
                 {trailing}
             </div>
             {extra && <div className="pb-1.5 pl-9 pr-1.5 pt-0.5">{extra}</div>}
@@ -206,16 +209,17 @@ interface SequenceLineProps {
 /** A muted, clickable line with a trailing chevron, e.g. "Read the page, used 3 tools ›". */
 export function SequenceLine({controls, open, onOpenChange, children, hint}: SequenceLineProps) {
     return (
-        <button
-            type="button"
-            title={hint}
-            aria-expanded={open}
-            aria-controls={controls}
-            onClick={() => onOpenChange(!open)}
-            className="group/step flex max-w-full cursor-pointer items-center gap-2 self-start rounded-sm text-left text-[13px] leading-6 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2"
-        >
-            {children}
-            <Chevron open={open}/>
-        </button>
+        <Hint label={hint} align="start">
+            <button
+                type="button"
+                aria-expanded={open}
+                aria-controls={controls}
+                onClick={() => onOpenChange(!open)}
+                className="group/step flex max-w-full cursor-pointer items-center gap-2 self-start rounded-sm text-left text-[13px] leading-6 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+                {children}
+                <Chevron open={open}/>
+            </button>
+        </Hint>
     );
 }

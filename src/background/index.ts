@@ -1,6 +1,6 @@
 import type {BackgroundScript, ScriptExecutionLog} from "@/src/chat/lib/types.ts";
 import {handleBrowserMessage, cdp} from './browserService';
-import {captureViewportScreenshot} from './screenshotCapture';
+import {captureRegion, captureViewportScreenshot} from './screenshotCapture';
 import {installPanelLifecycle, cleanupBrowserGuidance} from './panelLifecycle';
 import {
     deleteScriptValue,
@@ -311,8 +311,18 @@ if (chrome.runtime.onUserScriptMessage) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // Only the extension's own UI may control tabs or evaluate code.
     if (message.type === 'CLIPBOARD_OFFSCREEN') return false;
+    // Element picker preview, requested by the picker overlay (our own isolated-world
+    // script; page scripts cannot reach runtime messaging). It only captures the
+    // sender's own visible tab, after the overlay has hidden itself.
+    if (message.type === 'PICKER_CAPTURE') {
+        const windowId = sender.tab?.windowId;
+        if (sender.id !== chrome.runtime.id || windowId === undefined || sender.frameId !== 0) return false;
+        captureRegion(windowId, message.rect, message.viewport)
+            .then(dataUrl => sendResponse({dataUrl}), () => sendResponse({dataUrl: null}));
+        return true;
+    }
+    // Only the extension's own UI may control tabs or evaluate code.
     if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL('')) || sender.tab) {
         sendResponse({error: 'Browser control is restricted to the extension UI'});
         return false;

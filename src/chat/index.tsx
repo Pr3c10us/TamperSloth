@@ -13,6 +13,7 @@ import {
 import { getApiKeys as loadApiKeys } from "../settings/lib/storage";
 import { MAX_ATTACHMENTS, type PendingAttachment } from "./components/AttachmentChip";
 import { clearPickedMarkers } from "./hooks/useElementPicker";
+import type { PickedElement } from "./components/PickedElementChip";
 
 const tabId = Number(new URLSearchParams(window.location.search).get("tabId")) || 0;
 
@@ -30,7 +31,7 @@ function Chat() {
     } = useAgent();
 
     const [draft, setDraft] = useState("");
-    const [pickedElements, setPickedElements] = useState<string[]>([]);
+    const [pickedElements, setPickedElements] = useState<PickedElement[]>([]);
     const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([]);
     const [historyOpen, setHistoryOpen] = useState(false);
     const [selectedModel, setSelectedModel] = useState<SelectedModelEntry | null>(null);

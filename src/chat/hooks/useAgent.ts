@@ -8,6 +8,7 @@ import {buildModelMessages} from "../lib/historyMessages";
 import {createConversationSaver} from '../lib/conversationSaver';
 import SYSTEM_PROMPT from "../lib/prompt.ts";
 import type {PendingAttachment} from "../components/AttachmentChip.tsx";
+import type {PickedElement} from "../components/PickedElementChip.tsx";
 import {createToolRuntime} from "../lib/toolRuntime";
 import {clip, createStepMessagePreparer, isFailed, serialize, summarizeSelectedElement, sumUsage, usageRecord, type RunMetrics, type UsageRecord} from "../lib/efficiency";
 import {createGuidanceGuard, GUIDANCE_RESUME_NOTE} from "../lib/guidanceGuard";
@@ -57,7 +58,10 @@ export interface ChatMessage {
     content: string;
     toolCalls: ToolCall[];
     blocks: ContentBlock[];
+    /** Picked elements' HTML: what the model receives. */
     pickedElements?: string[];
+    /** Attachment ids of the picked elements' screenshots, by index; shown in the chat only. */
+    pickedElementShots?: (string | null)[];
     attachments?: StoredAttachment[];
     taskState?: string;
     runMetrics?: RunMetrics;
@@ -197,7 +201,7 @@ export function useAgent() {
             providerId: ProviderId,
             apiKey: string,
             modelId?: string,
-            elementContext?: string[],
+            elementContext?: PickedElement[],
             attachments?: PendingAttachment[],
         ) => {
             const started = performance.now();
@@ -220,7 +224,19 @@ export function useAgent() {
                     return {id, kind: a.kind, name: a.name, size: a.size, ext: a.ext, mediaType: a.mediaType};
                 })
                 : undefined;
-            const attachmentsSaved = saveAttachments([...sentFiles].map(([id, blob]) => ({id, conversationId, blob})))
+            const shotBlobs = new Map<string, Blob>();
+            const pickedElementShots = elementContext?.some(p => p.screenshot)
+                ? await Promise.all(elementContext.map(async (p) => {
+                    if (!p.screenshot) return null;
+                    const blob = await fetch(p.screenshot).then(r => r.blob()).catch(() => null);
+                    if (!blob) return null;
+                    const id = crypto.randomUUID();
+                    shotBlobs.set(id, blob);
+                    seedAttachmentUrl(id, p.screenshot);
+                    return id;
+                }))
+                : undefined;
+            const attachmentsSaved = saveAttachments([...sentFiles, ...shotBlobs].map(([id, blob]) => ({id, conversationId, blob})))
                 .catch((error) => setError(`Could not save attachments: ${error instanceof Error ? error.message : String(error)}`));
 
             const userMsg: ChatMessage = {
@@ -229,7 +245,8 @@ export function useAgent() {
                 content: text,
                 toolCalls: [],
                 blocks: [],
-                pickedElements: elementContext?.length ? [...elementContext] : undefined,
+                pickedElements: elementContext?.length ? elementContext.map(p => p.html) : undefined,
+                pickedElementShots,
                 attachments: storedAttachments,
             };
 

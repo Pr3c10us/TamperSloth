@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState} from "react";
 import {cn} from "@/lib/utils";
-import {createSwarm, DOT_COUNT} from "../lib/livingDots";
+import {createSwarm, MAX_DOTS} from "../lib/livingDots";
 
 const WIDTH = 26;
 const HEIGHT = 14;
@@ -20,7 +20,7 @@ function usePrefersReducedMotion() {
 }
 
 /**
- * Small inline loader: three accent dots performing choreographies in simulated depth.
+ * Small inline loader: three or four accent dots performing choreographies in simulated depth.
  * Frames write transforms straight to the DOM, so React never re-renders and
  * nothing triggers layout.
  */
@@ -66,7 +66,7 @@ export function LivingDots({className}: { className?: string }) {
     return (
         // isolate keeps the per-dot depth z-index from stacking above other UI, such as the composer.
         <span aria-hidden className={cn("relative isolate inline-block shrink-0", className)} style={{width: WIDTH, height: HEIGHT}}>
-            {Array.from({length: DOT_COUNT}, (_, i) => (
+            {Array.from({length: MAX_DOTS}, (_, i) => (
                 <span
                     key={i}
                     ref={element => { slots.current[i] = element; }}

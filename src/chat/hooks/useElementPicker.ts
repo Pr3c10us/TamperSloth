@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { runPickerOverlay } from "../../background/pickerOverlay";
+import type { PickedElement } from "../components/PickedElementChip";
 
 /** Removes every picked-element mark (and the overlay) from the tab. */
 export function clearPickedMarkers(tabId: number) {
@@ -10,7 +11,7 @@ export interface UseElementPickerArgs {
     tabId: number;
     isPicking: boolean;
     setIsPicking: (v: boolean | ((prev: boolean) => boolean)) => void;
-    setPickedElements: (updater: (prev: string[]) => string[]) => void;
+    setPickedElements: (updater: (prev: PickedElement[]) => PickedElement[]) => void;
 }
 
 export function useElementPicker({
@@ -34,7 +35,7 @@ export function useElementPicker({
         setIsPicking(true);
         const listener = (message: any) => {
             if (message.type === "ELEMENT_PICKED") {
-                setPickedElements((prev) => [...prev, message.outerHTML]);
+                setPickedElements((prev) => [...prev, {html: message.outerHTML, screenshot: message.screenshot ?? null}]);
                 setIsPicking(false);
                 chrome.runtime.onMessage.removeListener(listener);
             } else if (message.type === "PICKER_CANCELLED") {

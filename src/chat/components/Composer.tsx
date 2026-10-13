@@ -17,7 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { clearPickedMarkers, useElementPicker } from "../hooks/useElementPicker";
 import { ModelSelector, type SelectedModelEntry } from "./ModelSelector";
-import { PickedElementChip } from "./PickedElementChip";
+import { PickedElementChip, type PickedElement } from "./PickedElementChip";
 import {
     AttachmentChip,
     formatSize,
@@ -30,8 +30,8 @@ import { AskUserOverlay } from "@/src/chat/components/askUser/askUserOverlay.tsx
 interface ComposerProps {
     draft: string;
     setDraft: (v: string) => void;
-    pickedElements: string[];
-    setPickedElements: (updater: (prev: string[]) => string[]) => void;
+    pickedElements: PickedElement[];
+    setPickedElements: (updater: (prev: PickedElement[]) => PickedElement[]) => void;
     pendingFiles: PendingAttachment[];
     /** Returns how many files were left out because of the attachment limit. */
     addFiles: (files: File[]) => number;
@@ -168,12 +168,13 @@ export function Composer({
                                 count={String(pickedElements.length)}
                                 onClear={clearPicked}
                             />
-                            {/* Pills wrap; past about three rows the list scrolls instead of pushing the input up. */}
-                            <div className="flex max-h-[6.25rem] flex-wrap gap-1.5 overflow-y-auto [scrollbar-width:thin]">
-                                {pickedElements.map((html, i) => (
+                            {/* Previews wrap; past about two rows the list scrolls instead of pushing the input up. */}
+                            <div className="flex max-h-[12.5rem] flex-wrap items-start gap-1.5 overflow-y-auto [scrollbar-width:thin]">
+                                {pickedElements.map((picked, i) => (
                                     <PickedElementChip
                                         key={i}
-                                        html={html}
+                                        html={picked.html}
+                                        imageUrl={picked.screenshot}
                                         onRemove={() => removePicked(i)}
                                     />
                                 ))}

@@ -12,6 +12,7 @@ import {toolReason} from "../lib/toolReason";
 import {formatStepDuration, screenshotSource, toolErrorMessage} from "../lib/toolPreview";
 import {toolVerb} from "../lib/stepSummary";
 import {Step, useNow, type StepState} from "./steps/Step";
+import {Hint} from "./Hint";
 
 /** Tools that render as their own cards rather than steps. */
 export const CARD_TOOLS = new Set(["TodoWrite", "TodoRead", "TodoClear", "askUser"]);
@@ -20,12 +21,11 @@ function ToolTokens({ metric }: { metric?: ToolMetric }) {
     if (!metric) return null;
     const tokens = toolCallTokens(metric);
     return (
-        <span
-            className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground"
-            title={`Estimated tokens for ${metric.name}. Input: arguments the model wrote (billed as output). Output: result added to the model's context (billed as input on each later step).`}
-        >
-            {tokens.input.toLocaleString()} in · {tokens.output.toLocaleString()} out
-        </span>
+        <Hint label={`Estimated tokens for ${metric.name}. Input: arguments the model wrote (billed as output). Output: result added to the model's context (billed as input on each later step).`}>
+            <span tabIndex={0} className="shrink-0 cursor-default font-mono text-[10px] tabular-nums text-muted-foreground">
+                {tokens.input.toLocaleString()} in · {tokens.output.toLocaleString()} out
+            </span>
+        </Hint>
     );
 }
 
@@ -50,14 +50,16 @@ function CopyToolError({ tc }: { tc: ToolCall }) {
         setTimeout(() => setCopied(false), 1500);
     };
     return (
-        <button
-            type="button"
-            onClick={copy}
-            title="Copy tool error (dev only)"
-            className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-destructive hover:bg-destructive/15"
-        >
-            {copied ? <Check className="size-3" strokeWidth={2.5} /> : <Copy className="size-3" strokeWidth={2} />}
-        </button>
+        <Hint label={copied ? "Copied" : "Copy tool error (dev only)"}>
+            <button
+                type="button"
+                onClick={copy}
+                aria-label="Copy tool error"
+                className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-destructive hover:bg-destructive/15"
+            >
+                {copied ? <Check className="size-3" strokeWidth={2.5} /> : <Copy className="size-3" strokeWidth={2} />}
+            </button>
+        </Hint>
     );
 }
 
