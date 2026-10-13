@@ -1,0 +1,264 @@
+/**
+ * Element picker overlay, injected into the page with chrome.scripting.
+ * Serialized into Chrome's isolated world: keep every dependency inside this function.
+ *
+ * Marks are drawn in a closed shadow root in the same hand-drawn style as page
+ * guidance: wobbly lime outlines with a hachure fill. The page's own elements are
+ * never restyled, so the HTML sent to the model is exactly what the page has.
+ *
+ * Actions: start (pick one element), stop (end picking), remove {index},
+ * clear (drop every picked mark), dispose (remove the overlay entirely).
+ */
+export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clear' | 'dispose'; index?: number}): unknown {
+    const win = window as any;
+    const LIME = '#a8bd85';
+    const INK = '#0f0f0e';
+    const PAPER = '#f6f4ef';
+    let state = win.__tamperSlothPicker;
+
+    // Pages marked by older versions restyled elements in place; undo that too.
+    const clearLegacy = () => document.querySelectorAll<HTMLElement>('[data-tampersloth-picked]').forEach(el => {
+        el.style.outline = el.dataset.tamperslothPrevOutline || '';
+        el.style.outlineOffset = el.dataset.tamperslothPrevOutlineOffset || '';
+        el.style.background = el.dataset.tamperslothPrevBackground || '';
+        for (const key of ['tamperslothPicked', 'tamperslothPrevOutline', 'tamperslothPrevOutlineOffset', 'tamperslothPrevBackground']) delete el.dataset[key];
+    });
+
+    if (!state) {
+        if (args.action !== 'start') {
+            clearLegacy();
+            return {ok: true};
+        }
+        const ns = 'http://www.w3.org/2000/svg';
+        const host = document.createElement('div');
+        host.id = 'tampersloth-picker';
+        host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none';
+        const root = host.attachShadow({mode: 'closed'});
+        const style = document.createElement('style');
+        style.textContent = `
+            :host{pointer-events:none} *{box-sizing:border-box}
+            svg{position:fixed;inset:0;width:100vw;height:100vh;overflow:visible;pointer-events:none}
+            .mark{filter:drop-shadow(0 0 1px ${INK}66)}
+            .capture{position:fixed;inset:0;pointer-events:auto;cursor:crosshair;background:transparent}
+            .tag{position:fixed;pointer-events:none;white-space:nowrap;font:400 11px/1.4 'TamperSloth Geist','Geist Variable',system-ui,sans-serif;-webkit-font-smoothing:antialiased;
+                 border-radius:6px;padding:3px 8px;background:${INK};color:${PAPER};outline:1px solid ${PAPER}33;box-shadow:0 2px 8px ${INK}14}
+            .tag b{font-weight:500;color:${LIME}}
+            .badge{position:fixed;pointer-events:none;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:${LIME};color:${INK};
+                   font:600 10px/18px 'TamperSloth Geist','Geist Variable',system-ui,sans-serif;text-align:center;box-shadow:0 0 0 1.5px ${INK}66}
+            .hint{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);padding:5px 9px;border-radius:6px;background:${INK}bf;color:${PAPER}d9;
+                  font:400 11px/1.3 'TamperSloth Geist','Geist Variable',system-ui,sans-serif;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);pointer-events:none}
+        `;
+        const svg = document.createElementNS(ns, 'svg');
+        root.append(style, svg);
+        document.documentElement.append(host);
+
+        state = win.__tamperSlothPicker = {host, root, svg, ns, picked: [] as any[], hover: null as any, picking: false};
+
+        /** Seeded wobble so a mark keeps the same hand-drawn shape while it moves. */
+        const rng = (seed: number) => () => {
+            seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+            return ((seed >>> 0) / 4294967296 - .5) * 2;
+        };
+        state.sketch = (mark: any, w: number, h: number) => {
+            const wobble = rng(mark.seed);
+            const line = (a: any, b: any) => {
+                const dx = b.x - a.x, dy = b.y - a.y, rough = Math.min(3.5, Math.hypot(dx, dy) / 8);
+                return ` C${a.x + dx * .33 + wobble() * rough},${a.y + dy * .33 + wobble() * rough} ${a.x + dx * .67 + wobble() * rough},${a.y + dy * .67 + wobble() * rough} ${b.x},${b.y}`;
+            };
+            const corner = (x: number, y: number) => ({x: x + wobble(), y: y + wobble()});
+            const points = [corner(-5, -5), corner(w + 5, -5), corner(w + 5, h + 5), corner(-5, h + 5)];
+            const outline = `M${points[0].x},${points[0].y}` + points.slice(1).map((p, i) => line(points[i], p)).join('') + line(points[3], points[0]) + ' Z';
+            mark.shape.setAttribute('d', outline);
+            if (mark.hatch) {
+                mark.clipShape.setAttribute('d', outline);
+                const jitter = rng(mark.seed ^ 0x9e3779b9);
+                const spacing = Math.max(10, (w + h) / 150);
+                let hatch = '';
+                for (let x = -h - 5; x < w + 10; x += spacing * (1 + jitter() * .12)) {
+                    hatch += `M${x + jitter()},${h + 5} C${x + (h + 10) / 3 + jitter() * 2},${h * .67} ${x + (h + 10) * .67 + jitter() * 2},${h * .33} ${x + h + 10 + jitter()},-5 `;
+                }
+                mark.hatch.setAttribute('d', hatch);
+            }
+        };
+        state.makeMark = (filled: boolean) => {
+            const group = document.createElementNS(ns, 'g');
+            group.setAttribute('class', 'mark');
+            const shape = document.createElementNS(ns, 'path');
+            shape.setAttribute('stroke', LIME); shape.setAttribute('stroke-width', '2'); shape.setAttribute('fill', 'none');
+            shape.setAttribute('stroke-linecap', 'round'); shape.setAttribute('stroke-linejoin', 'round');
+            const mark: any = {group, shape, seed: (Math.random() * 0xffffffff) >>> 0 || 1, size: ''};
+            if (filled) {
+                const defs = document.createElementNS(ns, 'defs'), clip = document.createElementNS(ns, 'clipPath');
+                const clipId = `ts-pick-${Math.random().toString(36).slice(2)}`;
+                clip.setAttribute('id', clipId);
+                mark.clipShape = document.createElementNS(ns, 'path');
+                clip.append(mark.clipShape); defs.append(clip);
+                mark.hatch = document.createElementNS(ns, 'path');
+                mark.hatch.setAttribute('stroke', LIME); mark.hatch.setAttribute('stroke-width', '1');
+                mark.hatch.setAttribute('opacity', '.22'); mark.hatch.setAttribute('fill', 'none');
+                mark.hatch.setAttribute('clip-path', `url(#${clipId})`);
+                group.append(defs, mark.hatch);
+            } else {
+                // The hover preview is a lighter, dashed-feeling pass before the click commits.
+                shape.setAttribute('opacity', '.75');
+            }
+            group.append(shape);
+            svg.append(group);
+            return mark;
+        };
+        state.place = (mark: any, el: Element) => {
+            const box = el.getBoundingClientRect();
+            const visible = el.isConnected && box.width > 0 && box.height > 0;
+            mark.group.style.display = visible ? '' : 'none';
+            if (mark.badge) mark.badge.style.display = visible ? '' : 'none';
+            if (!visible) return box;
+            mark.group.setAttribute('transform', `translate(${box.x},${box.y})`);
+            const size = `${Math.round(box.width)}x${Math.round(box.height)}`;
+            // Only re-sketch on resize; scrolling just moves the same drawing.
+            if (mark.size !== size) { mark.size = size; state.sketch(mark, box.width, box.height); }
+            if (mark.badge) {
+                mark.badge.style.left = `${Math.max(4, box.x - 12)}px`;
+                mark.badge.style.top = `${Math.max(4, box.y - 12)}px`;
+            }
+            return box;
+        };
+        state.render = () => {
+            state.picked.forEach((mark: any, i: number) => {
+                if (mark.badge) mark.badge.textContent = String(i + 1);
+                state.place(mark, mark.el);
+            });
+            if (state.hover?.el) {
+                const box = state.place(state.hover, state.hover.el);
+                const tag = state.hover.tag;
+                tag.style.display = state.hover.group.style.display;
+                const above = box.y - 30 > 4;
+                tag.style.left = `${Math.min(Math.max(4, box.x - 5), innerWidth - tag.offsetWidth - 4)}px`;
+                tag.style.top = `${above ? box.y - 30 : Math.min(innerHeight - 26, box.bottom + 8)}px`;
+            }
+        };
+        let scheduled = false;
+        state.schedule = () => {
+            if (scheduled) return;
+            scheduled = true;
+            requestAnimationFrame(() => { scheduled = false; state.render(); });
+        };
+        window.addEventListener('scroll', state.schedule, true);
+        window.addEventListener('resize', state.schedule);
+        state.observer = new ResizeObserver(state.schedule);
+        state.observer.observe(document.documentElement);
+
+        state.describe = (el: Element) => {
+            const tag = el.tagName.toLowerCase();
+            if (el.id) return {tag, detail: `#${el.id}`};
+            const className = typeof el.className === 'string' ? el.className.trim().split(/\s+/)[0] : '';
+            return {tag, detail: className ? `.${className}` : ''};
+        };
+        state.stopPicking = () => {
+            state.picking = false;
+            state.capture?.remove(); state.capture = null;
+            state.hint?.remove(); state.hint = null;
+            if (state.hover) { state.hover.group.remove(); state.hover.tag.remove(); state.hover = null; }
+            document.removeEventListener('keydown', state.onKey, true);
+        };
+        state.removeMark = (mark: any) => {
+            mark.group.remove(); mark.badge?.remove();
+        };
+        state.dispose = () => {
+            state.stopPicking();
+            window.removeEventListener('scroll', state.schedule, true);
+            window.removeEventListener('resize', state.schedule);
+            state.observer.disconnect();
+            host.remove();
+            delete win.__tamperSlothPicker;
+        };
+    }
+
+    switch (args.action) {
+        case 'start': {
+            if (state.picking) return {ok: true};
+            state.picking = true;
+            const capture = document.createElement('div');
+            capture.className = 'capture';
+            const hint = document.createElement('div');
+            hint.className = 'hint';
+            hint.textContent = 'Click an element to pick it · Esc to cancel';
+            state.root.append(capture, hint);
+            state.capture = capture; state.hint = hint;
+
+            const hover = state.makeMark(false);
+            const tag = document.createElement('div');
+            tag.className = 'tag'; tag.style.display = 'none';
+            state.root.append(tag);
+            state.hover = {...hover, tag, el: null};
+
+            capture.addEventListener('mousemove', (event: MouseEvent) => {
+                capture.style.pointerEvents = 'none';
+                const el = document.elementFromPoint(event.clientX, event.clientY);
+                capture.style.pointerEvents = 'auto';
+                if (!el || el === state.host || el === state.hover.el) return;
+                state.hover.el = el;
+                const {tag: name, detail} = state.describe(el);
+                tag.innerHTML = '';
+                const strong = document.createElement('b');
+                strong.textContent = name;
+                tag.append(strong, detail);
+                state.render();
+            });
+            capture.addEventListener('click', (event: MouseEvent) => {
+                event.preventDefault(); event.stopPropagation();
+                // Resolve at the click point: the last hover can lag behind a fast click.
+                capture.style.pointerEvents = 'none';
+                const el = document.elementFromPoint(event.clientX, event.clientY) ?? state.hover?.el as Element | null;
+                capture.style.pointerEvents = 'auto';
+                if (!el || el === state.host) return;
+                // Captured before anything is drawn, so it is the page's own markup.
+                const outerHTML = el.outerHTML;
+                const mark = state.makeMark(true);
+                mark.el = el;
+                mark.badge = document.createElement('div');
+                mark.badge.className = 'badge';
+                state.root.append(mark.badge);
+                state.picked.push(mark);
+                state.stopPicking();
+                state.render();
+                chrome.runtime.sendMessage({type: 'ELEMENT_PICKED', outerHTML});
+            }, true);
+            state.onKey = (event: KeyboardEvent) => {
+                if (event.key !== 'Escape') return;
+                event.preventDefault(); event.stopPropagation();
+                state.stopPicking();
+                if (!state.picked.length) state.dispose();
+                chrome.runtime.sendMessage({type: 'PICKER_CANCELLED'});
+            };
+            document.addEventListener('keydown', state.onKey, true);
+            return {ok: true};
+        }
+        case 'stop':
+            state.stopPicking();
+            if (!state.picked.length) state.dispose();
+            return {ok: true};
+        case 'remove': {
+            const [mark] = state.picked.splice(args.index ?? -1, 1);
+            if (mark) state.removeMark(mark);
+            if (!state.picked.length && !state.picking) state.dispose();
+            else state.render();
+            return {ok: true};
+        }
+        case 'clear':
+            for (const mark of state.picked) state.removeMark(mark);
+            state.picked = [];
+            clearLegacy();
+            if (!state.picking) state.dispose();
+            return {ok: true};
+        case 'dispose':
+            state.dispose();
+            clearLegacy();
+            return {ok: true};
+    }
+}
+
+/** Runs the overlay in a tab, ignoring tabs the extension cannot script. */
+export async function runPickerOverlay(tabId: number, args: Parameters<typeof pickerOverlay>[0]) {
+    if (typeof chrome === 'undefined' || !chrome?.scripting) return;
+    await chrome.scripting.executeScript({target: {tabId}, func: pickerOverlay, args: [args]}).catch(() => {});
+}

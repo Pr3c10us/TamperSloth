@@ -3,7 +3,9 @@ import {
     CircleDot,
     CornerDownLeft,
     LoaderCircle,
+    MousePointerClick,
     MousePointerSquareDashed,
+    Paperclip,
     Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,7 +15,7 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { useElementPicker } from "../hooks/useElementPicker";
+import { clearPickedMarkers, useElementPicker } from "../hooks/useElementPicker";
 import { ModelSelector, type SelectedModelEntry } from "./ModelSelector";
 import { PickedElementChip } from "./PickedElementChip";
 import {
@@ -41,6 +43,27 @@ interface ComposerProps {
     onCancel: () => void;
     tabId: number;
     conversationId: string;
+}
+
+/** Label row for a group of attachments above the input: icon, name, count and "clear all". */
+function TrayHeader({ icon, label, count, onClear }: { icon: React.ReactNode; label: string; count: string; onClear: () => void }) {
+    return (
+        <div className="flex items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground">
+            <span className="flex min-w-0 items-center gap-1.5">
+                {icon}
+                <span className="truncate">{label}</span>
+                <span className="rounded-sm border border-border px-1 tabular-nums tracking-normal text-foreground/80">{count}</span>
+            </span>
+            <button
+                type="button"
+                onClick={onClear}
+                aria-label={`Clear all ${label.toLowerCase()}`}
+                className="shrink-0 uppercase tracking-[.08em] text-foreground underline underline-offset-2 hover:text-accent"
+            >
+                Clear all
+            </button>
+        </div>
+    );
 }
 
 export function Composer({
@@ -123,10 +146,13 @@ export function Composer({
         removePickedFromDom(i);
     };
 
+    const clearFiles = () => {
+        for (let i = pendingFiles.length - 1; i >= 0; i--) removeFile(i);
+    };
+
     const clearPicked = () => {
-        for (let i = pickedElements.length - 1; i >= 0; i--) {
-            removePickedFromDom(i);
-        }
+        setPickedElements(() => []);
+        clearPickedMarkers(tabId);
     };
 
     return (
@@ -135,22 +161,13 @@ export function Composer({
             <div className="flex flex-col gap-1.5 px-3 pb-2 pt-2">
                 <div className="flex flex-col gap-2.5 rounded-2xl border border-border bg-card p-2.5 shadow-xs transition-colors focus-within:border-foreground/40">
                     {pickedElements.length > 0 && (
-                        <div className="flex flex-col gap-1.5">
-                            <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground">
-                                <span>
-                                    {pickedElements.length} element
-                                    {pickedElements.length === 1 ? "" : "s"} picked
-                                </span>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="xs"
-                                    onClick={clearPicked}
-                                    className="h-auto px-0 py-0 font-mono text-[10px] uppercase tracking-[.08em] text-foreground underline underline-offset-2 hover:bg-transparent"
-                                >
-                                    clear all
-                                </Button>
-                            </div>
+                        <section aria-label="Picked elements" className="flex flex-col gap-1.5">
+                            <TrayHeader
+                                icon={<MousePointerClick className="size-3 text-accent" strokeWidth={1.75} />}
+                                label="Picked elements"
+                                count={String(pickedElements.length)}
+                                onClear={clearPicked}
+                            />
                             {/* Pills wrap; past about three rows the list scrolls instead of pushing the input up. */}
                             <div className="flex max-h-[6.25rem] flex-wrap gap-1.5 overflow-y-auto [scrollbar-width:thin]">
                                 {pickedElements.map((html, i) => (
@@ -161,11 +178,20 @@ export function Composer({
                                     />
                                 ))}
                             </div>
-                        </div>
+                        </section>
                     )}
 
                     {pendingFiles.length > 0 && (
-                        <div className="flex flex-col gap-1">
+                        <section
+                            aria-label="Attached files"
+                            className={cn("flex flex-col gap-1.5", pickedElements.length > 0 && "border-t border-dashed border-border pt-2.5")}
+                        >
+                            <TrayHeader
+                                icon={<Paperclip className="size-3" strokeWidth={1.75} />}
+                                label="Files"
+                                count={`${pendingFiles.length}/${MAX_ATTACHMENTS}`}
+                                onClear={clearFiles}
+                            />
                             {/* One horizontally scrolling row, so many files never push the input up. */}
                             <div className="-mx-2.5 flex gap-2 overflow-x-auto overscroll-x-contain px-2.5 pb-1 [scrollbar-width:thin]">
                                 {pendingFiles.map((f, i) => (
@@ -174,14 +200,12 @@ export function Composer({
                                     </div>
                                 ))}
                             </div>
-                            {(filesFull || skippedFiles > 0) && (
+                            {skippedFiles > 0 && (
                                 <p role="status" className="font-mono text-[10px] uppercase tracking-[.1em] text-muted-foreground">
-                                    {skippedFiles > 0
-                                        ? `Up to ${MAX_ATTACHMENTS} files · ${skippedFiles} not added`
-                                        : `${MAX_ATTACHMENTS} of ${MAX_ATTACHMENTS} files`}
+                                    Up to {MAX_ATTACHMENTS} files · {skippedFiles} not added
                                 </p>
                             )}
-                        </div>
+                        </section>
                     )}
 
                     <div className="flex items-end gap-2">
