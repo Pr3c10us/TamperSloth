@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { MoreHorizontal, Search, SquarePen, Trash2 } from "lucide-react";
+import { MoreHorizontal, PanelLeftClose, Plus, Search, Settings, Trash2 } from "lucide-react";
 import {
     deleteConversation,
     loadConversationHistory,
@@ -8,11 +8,10 @@ import {
     type StoredConversation,
 } from "../lib/storage";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
     Sheet,
+    SheetClose,
     SheetContent,
-    SheetHeader,
     SheetTitle,
 } from "@/components/ui/sheet";
 import {
@@ -23,21 +22,32 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-function formatWhen(ts: number): string {
-    const d = new Date(ts);
-    const now = new Date();
-    const sameDay = d.toDateString() === now.toDateString();
-    const yest = new Date(now);
-    yest.setDate(now.getDate() - 1);
-    const isYest = d.toDateString() === yest.toDateString();
+const DAY_MS = 1000 * 60 * 60 * 24;
 
-    if (sameDay) {
-        return `Today · ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+function dayLabel(ts: number, now: Date): string {
+    const d = new Date(ts);
+    const startOf = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    const diffDays = Math.round((startOf(now) - startOf(d)) / DAY_MS);
+    if (diffDays <= 0) return "Today";
+    if (diffDays === 1) return "Yesterday";
+    return d.toLocaleDateString([], {
+        month: "short",
+        day: "numeric",
+        ...(d.getFullYear() !== now.getFullYear() && { year: "numeric" }),
+    });
+}
+
+// Conversations arrive sorted newest-first, so consecutive runs share a day label.
+function groupByDay(conversations: ConversationSummary[]) {
+    const now = new Date();
+    const groups: { label: string; items: ConversationSummary[] }[] = [];
+    for (const c of conversations) {
+        const label = dayLabel(c.updatedAt || c.createdAt, now);
+        const last = groups[groups.length - 1];
+        if (last?.label === label) last.items.push(c);
+        else groups.push({ label, items: [c] });
     }
-    if (isYest) return "Yesterday";
-    const diffDays = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24);
-    if (diffDays < 7) return d.toLocaleDateString([], { weekday: "short", day: "2-digit", month: "short" });
-    return "Last week";
+    return groups;
 }
 
 interface HistoryDrawerProps {
@@ -46,6 +56,7 @@ interface HistoryDrawerProps {
     activeId: string;
     onSelect: (conversation: StoredConversation) => void;
     onNewChat: () => void;
+    onOpenSettings: () => void;
 }
 
 export function HistoryDrawer({
@@ -54,6 +65,7 @@ export function HistoryDrawer({
     activeId,
     onSelect,
     onNewChat,
+    onOpenSettings,
 }: HistoryDrawerProps) {
     const [conversations, setConversations] = useState<ConversationSummary[]>([]);
     const [error, setError] = useState('');
@@ -62,15 +74,14 @@ export function HistoryDrawer({
     useEffect(() => {
         let live = true;
         if (open) void loadConversationHistory().then(history => {
-            if (live) { setConversations(history.conversations); setError(history.warning ?? ''); }
+            if (live) { setConversations(history); setError(''); }
         }, error => { if (live) setError(error instanceof Error ? error.message : String(error)); });
         return () => { live = false; };
     }, [open]);
 
-    const filtered = useMemo(() => {
+    const groups = useMemo(() => {
         const q = query.trim().toLowerCase();
-        if (!q) return conversations;
-        return conversations.filter((c) => c.title.toLowerCase().includes(q));
+        return groupByDay(q ? conversations.filter((c) => c.title.toLowerCase().includes(q)) : conversations);
     }, [conversations, query]);
 
     const handleDelete = async (id: string) => {
@@ -92,106 +103,126 @@ export function HistoryDrawer({
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
             <SheetContent
-                side="right"
+                side="left"
+                showCloseButton={false}
                 aria-describedby={undefined}
-                className="flex w-[320px] flex-col gap-0 border-l border-border bg-background p-0"
+                className="flex flex-col gap-0 border-r border-sidebar-border bg-sidebar p-0 text-sidebar-foreground data-[side=left]:w-[300px] data-[side=left]:max-w-[88vw]"
             >
-                <SheetHeader className="flex-row items-center justify-between border-b border-muted px-3.5 py-3">
-                    <SheetTitle className="font-heading text-lg leading-none tracking-[-0.02em]">
-                        Recent chats
+                <div className="flex items-center justify-between px-3 pt-3 pb-2">
+                    <SheetTitle className="pl-1 font-heading text-lg leading-none tracking-[-0.02em]">
+                        History
                     </SheetTitle>
-                </SheetHeader>
+                    <SheetClose asChild>
+                        <Button variant="ghost" size="icon-sm" aria-label="Close history">
+                            <PanelLeftClose strokeWidth={1.5} />
+                        </Button>
+                    </SheetClose>
+                </div>
 
-                <div className="flex flex-col gap-2 border-b border-muted p-2.5">
-                    <Button
-                        variant="outline"
-                        size="lg"
+                <div className="px-3 pb-2">
+                    <label className="flex h-8 items-center gap-2 rounded-lg border border-sidebar-border bg-background px-2.5 text-muted-foreground transition-colors focus-within:border-ring">
+                        <Search className="size-3.5 shrink-0" strokeWidth={1.5} />
+                        <input
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            placeholder="Search"
+                            aria-label="Search conversations"
+                            className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
+                        />
+                    </label>
+                </div>
+
+                <nav className="px-2 pb-1">
+                    <button
+                        type="button"
                         onClick={() => {
                             onNewChat();
                             onOpenChange(false);
                         }}
-                        className="w-full justify-start"
+                        className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
                     >
-                        <SquarePen strokeWidth={1.5} />
+                        <span className="flex size-5 items-center justify-center rounded-full bg-muted">
+                            <Plus className="size-3.5" strokeWidth={1.75} />
+                        </span>
                         New chat
-                    </Button>
-                    <div className="relative">
-                        <Search
-                            className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-                            strokeWidth={1.5}
-                        />
-                        <Input
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            placeholder="Search conversations"
-                            className="pl-8"
-                        />
-                    </div>
-                </div>
+                    </button>
+                </nav>
 
-                <div className="flex-1 overflow-y-auto overflow-x-hidden">
-                    {error ? <p role="alert" className="px-3.5 py-2 text-xs text-muted-foreground">{error}</p> : null}
-                    {filtered.length === 0 ? (
-                        <div className="px-3.5 py-6 text-center text-[13px] text-muted-foreground">
+                <div className="flex-1 overflow-y-auto overflow-x-hidden px-2 pb-3">
+                    {error ? <p role="alert" className="px-2 py-2 text-xs text-muted-foreground">{error}</p> : null}
+                    {groups.length === 0 ? (
+                        <div className="px-2 py-6 text-center text-[13px] text-muted-foreground">
                             {query ? "No matches" : "No conversations yet"}
                         </div>
                     ) : (
-                        filtered.map((c) => {
-                            const isActive = c.id === activeId;
-                            return (
-                                <div
-                                    key={c.id}
-                                    className={cn(
-                                        "group relative min-w-0 border-b border-muted transition-colors",
-                                        isActive ? "bg-muted" : "hover:bg-card",
-                                    )}
-                                >
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        onClick={() => { void handleSelect(c.id); }}
-                                        className="h-auto w-full min-w-0 flex-col items-start gap-1 rounded-none px-3.5 py-3 pr-10 text-left hover:bg-transparent"
-                                    >
-                                        <div
-                                            className={cn(
-                                                "w-full truncate text-[13px] text-foreground",
-                                                isActive ? "font-medium" : "font-normal",
-                                            )}
-                                        >
-                                            {c.title || "Untitled"}
-                                        </div>
-                                        <div className="w-full truncate font-mono text-[10px] uppercase tracking-[.08em] text-muted-foreground">
-                                            {formatWhen(c.updatedAt || c.createdAt)}
-                                        </div>
-                                    </Button>
-                                    <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                                        <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon-xs"
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    aria-label="Open menu"
-                                                    className="text-muted-foreground"
+                        groups.map((group) => (
+                            <section key={group.label} className="pt-4">
+                                <p className="px-2 pb-1 text-xs font-medium text-muted-foreground">{group.label}</p>
+                                <ul>
+                                    {group.items.map((c) => {
+                                        const isActive = c.id === activeId;
+                                        return (
+                                            <li
+                                                key={c.id}
+                                                className={cn(
+                                                    "group relative rounded-lg transition-colors",
+                                                    isActive ? "bg-muted" : "hover:bg-muted/60",
+                                                )}
+                                            >
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { void handleSelect(c.id); }}
+                                                    aria-current={isActive ? "true" : undefined}
+                                                    title={c.title || "Untitled"}
+                                                    className="block w-full truncate rounded-lg px-2 py-1.5 pr-8 text-left text-[13px] focus-visible:bg-muted/60 focus-visible:outline-none"
                                                 >
-                                                    <MoreHorizontal />
-                                                </Button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent side="left" align="start" className="w-40">
-                                                <DropdownMenuItem
-                                                    onSelect={() => handleDelete(c.id)}
-                                                    variant="destructive"
-                                                >
-                                                    <Trash2 />
-                                                    Delete
-                                                </DropdownMenuItem>
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
-                                    </div>
-                                </div>
-                            );
-                        })
+                                                    {c.title || "Untitled"}
+                                                </button>
+                                                <div className="absolute right-1 top-1/2 -translate-y-1/2">
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon-xs"
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                aria-label="Conversation options"
+                                                                className="text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                                                            >
+                                                                <MoreHorizontal />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent side="right" align="start" className="w-40">
+                                                            <DropdownMenuItem
+                                                                onSelect={() => handleDelete(c.id)}
+                                                                variant="destructive"
+                                                            >
+                                                                <Trash2 />
+                                                                Delete
+                                                            </DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                </div>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            </section>
+                        ))
                     )}
+                </div>
+
+                <div className="border-t border-sidebar-border px-2 py-2">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            onOpenChange(false);
+                            onOpenSettings();
+                        }}
+                        className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                    >
+                        <Settings className="size-4 text-muted-foreground" strokeWidth={1.5} />
+                        Settings
+                    </button>
                 </div>
             </SheetContent>
         </Sheet>

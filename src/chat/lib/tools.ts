@@ -3,18 +3,14 @@ import {createBrowserTools, browserImageOutput, browserCall} from './browserTool
 import {z} from "zod";
 import type {BackgroundScript} from "./types";
 import {
-    clearTodos,
     deleteFile,
     deleteScript,
     fileExists,
     listFiles,
     loadScripts,
     loadScriptsByConversation,
-    loadTodos,
     readFile,
     saveScript,
-    saveTodos,
-    type TodoItem,
     updateScriptStatus,
     writeFile,
 } from "./storage";
@@ -147,36 +143,6 @@ function numberLines(content: string, startLine: number, endLine: number): strin
         .join('\n');
 }
 
-const todoItemSchema = z.object({
-    id: z.string().min(1).describe("Stable identifier — preserve across writes so the UI can diff."),
-    content: z.string().min(1).describe("What needs to be done. Imperative, short."),
-    status: z.enum(["pending", "in_progress", "completed"]),
-    priority: z.enum(["high", "medium", "low"]),
-});
-
-const todoListSchema = z
-    .array(todoItemSchema)
-    .refine(
-        (items) => items.filter((i) => i.status === "in_progress").length <= 1,
-        {message: "Only one todo can be in_progress at a time."},
-    );
-
-function diffTodoChanges(previous: TodoItem[], current: TodoItem[]): string[] {
-    const prevById = new Map(previous.map((t) => [t.id, t]));
-    const changed: string[] = [];
-    for (const item of current) {
-        const prev = prevById.get(item.id);
-        if (!prev) {
-            changed.push(item.id);
-            continue;
-        }
-        if (prev.status !== item.status || prev.priority !== item.priority || prev.content !== item.content) {
-            changed.push(item.id);
-        }
-    }
-    return changed;
-}
-
 const SKILL_IDS = Object.keys(skills) as [SkillId, ...SkillId[]];
 
 export function createAgentTools(context: { conversationId: string; abortSignal?: AbortSignal }) {
@@ -226,65 +192,6 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     description: skill.description,
                     content: skill.content,
                 };
-            },
-        }),
-
-        // ═══════════════════════════════════════════════
-        //  Task Tracking (Todos)
-        // ═══════════════════════════════════════════════
-        TodoWrite: tool({
-            description:
-                "Replace the entire todo list. Preserve IDs; at most one item may be in_progress.",
-            inputSchema: z.object({
-                items: todoListSchema.describe("The full todo list after this write."),
-            }),
-            execute: async ({items}) => {
-                try {
-                    const previous = await loadTodos(context.conversationId);
-                    const current = items as TodoItem[];
-                    await saveTodos(context.conversationId, current);
-                    return {
-                        success: true as const,
-                        previous,
-                        current,
-                        changedIds: diffTodoChanges(previous, current),
-                    };
-                } catch (err) {
-                    return {error: err instanceof Error ? err.message : String(err)};
-                }
-            },
-        }),
-
-        TodoRead: tool({
-            description: "Read the current todo list when unknown.",
-            inputSchema: z.object({
-            }),
-            execute: async () => {
-                try {
-                    const items = await loadTodos(context.conversationId);
-                    return {items};
-                } catch (err) {
-                    return {error: err instanceof Error ? err.message : String(err)};
-                }
-            },
-        }),
-
-        TodoClear: tool({
-            description: "Clear the current todo list.",
-            inputSchema: z.object({
-            }),
-            execute: async () => {
-                try {
-                    const previous = await loadTodos(context.conversationId);
-                    await clearTodos(context.conversationId);
-                    return {
-                        success: true as const,
-                        cleared: previous.length,
-                        previous,
-                    };
-                } catch (err) {
-                    return {error: err instanceof Error ? err.message : String(err)};
-                }
             },
         }),
 

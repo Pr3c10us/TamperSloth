@@ -26,45 +26,32 @@ function fixture({legacy = [], bytes = 0} = {}) {
     return {storage: reload(), reload, saved, reads, writes};
 }
 
-test('chat saves never read/rewrite the legacy archive or broadcast transcript changes', async () => {
+test('chat history never reads or rewrites the retired archive key or broadcasts transcript changes', async () => {
     const f = fixture({bytes: 300 * 1024 * 1024});
     await Promise.all(Array.from({length: 12}, (_, i) => f.storage.saveConversation(chat('new-' + i, i))));
     assert.deepEqual(f.reads, []);
     assert.deepEqual(f.writes, []);
     const reloaded = f.reload();
     const history = await reloaded.loadConversationHistory();
-    assert.equal(history.conversations.length, 12);
-    assert.equal(history.conversations[0].id, 'new-11');
-    assert.ok(history.conversations.every(c => !('messages' in c)), 'History loads metadata only');
-    assert.match(history.warning, /preserved/);
+    assert.equal(history.length, 12);
+    assert.equal(history[0].id, 'new-11');
+    assert.ok(history.every(c => !('messages' in c)), 'History loads metadata only');
     assert.deepEqual(plain(await reloaded.loadStoredConversation('new-3')), chat('new-3', 3));
-    assert.deepEqual(f.reads, []);
     await reloaded.deleteConversation('new-3');
-    assert.equal((await reloaded.loadConversationHistory()).conversations.length, 11);
-    assert.equal(await reloaded.loadStoredConversation('new-3').catch(() => null), null);
+    assert.equal((await reloaded.loadConversationHistory()).length, 11);
+    assert.equal(await reloaded.loadStoredConversation('new-3'), null);
+    assert.equal(await reloaded.loadStoredConversation('missing'), null);
+    assert.deepEqual(f.reads, []);
     assert.deepEqual(f.writes, []);
-});
-
-test('small legacy histories stay readable and newer IndexedDB records take precedence', async () => {
-    const old = chat('old', 5), duplicate = chat('same', 6);
-    const f = fixture({legacy: [old, duplicate], bytes: 1000});
-    await f.storage.saveConversation({...chat('same', 9), title: 'Updated title'});
-    const history = await f.storage.loadConversationHistory();
-    assert.equal(history.warning, undefined);
-    assert.deepEqual(plain(history.conversations.map(c => [c.id, c.title])), [['same', 'Updated title'], ['old', 'Chat old']]);
-    assert.deepEqual(plain(await f.storage.loadStoredConversation('old')), old);
-    await f.storage.deleteConversation('same');
-    assert.deepEqual(plain((await f.storage.loadConversationHistory()).conversations.map(c => c.id)), ['old']);
-    assert.deepEqual(f.saved.ts_conversations, [old]);
 });
 
 test('failed IndexedDB writes do not leave orphaned history summaries', async () => {
     const f = fixture();
     await assert.rejects(f.storage.saveConversation({...chat('bad'), messages: [() => {}]}));
-    assert.equal((await f.storage.loadConversationHistory()).conversations.length, 0);
+    assert.equal((await f.storage.loadConversationHistory()).length, 0);
     assert.equal(await f.storage.loadStoredConversation('bad'), null);
     await f.storage.saveConversation(chat('good'));
-    assert.equal((await f.storage.loadConversationHistory()).conversations.length, 1);
+    assert.equal((await f.storage.loadConversationHistory()).length, 1);
 });
 
 test('file listings and deletions use keys without reading the chat archive or file contents', async () => {

@@ -10,7 +10,6 @@ export const TOOL_GROUPS = {
     scripting: ["viewCodeFiles", "createFileTool", "strReplaceTool", "deleteFileTool", "executeContentScript", "saveScript", "listScripts", "toggleScript", "removeScript", "reloadPage"],
     debugging: ["getDebugInfo", "getLocalStorage", "getCookies"],
     visual: ["takeScreenshot", "takeMarkedScreenshot"],
-    tracking: ["TodoWrite", "TodoRead", "TodoClear"],
     browser: ['browserTabs', 'accessibilityTree', 'persistentStore', 'siteRecipes', 'evaluateJavaScript'],
     input: ['clickTarget', 'browserGesture', 'trustedInput', 'deepDOM', 'takeMarkedScreenshot'],
     network: ['networkCapture', 'deepDOM'],
@@ -52,7 +51,6 @@ export function initialToolGroups(request: string): Group[] {
 function groupGuidance(group: Group): string {
     if (group === "scripting") return skills.script_creation_workflow.content + "\n" + skills.script_format.content;
     if (group === "debugging") return skills.debugging_workflow.content;
-    if (group === "tracking") return skills.task_tracking.content;
     return "";
 }
 
@@ -76,8 +74,8 @@ export function createToolRuntime(rawTools: ToolSet, options: {
     const tools: ToolSet = {...rawTools};
 
     tools.enableTools = tool({
-        description: "Enable groups: browsing (DOM input), scripting (files/scripts), debugging, visual, tracking, browser (tabs/raw JS/AX/store/recipes), input (trusted CDP events/deep DOM/frames), network (CDP capture/WebSocket/replay), system (clipboard/downloads/notifications), guidance (page drawing and waiting for real user actions).",
-        inputSchema: z.object({groups: z.array(z.enum(["browsing", "scripting", "debugging", "visual", "tracking", "browser", "input", "network", "system", "guidance"])).min(1).max(10)}),
+        description: "Enable groups: browsing (DOM input), scripting (files/scripts), debugging, visual, browser (tabs/raw JS/AX/store/recipes), input (trusted CDP events/deep DOM/frames), network (CDP capture/WebSocket/replay), system (clipboard/downloads/notifications), guidance (page drawing and waiting for real user actions).",
+        inputSchema: z.object({groups: z.array(z.enum(["browsing", "scripting", "debugging", "visual", "browser", "input", "network", "system", "guidance"])).min(1).max(9)}),
         execute: async ({groups: requested}) => {
             const added = [...new Set(requested)].filter(group => !groups.has(group));
             for (const group of added) {
@@ -172,7 +170,7 @@ export function createToolRuntime(rawTools: ToolSet, options: {
                 } else if (originalProjection && !isFailed(output)) {
                     projection = await originalProjection({toolCallId, input, output});
                 } else {
-                    projection = {type: "text" as const, value: serialize(compactToolOutput(name, output, toolCallId))};
+                    projection = {type: "text" as const, value: serialize(compactToolOutput(output, toolCallId))};
                 }
                 const metric = metrics.get(toolCallId);
                 if (metric) {

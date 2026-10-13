@@ -23,9 +23,7 @@ MousePointerClick,
     ListChecks,
     ArrowDownUp,
     SendHorizonal,
-    ListTodo,
     ClipboardList,
-    Eraser,
     HelpCircle,
     BookOpen,
     FileSearch,
@@ -213,22 +211,6 @@ const toolMeta: Record<string, ToolMeta> = {
         displayName: 'Get Debug Info',
         icon: MonitorDot,
         category: 'data',
-    },
-    // ── Task Tracking ──
-    TodoWrite: {
-        displayName: 'Update Todo List',
-        icon: ListTodo,
-        category: 'utility',
-    },
-    TodoRead: {
-        displayName: 'Read Todo List',
-        icon: ClipboardList,
-        category: 'utility',
-    },
-    TodoClear: {
-        displayName: 'Clear Todo List',
-        icon: Eraser,
-        category: 'utility',
     },
 
     // ── User Interaction ──

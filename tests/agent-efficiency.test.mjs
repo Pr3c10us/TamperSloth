@@ -12,7 +12,6 @@ function fixture({logs = [], text = 'content', files = new Map(), scripts = []} 
         loadScripts: async () => scripts, loadScriptsByConversation: async () => scripts,
         readFile: async (_, path) => files.get(path) ?? null,
         writeFile: async (_, path, content) => files.set(path, content),
-        loadTodos: async () => [], saveTodos: async () => {},
     };
     const load = createLoader({mocks: {'./storage': storage}, globals: {
         document: {title: 'Fixture', body: root, querySelector: () => root},
@@ -139,16 +138,6 @@ test('per-call token estimates fall back to characters for older records', async
     assert.equal(older.output, 100);
     assert.equal(estimateImageTokens({width: 750, height: 100}), 100);
     assert.equal(estimateImageTokens({width: 1280, height: 4000}), 1600);
-});
-
-test('todo projection keeps rich UI data without echoing old and new lists', async () => {
-    const {load, tools} = fixture();
-    const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(tools, {request: '', findPrevious: () => undefined});
-    const result = await invoke(runtime.tools, 'TodoWrite', {items: [{id: '1', content: 'Inspect', status: 'in_progress', priority: 'high'}]});
-    assert.equal(result.output.current.length, 1);
-    const projected = JSON.parse(result.projected.value);
-    assert.equal(projected.current, undefined);
-    assert.deepEqual(projected.changedIds, ['1']);
 });
 
 test('tools expand monotonically and group guidance is sent only once', async () => {
@@ -354,7 +343,7 @@ test('Anthropic SDK sends valid history after deferred tool activation', async (
 test('settings validate budgets and usage does not double-count cached/reasoning tokens', () => {
     const load = createLoader();
     const {normalizeAgentSettings} = load('src/chat/lib/agentSettings.ts');
-    assert.deepEqual(plain(normalizeAgentSettings({maxSteps: 9999, tokenBudget: -10})), {maxSteps: 200, tokenBudget: 0, reasoning: 'balanced', showRunTokens: true, showToolTokens: true});
+    assert.deepEqual(plain(normalizeAgentSettings({maxSteps: 9999, tokenBudget: -10})), {maxSteps: 200, tokenBudget: 0, reasoning: 'balanced', showRunTokens: false, showToolTokens: false});
     const {usageRecord} = load('src/chat/lib/efficiency.ts');
     assert.deepEqual(plain(usageRecord({inputTokens: 100, outputTokens: 40, inputTokenDetails: {cacheReadTokens: 80, cacheWriteTokens: 10}, outputTokenDetails: {reasoningTokens: 30}})),
         {input: 100, output: 40, cacheRead: 80, cacheWrite: 10, reasoning: 30});
@@ -367,9 +356,9 @@ test('stopped runs total completed steps and token display toggles persist', () 
     assert.deepEqual(plain(sumUsage([{input: 100, output: 20, cacheRead: 50}, {input: 200, output: 30}])),
         {input: 300, output: 50, cacheRead: 50});
     const {normalizeAgentSettings} = load('src/chat/lib/agentSettings.ts');
-    const hidden = normalizeAgentSettings({showRunTokens: false, showToolTokens: false});
-    assert.equal(hidden.showRunTokens, false);
-    assert.equal(hidden.showToolTokens, false);
+    const shown = normalizeAgentSettings({showRunTokens: true, showToolTokens: true});
+    assert.equal(shown.showRunTokens, true);
+    assert.equal(shown.showToolTokens, true);
 });
 
 test('output budgets include JSON escaping and oversized structured errors', () => {
@@ -377,7 +366,7 @@ test('output budgets include JSON escaping and oversized structured errors', () 
     const payload = Object.fromEntries(['error', 'url', 'finalUrl', 'newUrl', 'title', 'scriptId', 'path', 'sourcePath', 'status', 'urlMatchPattern', 'runAt']
         .map(key => [key, '\\"\n\t'.repeat(5000)]));
     payload.error = {stack: '\\"\n'.repeat(10000)};
-    const result = compactToolOutput('executeContentScript', payload, 'escaped');
+    const result = compactToolOutput(payload, 'escaped');
     assert.ok(JSON.stringify(result).length <= 6000);
     assert.equal(result.resultId, 'escaped');
     assert.ok(result.error);

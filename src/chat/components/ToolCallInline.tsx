@@ -2,9 +2,6 @@ import {memo, useState} from "react";
 import {Check, Copy} from "lucide-react";
 import {getToolMeta, AlertCircle} from "../lib/toolMeta";
 import type {ToolCall} from "@/src/chat/hooks";
-import {TodoWriteCard} from "@/src/chat/components/todo/todoWriteCard.tsx";
-import {TodoReadCard} from "@/src/chat/components/todo/todoReadCard.tsx";
-import {TodoClearCard} from "@/src/chat/components/todo/todoClearCard.tsx";
 import {AskUserCard} from "@/src/chat/components/askUser/askUserCard.tsx";
 import {toolCallTokens, type ToolMetric} from "../lib/efficiency";
 import {IS_DEV} from "../lib/devMode";
@@ -15,7 +12,7 @@ import {Step, useNow, type StepState} from "./steps/Step";
 import {Hint} from "./Hint";
 
 /** Tools that render as their own cards rather than steps. */
-export const CARD_TOOLS = new Set(["TodoWrite", "TodoRead", "TodoClear", "askUser"]);
+export const CARD_TOOLS = new Set(["askUser"]);
 
 function ToolTokens({ metric }: { metric?: ToolMetric }) {
     if (!metric) return null;
@@ -76,9 +73,6 @@ export const ToolCallInline = memo(function ToolCallInline({ tc, metric, live }:
     const now = useNow(isPending);
     const name = tc.name;
 
-    if (name === "TodoWrite") return <WithTokens metric={metric}><TodoWriteCard tc={tc}/></WithTokens>;
-    if (name === "TodoRead") return <WithTokens metric={metric}><TodoReadCard tc={tc}/></WithTokens>;
-    if (name === "TodoClear") return <WithTokens metric={metric}><TodoClearCard tc={tc}/></WithTokens>;
     if (name === "askUser") return <WithTokens metric={metric}><AskUserCard tc={tc}/></WithTokens>;
 
     const meta = getToolMeta(name);

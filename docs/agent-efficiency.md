@@ -1,7 +1,7 @@
 # Agent efficiency
 
 The agent now starts with nine core tools and enables browsing, scripting,
-debugging, visual, and task-tracking groups as needed. A local keyword hint can
+debugging, and visual groups as needed. A local keyword hint can
 enable relevant groups up front; it is not a model call or a capability restriction.
 The agent can always request another group with `enableTools`. Groups stay enabled
 for the rest of the run to limit changes to provider cache prefixes.
@@ -46,8 +46,6 @@ See [DeepSeek's thinking-mode guide](https://api-docs.deepseek.com/guides/thinki
   results retain error/status/identifier fields and an archive reference. Full
   tool results remain in the conversation. `readToolResult` retrieves exact
   character windows, original inputs, or screenshot images across turns.
-- Todo cards retain their full UI data, but write acknowledgements sent to the
-  model no longer echo both the old and new lists.
 - At 48,000 message characters, older large results become short receipts.
   The latest three tool messages, loaded guidance, user answers, tool inputs,
   call/result IDs, and reasoning/signature metadata are preserved. This is a

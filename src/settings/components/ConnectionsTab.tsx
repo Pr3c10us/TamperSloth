@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { ProviderCard } from "./ProviderCard";
 import { PROVIDERS_PRIMARY } from "./providers";
-import { Lock } from "lucide-react";
 import {
     deleteApiKey,
     getApiKeys,
@@ -87,25 +86,6 @@ export function ConnectionsTab() {
                     onCancel={handleCancel}
                 />
             ))}
-
-            <aside className="mt-8 flex items-start gap-4 border-l-2 border-foreground bg-card p-4">
-                <Lock
-                    size={18}
-                    strokeWidth={1.5}
-                    className="mt-0.5 shrink-0 text-foreground"
-                />
-                <div>
-                    <div className="mb-1 text-lg italic font-heading">
-                        Where your keys actually go.
-                    </div>
-                    <p className="text-xs leading-[1.55] text-muted-foreground">
-                        Stored in <code>chrome.storage.local</code>. Requests to
-                        model providers go straight from this extension to them.
-                        Tampersloth has no servers in the middle. That's not a
-                        feature, just an admission that we couldn't be bothered.
-                    </p>
-                </div>
-            </aside>
         </>
     );
 }

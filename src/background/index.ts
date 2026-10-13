@@ -13,10 +13,12 @@ import {
 chrome.sidePanel.setOptions({enabled: false});
 if(chrome.runtime.onConnect) installPanelLifecycle(cdp);
 
-// Clear state left by the removed global stop control on extension reload.
+// Clear state left by the removed global stop control on extension reload, and
+// the retired single-key chat archive (chats now live in IndexedDB); remove()
+// never reads the value, so an oversized archive is dropped safely.
 // Script registration below depends only on each script's own status.
 void Promise.all([
-    chrome.storage.local.remove(['ts_browser_control', 'ts_browser_audit']),
+    chrome.storage.local.remove(['ts_browser_control', 'ts_browser_audit', 'ts_conversations']),
     chrome.storage.session.remove(['ts_browser_status', 'ts_debugger_tabs']),
     chrome.action.setBadgeText({text: ''}),
     chrome.action.setTitle({title: 'TamperSloth'}),

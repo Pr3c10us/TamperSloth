@@ -1,6 +1,6 @@
 import {useEffect, useMemo, useState} from "react";
 import {Check, ChevronDown, ChevronUp, HardDrive, KeyRound, Search, X} from "lucide-react";
-import {MODELPROVIDERS, isKnownModel, type ProviderId} from "../lib/provider";
+import {MODELPROVIDERS, formatModelName, isKnownModel, type ProviderId} from "../lib/provider";
 import {loadSelectedModel, saveSelectedModel} from "../lib/storage";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
@@ -50,6 +50,7 @@ export function ModelSelector({selected, onChange}: ModelSelectorProps) {
         ? entries.filter(
             (e) =>
                 e.modelId.toLowerCase().includes(q) ||
+                formatModelName(e.modelId).toLowerCase().includes(q) ||
                 e.providerName.toLowerCase().includes(q),
         )
         : entries;
@@ -66,7 +67,7 @@ export function ModelSelector({selected, onChange}: ModelSelectorProps) {
         setQuery("");
     };
 
-    const label = selected ? selected.modelId : "Select model";
+    const label = selected ? formatModelName(selected.modelId) : "Select model";
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -157,7 +158,7 @@ export function ModelSelector({selected, onChange}: ModelSelectorProps) {
                                         >
                                             <div className="min-w-0 flex-1">
                                                 <div className="truncate text-[13px] font-medium text-foreground">
-                                                    {entry.modelId}
+                                                    {formatModelName(entry.modelId)}
                                                 </div>
                                                 <div className="mt-0.5 text-[11.5px] text-muted-foreground">
                                                     {entry.providerName}

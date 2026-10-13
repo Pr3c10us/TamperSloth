@@ -23,8 +23,7 @@ const VERBS: Record<string, string> = {
     siteRecipes: "used site recipes", clipboard: "used the clipboard", browserDownload: "downloaded a file",
     browserNotify: "sent a notification", trustedInput: "sent input", networkCapture: "inspected the network",
     deepDOM: "inspected frames", browserGesture: "performed a gesture", getDebugInfo: "read debug info",
-    getLocalStorage: "read storage", getCookies: "read cookies", askUser: "asked you", TodoWrite: "updated todos",
-    TodoRead: "read todos", TodoClear: "cleared todos",
+    getLocalStorage: "read storage", getCookies: "read cookies", askUser: "asked you",
 };
 const FILE_VERBS: Record<string, string> = {createFileTool: "created", strReplaceTool: "edited", deleteFileTool: "deleted"};
 

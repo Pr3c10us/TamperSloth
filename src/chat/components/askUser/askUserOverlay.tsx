@@ -7,7 +7,7 @@ import {
     getPendingAsk,
     subscribeAskUser,
 } from "../../lib/askUserBus";
-import { Eyebrow, TODO_DUR, TODO_EASE } from "../todo/shared";
+import { Eyebrow, CARD_DUR, CARD_EASE } from "./shared";
 
 const OTHER_KEY = "__other__";
 
@@ -51,7 +51,7 @@ export function AskUserOverlay() {
         <div
             ref={containerRef}
             className="border-t border-muted bg-card/95 backdrop-blur-sm"
-            style={{ animation: `todoCardEnter ${TODO_DUR}ms ${TODO_EASE} both` }}
+            style={{ animation: `cardEnter ${CARD_DUR}ms ${CARD_EASE} both` }}
             role="dialog"
             aria-modal="false"
             aria-label="Question from Sloth"
@@ -81,7 +81,7 @@ export function AskUserOverlay() {
                                     "focus-visible:border-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40",
                                 )}
                                 style={{
-                                    animation: `todoEnter ${TODO_DUR}ms ${TODO_EASE} ${i * 30}ms both`,
+                                    animation: `cardItemEnter ${CARD_DUR}ms ${CARD_EASE} ${i * 30}ms both`,
                                 }}
                             >
                                 {opt.emoji ? (
@@ -109,7 +109,7 @@ export function AskUserOverlay() {
                             <div
                                 className="flex items-center gap-2 rounded-md border border-foreground bg-background px-3 py-1.5 transition-colors"
                                 style={{
-                                    animation: `todoEnter ${TODO_DUR}ms ${TODO_EASE} both`,
+                                    animation: `cardItemEnter ${CARD_DUR}ms ${CARD_EASE} both`,
                                 }}
                             >
                                 <Pencil
@@ -153,7 +153,7 @@ export function AskUserOverlay() {
                                     "focus-visible:border-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40",
                                 )}
                                 style={{
-                                    animation: `todoEnter ${TODO_DUR}ms ${TODO_EASE} ${pending.options.length * 30}ms both`,
+                                    animation: `cardItemEnter ${CARD_DUR}ms ${CARD_EASE} ${pending.options.length * 30}ms both`,
                                 }}
                             >
                                 <Pencil

@@ -29,7 +29,7 @@ export function CodeTab() {
     ]);
 
     const convMap = new Map<string, ConversationSummary>(
-      history.conversations.map((c) => [c.id, c]),
+      history.map((c) => [c.id, c]),
     );
 
     const byConv = new Map<string, CodeFileEntry[]>();

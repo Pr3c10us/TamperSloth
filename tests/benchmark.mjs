@@ -41,7 +41,7 @@ for (let i = 0; i < 20; i++) {
     const call = {role: 'assistant', content: [{type: 'tool-call', toolCallId: `read-${i}`, toolName: 'getPageText', input: {selector: 'main'}}]};
     const output = {url: `https://example.com/${i}`, text: 'a'.repeat(10000)};
     oldMessages.push(call, {role: 'tool', content: [{type: 'tool-result', toolCallId: `read-${i}`, toolName: 'getPageText', output: {type: 'json', value: output}}]});
-    const projected = compactToolOutput('getPageText', {...output, text: output.text.slice(0, 3000), nextOffset: 3000, truncated: true}, `read-${i}`);
+    const projected = compactToolOutput({...output, text: output.text.slice(0, 3000), nextOffset: 3000, truncated: true}, `read-${i}`);
     newMessages.push(call, {role: 'tool', content: [{type: 'tool-result', toolCallId: `read-${i}`, toolName: 'getPageText', output: {type: 'text', value: serialize(projected)}}]});
 }
 console.log(JSON.stringify({measurement: 'Serialized characters; not live provider token measurements',
