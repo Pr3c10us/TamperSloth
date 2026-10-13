@@ -136,14 +136,14 @@ export const MarkdownContent = memo(function MarkdownContent({ content, classNam
                 if (langInfo) {
                     const codeText = extractText(children).replace(/\n$/, "");
                     return (
-                        <div className="my-3 overflow-hidden rounded-sm border border-border bg-primary">
-                            <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
-                                <span className="eyebrow text-primary-foreground/50">
+                        <div className="my-3 overflow-hidden rounded-sm border border-border bg-card text-card-foreground">
+                            <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+                                <span className="eyebrow text-muted-foreground">
                                     {langInfo.label}
                                 </span>
                                 <CopyButton
                                     text={codeText}
-                                    className="text-primary-foreground/60 hover:text-primary-foreground hover:bg-white/10"
+                                    className="text-muted-foreground hover:text-foreground hover:bg-muted"
                                 />
                             </div>
                             <SyntaxHighlighter

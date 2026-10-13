@@ -125,37 +125,40 @@
 }
 
 .dark {
-    --background: var(--ink);
+    --background: #141513;
     --foreground: var(--paper);
-    --card: var(--bark);
+    --card: #1d1f1b;
     --card-foreground: var(--paper);
-    --popover: var(--bark);
+    --popover: #22251f;
     --popover-foreground: var(--paper);
     --primary: var(--paper);
     --primary-foreground: var(--ink);
-    --secondary: var(--bark);
+    --secondary: #2b2e26;
     --secondary-foreground: var(--paper);
-    --muted: var(--bark);
-    --muted-foreground: var(--sand);
-    --accent: var(--moss-soft);
+    --muted: #272a23;
+    --muted-foreground: #aaa99f;
+    --accent: #a8bd85;
     --accent-foreground: var(--ink);
     --destructive: oklch(0.7 0.19 22);
     --border: oklch(1 0 0 / 12%);
     --input: oklch(1 0 0 / 15%);
-    --ring: var(--moss-soft);
+    --ring: var(--accent);
     --chart-1: var(--paper);
     --chart-2: var(--sand);
     --chart-3: var(--stone);
     --chart-4: var(--bark);
     --chart-5: var(--ink);
-    --sidebar: var(--bark);
+    --sidebar: var(--card);
     --sidebar-foreground: var(--paper);
     --sidebar-primary: var(--paper);
     --sidebar-primary-foreground: var(--ink);
-    --sidebar-accent: var(--moss-soft);
+    --sidebar-accent: var(--accent);
     --sidebar-accent-foreground: var(--ink);
     --sidebar-border: oklch(1 0 0 / 12%);
-    --sidebar-ring: var(--moss-soft);
+    --sidebar-ring: var(--accent);
+    --divider: var(--border);
+    --link: var(--accent);
+    --link-hover: #c4d5a7;
 }
 
 @layer base {
@@ -270,8 +273,8 @@
     }
 
     ::selection {
-        background: var(--ink);
-        color: var(--paper);
+        background: var(--accent);
+        color: var(--accent-foreground);
     }
 
     :focus-visible {

@@ -18,7 +18,7 @@ export const TOOL_GROUPS = {
 } as const;
 type Group = keyof typeof TOOL_GROUPS;
 type ModelOutputOptions = Parameters<NonNullable<ToolSet[string]["toModelOutput"]>>[0];
-const CORE = ["getCurrentTab", "getPageText", "getPageStructure", "getElementDetails", "navigateTo", "askUser", "getSkill", "enableTools", "readToolResult"];
+const CORE = ["getCurrentTab", "getPageText", "getPageStructure", "getElementDetails", "navigateTo", "askUser", "getSkill", "enableTools", "readToolResult", 'annotatePage', 'waitForUserAction'];
 const PAGE_BARRIERS = new Set(['takeScreenshot', 'takeMarkedScreenshot', 'navigateTo', 'navigateHistory', 'reloadPage',
     'clickElement', 'typeText', 'selectOption', 'scrollPage', 'submitForm', 'waitForElement', 'executeContentScript',
     'saveScript', 'toggleScript', 'removeScript', 'evaluateJavaScript', 'clickTarget', 'browserGesture', 'trustedInput', 'annotatePage', 'waitForUserAction']);
@@ -32,7 +32,7 @@ export interface ArchivedResult {name: string; input: unknown; output: unknown}
 export function initialToolGroups(request: string): Group[] {
     const groups: Group[] = [];
     if (/\b(script|automatically|always|hide|remove|restyle|dark mode|css|every time)\b/i.test(request)) groups.push("scripting");
-    if (/\b(click|fill|submit|scroll|select|search|browse|navigate)\b/i.test(request)) groups.push("browsing");
+    if (/\b(click|fill|submit|scroll|select|search|browse|navigate|for me|do it|go ahead|yourself)\b/i.test(request)) groups.push("browsing");
     if (/\b(debug|error|broken|fails?|not working|console|network)\b/i.test(request)) groups.push("debugging");
     if (/\b(screenshot|layout|appearance|restyle|dark mode)\b/i.test(request)) groups.push("visual");
     if (/\b(tabs?|popups?|accessibility|recipes?|persistent|evaluate|javascript)\b/i.test(request)) groups.push('browser');

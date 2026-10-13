@@ -168,23 +168,23 @@ function App() {
                     <div className="shrink-0 px-4 pb-3">
                         <button
                             onClick={() => navigate("/chat")}
-                            className="flex w-full cursor-pointer items-center gap-3 rounded-[10px] bg-foreground px-3.5 py-3 text-left transition-transform active:scale-[0.99]"
+                            className="flex w-full cursor-pointer items-center gap-3 rounded-[10px] border border-border bg-card px-3.5 py-3 text-left transition-transform active:scale-[0.99]"
                         >
-                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-background">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-foreground">
                                 <img src="icon.svg" className="h-7 w-7" alt=""/>
                             </div>
                             <div className="min-w-0 flex-1">
                                 <div
-                                    className="mb-1 font-heading text-[19px] italic leading-[1.1] text-primary-foreground">
+                                    className="mb-1 font-heading text-[19px] italic leading-[1.1] text-foreground">
                                     Tell the sloth.
                                 </div>
-                                <div className="font-mono text-[10.5px] uppercase tracking-[.12em] text-[var(--sand)]">
+                                <div className="font-mono text-[10.5px] uppercase tracking-[.12em] text-muted-foreground">
                                     What do you want to change?
                                 </div>
                             </div>
                             <ArrowRight
                                 strokeWidth={1.5}
-                                className="size-4 shrink-0 text-primary-foreground"
+                                className="size-4 shrink-0 text-accent"
                             />
                         </button>
                     </div>
@@ -244,7 +244,7 @@ function App() {
                     </div>
                 ) : filtered.length === 0 ? (
                     <div className="py-10 text-center">
-                        <p className="font-heading text-[22px] italic text-[var(--bark)]">
+                        <p className="font-heading text-[22px] italic text-muted-foreground">
                             Nothing matches "{search}".
                         </p>
                         <p className="mt-1.5 text-[13px] text-muted-foreground">
@@ -311,7 +311,7 @@ function App() {
                                     {isExpanded && (
                                         <div className="px-3.5 pb-3.5 pl-[34px]">
                                             {script.description && (
-                                                <p className="mb-3 text-[13px] leading-relaxed text-[var(--bark)]">
+                                                <p className="mb-3 text-[13px] leading-relaxed text-muted-foreground">
                                                     {script.description}
                                                 </p>
                                             )}
@@ -385,7 +385,7 @@ function App() {
                         <AlertDialogTitle className="font-heading text-[22px] leading-tight">
                             Delete {confirmDelete?.name}?
                         </AlertDialogTitle>
-                        <AlertDialogDescription className="text-[13px] leading-relaxed text-[var(--bark)]">
+                        <AlertDialogDescription className="text-[13px] leading-relaxed text-muted-foreground">
                             This can't be undone. The sloth will pretend it never happened.
                         </AlertDialogDescription>
                     </AlertDialogHeader>

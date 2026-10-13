@@ -10,7 +10,7 @@ export const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage
     const picked = msg.pickedElements ?? [];
     const attachments = msg.attachments ?? [];
     return (
-        <div className="flex flex-col items-end gap-2 selection:bg-white selection:text-black">
+        <div className="flex flex-col items-end gap-2">
             <div className="font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground">
                 You
             </div>
@@ -22,7 +22,7 @@ export const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage
                 </div>
             )}
             {msg.content && (
-                <div className="max-w-[85%] rounded-xl bg-foreground px-3.5 py-2.5 text-[14px] leading-relaxed text-background [&_p]:text-inherit [&_li]:text-inherit [&_strong]:text-inherit [&_em]:text-inherit [&_code]:text-inherit">
+                <div className="max-w-[85%] rounded-xl border border-border bg-secondary px-3.5 py-2.5 text-[14px] leading-relaxed text-secondary-foreground [&_p]:text-inherit [&_li]:text-inherit [&_strong]:text-inherit [&_em]:text-inherit [&_code]:text-inherit">
                     <MarkdownContent content={msg.content} />
                 </div>
             )}
