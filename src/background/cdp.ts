@@ -1,9 +1,12 @@
+import {runPageGuidance} from './pageGuidance';
 type Session = chrome.debugger.DebuggerSession;
 type Event = {sequence: number; sessionId?: string; method: string; params: any; timestamp: number};
 const AUTO_ATTACH = {autoAttach: true, waitForDebuggerOnStart: false, flatten: true, filter: [{type: 'iframe', exclude: false}]};
 
 /** One owner per tab. Child sessions allow access to out-of-process frames. */
 export class CDPManager {
+    private panelClosed=false;
+    setPanelClosed(closed: boolean) {this.panelClosed=closed;}
     private tabs = new Map<number, {events: Event[]; sequence: number; children: Map<string, any>; contexts: Map<string, any>; dropped: number;
         held: {keys: Map<string, any>; mouse: Map<string, any>; touch: boolean}}>();
     private attaching = new Map<number, Promise<void>>();
@@ -40,7 +43,14 @@ export class CDPManager {
         }
     }
     private async send(target: Session, method: string, params = {}): Promise<any> {
+        if(this.panelClosed && method.startsWith('Input.')) throw new Error('Tampersloth panel closed');
         this.trackInput(target.tabId!, method, params);
+        if (/^Input\.(dispatchMouseEvent|dispatchTouchEvent|dispatchKeyEvent|insertText|dispatchDragEvent)$/.test(method)) {
+            // Decoration must never prevent real input on a restricted or navigating page.
+            const p=params as any;
+            await runPageGuidance(target.tabId!, {action:'cursor', method, params:{type:p.type,x:p.x,y:p.y,buttons:p.buttons,
+                touchPoints:p.touchPoints?.map((point:any)=>({x:point.x,y:point.y}))}}).catch(() => {});
+        }
         return chrome.debugger.sendCommand(target, method, params);
     }
     private trackInput(tabId: number, method: string, params: any) {
@@ -75,6 +85,7 @@ export class CDPManager {
         await this.send(target, 'Target.setAutoAttach', AUTO_ATTACH);
     }
     async attach(tabId: number) {
+        if(this.panelClosed) throw new Error('Tampersloth panel closed');
         const pending = this.attaching.get(tabId);
         if (pending) return pending;
         if (this.tabs.has(tabId)) return;

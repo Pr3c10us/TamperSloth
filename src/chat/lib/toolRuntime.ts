@@ -14,13 +14,14 @@ export const TOOL_GROUPS = {
     input: ['clickTarget', 'browserGesture', 'trustedInput', 'deepDOM', 'takeMarkedScreenshot'],
     network: ['networkCapture', 'deepDOM'],
     system: ['clipboard', 'browserDownload', 'browserNotify'],
+    guidance: ['annotatePage', 'waitForUserAction'],
 } as const;
 type Group = keyof typeof TOOL_GROUPS;
 type ModelOutputOptions = Parameters<NonNullable<ToolSet[string]["toModelOutput"]>>[0];
 const CORE = ["getCurrentTab", "getPageText", "getPageStructure", "getElementDetails", "navigateTo", "askUser", "getSkill", "enableTools", "readToolResult"];
 const PAGE_BARRIERS = new Set(['takeScreenshot', 'takeMarkedScreenshot', 'navigateTo', 'navigateHistory', 'reloadPage',
     'clickElement', 'typeText', 'selectOption', 'scrollPage', 'submitForm', 'waitForElement', 'executeContentScript',
-    'saveScript', 'toggleScript', 'removeScript', 'evaluateJavaScript', 'clickTarget', 'browserGesture', 'trustedInput']);
+    'saveScript', 'toggleScript', 'removeScript', 'evaluateJavaScript', 'clickTarget', 'browserGesture', 'trustedInput', 'annotatePage', 'waitForUserAction']);
 function needsPageBarrier(name: string, input: any) {
     return PAGE_BARRIERS.has(name) || name === 'browserTabs' && input.action !== 'list'
         || name === 'deepDOM' && input.action === 'evaluate' || name === 'networkCapture' && input.action === 'replay';
@@ -38,6 +39,7 @@ export function initialToolGroups(request: string): Group[] {
     if (/\b(hover|canvas|drag|touch|rich text|keyboard|shadow|iframe|cross-origin)\b/i.test(request)) groups.push('input');
     if (/\b(network|websocket|replay|requests?)\b/i.test(request)) groups.push('network');
     if (/\b(clipboard|downloads?|notifications?)\b/i.test(request)) groups.push('system');
+    if (/\b(guide|guidance|walk|teach|show me|step.by.step|highlight|annotat\w*)\b/i.test(request)) groups.push('guidance');
     return groups;
 }
 
@@ -68,8 +70,8 @@ export function createToolRuntime(rawTools: ToolSet, options: {
     const tools: ToolSet = {...rawTools};
 
     tools.enableTools = tool({
-        description: "Enable groups: browsing (DOM input), scripting (files/scripts), debugging, visual, tracking, browser (tabs/raw JS/AX/store/recipes), input (trusted CDP events/deep DOM/frames), network (CDP capture/WebSocket/replay), system (clipboard/downloads/notifications).",
-        inputSchema: z.object({groups: z.array(z.enum(["browsing", "scripting", "debugging", "visual", "tracking", "browser", "input", "network", "system"])).min(1).max(9)}),
+        description: "Enable groups: browsing (DOM input), scripting (files/scripts), debugging, visual, tracking, browser (tabs/raw JS/AX/store/recipes), input (trusted CDP events/deep DOM/frames), network (CDP capture/WebSocket/replay), system (clipboard/downloads/notifications), guidance (page drawing and waiting for real user actions).",
+        inputSchema: z.object({groups: z.array(z.enum(["browsing", "scripting", "debugging", "visual", "tracking", "browser", "input", "network", "system", "guidance"])).min(1).max(10)}),
         execute: async ({groups: requested}) => {
             const added = [...new Set(requested)].filter(group => !groups.has(group));
             for (const group of added) {
@@ -184,6 +186,7 @@ export function createToolRuntime(rawTools: ToolSet, options: {
             const selected = new Map([
                 ...entries.filter(([, entry]) => entry.name === "askUser").slice(-4),
                 ...entries.filter(([, entry]) => entry.name === "saveScript").slice(-4),
+                ...entries.filter(([, entry]) => entry.name === 'waitForUserAction').slice(-8),
                 ...entries.slice(-6),
             ]);
             return [...selected].map(([id, entry]) => {
@@ -191,6 +194,8 @@ export function createToolRuntime(rawTools: ToolSet, options: {
                 const input = entry.input as Record<string, unknown>;
                 return {tool: entry.name, ...receipt,
                     ...(entry.name === "askUser" ? {question: input.question} : {}),
+                    ...(entry.name==='waitForUserAction' ? {instruction:input.instruction,selector:input.selector,completion:input.completion,
+                        guidanceStatus:(entry.output as any)?.status} : {}),
                     ...(typeof input.path === "string" ? {path: input.path} : {})};
             });
         },

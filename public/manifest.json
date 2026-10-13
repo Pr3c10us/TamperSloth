@@ -45,7 +45,7 @@
   "host_permissions": ["<all_urls>"],
   "web_accessible_resources": [
     {
-      "resources": ["index.html"],
+      "resources": ["index.html", "favicon.svg", "fonts/geist-latin-wght-normal.woff2", "fonts/instrument-serif-latin-400-italic.woff2"],
       "matches": ["<all_urls>"]
     }
   ]

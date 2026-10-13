@@ -47,6 +47,8 @@ export interface ToolMeta {
 
 
 const toolMeta: Record<string, ToolMeta> = {
+    annotatePage: {displayName:'Page annotations',activeLabel:'Drawing guidance…',doneLabel:'Guidance updated',errorLabel:'Guidance unavailable',icon:MousePointerClick,category:'web'},
+    waitForUserAction: {displayName:'Guided step',activeLabel:'Waiting for your action…',doneLabel:'Step observed',errorLabel:'Step could not be observed',icon:Route,category:'web'},
     clickTarget: {displayName: 'Click target', activeLabel: 'Clicking target…', doneLabel: 'Target clicked', errorLabel: 'Target click failed', icon: MousePointerClick, category: 'web'},
     browserGesture: {displayName: 'Browser gesture', activeLabel: 'Performing gesture…', doneLabel: 'Gesture verified', errorLabel: 'Gesture failed', icon: MousePointerClick, category: 'web'},
     takeMarkedScreenshot: {displayName: 'Marked screenshot', activeLabel: 'Marking the page…', doneLabel: 'Screenshot ready', errorLabel: 'Screenshot failed', icon: Camera, category: 'media'},

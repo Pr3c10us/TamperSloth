@@ -1,5 +1,5 @@
 import {tool} from "ai";
-import {createBrowserTools, browserImageOutput} from './browserTools';
+import {createBrowserTools, browserImageOutput, browserCall} from './browserTools';
 import {z} from "zod";
 import type {BackgroundScript} from "./types";
 import {
@@ -94,7 +94,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
         windows: guardedAPI(globalThis.chrome.windows, ['update']),
     };
     return {
-        ...createBrowserTools(() => tabId, id => { tabId = id; }),
+        ...createBrowserTools(() => tabId, id => { tabId = id; }, context.abortSignal),
         // ═══════════════════════════════════════════════
         //  Skills
         // ═══════════════════════════════════════════════
@@ -1315,6 +1315,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 responseFormat: responseFormatSchema,
             }),
             execute: async ({selector, index, waitAfter, responseFormat}) => {
+                await browserCall('guidance',{tabId,action:'cue',selector,index,cue:'click'}).catch(()=>{});
                 const beforeTab = await chrome.tabs.get(tabId);
 
                 const [result] = await chrome.scripting.executeScript({
@@ -1351,6 +1352,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                             el.scrollIntoView({behavior: "smooth", block: "center"});
 
                             setTimeout(() => {
+                                try {(window as any).__tamperSlothGuidance?.cue(el,'click');} catch { /* Decoration is optional. */ }
                                 el.click();
 
                                 setTimeout(() => {
@@ -1427,6 +1429,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 responseFormat: responseFormatSchema,
             }),
             execute: async ({selector, text, clearFirst, pressEnter, index, responseFormat}) => {
+                await browserCall('guidance',{tabId,action:'cue',selector,index,cue:'type'}).catch(()=>{});
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId},
                     func: (
@@ -1464,6 +1467,8 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                         const el = els[idx] as HTMLElement;
                         el.scrollIntoView({behavior: "smooth", block: "center"});
                         el.focus();
+
+                        try {(window as any).__tamperSlothGuidance?.cue(el,'type');} catch { /* Decoration is optional. */ }
 
                         const isInput =
                             el instanceof HTMLInputElement ||
@@ -1593,6 +1598,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 responseFormat: responseFormatSchema,
             }),
             execute: async ({selector, value, label, index, responseFormat}) => {
+                await browserCall('guidance',{tabId,action:'cue',selector,index,cue:'click'}).catch(()=>{});
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId},
                     func: (
@@ -1612,6 +1618,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                         }
 
                         const options = Array.from(selectEl.options);
+                        try {(window as any).__tamperSlothGuidance?.cue(selectEl,'click');} catch { /* Decoration is optional. */ }
 
                         let targetOption: HTMLOptionElement | undefined;
 
@@ -1701,6 +1708,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 responseFormat: responseFormatSchema,
             }),
             execute: async ({direction, amount, selector, behavior, responseFormat}) => {
+                await browserCall('guidance',{tabId,action:'cue',selector,cue:'scroll'}).catch(()=>{});
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId},
                     func: (
@@ -1822,6 +1830,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 responseFormat: responseFormatSchema,
             }),
             execute: async ({selector, timeout, responseFormat}) => {
+                await browserCall('guidance',{tabId,action:'cue',selector,cue:'click'}).catch(()=>{});
                 const timeoutMs = timeout ?? 5000;
                 const beforeTab = await chrome.tabs.get(tabId);
 
@@ -1853,6 +1862,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                         };
 
                         try {
+                            try {(window as any).__tamperSlothGuidance?.cue(form,'click');} catch { /* Decoration is optional. */ }
                             form.requestSubmit();
                         } catch {
                             form.submit();

@@ -22,7 +22,10 @@ export function ToolCallInline({ tc, i }: { tc: ToolCall, i: number }) {
     if (name === "TodoClear") return <TodoClearCard key={key} tc={tc}/>;
     if (name === "askUser") return <AskUserCard key={key} tc={tc}/>;
 
-    const label = isPending ? meta.activeLabel : isError ? meta.errorLabel : meta.doneLabel;
+    const guidanceResult=name==='waitForUserAction' ? tc.result as {status?:string;alreadySatisfied?:boolean} | undefined : undefined;
+    const needsReview=guidanceResult?.status==='needsReview';
+    const label = isPending ? meta.activeLabel : isError ? meta.errorLabel : needsReview ? 'Page progress ready for review'
+        : guidanceResult?.alreadySatisfied ? 'Step already complete' : guidanceResult?.status==='cancelled' ? 'Guidance paused' : meta.doneLabel;
     const description = tc.args?.description as string | undefined;
 
     return (
@@ -59,7 +62,7 @@ export function ToolCallInline({ tc, i }: { tc: ToolCall, i: number }) {
                 {/*        </span>*/}
                 {/*)}*/}
                 </span>
-                {!isPending && !isError && (
+                {!isPending && !isError && !needsReview && guidanceResult?.status!=='cancelled' && (
                     <Check className="size-3 shrink-0 text-accent" strokeWidth={2.5} />
                 )}
             </div>

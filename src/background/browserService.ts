@@ -1,6 +1,7 @@
 import {browserSchemas, type BrowserOperation} from '../chat/lib/browserSchemas';
 import {CDPManager} from './cdp';
 import {VisualBrowser} from './visualBrowser';
+import {runPageGuidance} from './pageGuidance';
 
 export const cdp = new CDPManager();
 const visual = new VisualBrowser(cdp);
@@ -61,6 +62,7 @@ function readAccessibleDOM(maxNodes: number) {
                 id = nodes.length;
                 nodes.push({id, parent, role, name: name.trim().slice(0, 300), tag: el.tagName.toLowerCase(), elementId: el.id || undefined,
                     disabled: el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true', checked: el.getAttribute('aria-checked') ?? (el instanceof HTMLInputElement ? el.checked : undefined),
+                    selected:el.getAttribute('aria-selected'),pressed:el.getAttribute('aria-pressed'),state:el.getAttribute('data-state'),
                     expanded: el.getAttribute('aria-expanded'), value: el instanceof HTMLInputElement && el.type !== 'password' ? el.value : undefined});
             }
             visit(el.shadowRoot ?? el, id);
@@ -76,6 +78,7 @@ async function run(operation: BrowserOperation, input: unknown) {
     const tabId = a.tabId;
     switch (operation) {
         case 'perception': requireValue(tabId, 'tabId'); return visual.screenshot(a);
+        case 'guidance': return runPageGuidance(requireValue(tabId, 'tabId'), a);
         case 'gesture': requireValue(tabId, 'tabId'); return visual.gesture(a);
         case 'tabs': {
             await popupReady;
