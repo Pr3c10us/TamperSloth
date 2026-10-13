@@ -21,6 +21,7 @@ function Chat() {
     const navigate = useNavigate();
     const {
         messages,
+        title,
         isLoading,
         error,
         conversationId,
@@ -77,9 +78,6 @@ function Chat() {
     const removeFile = (i: number) =>
         setPendingFiles((p) => p.filter((_, idx) => idx !== i));
 
-    const firstPrompt = messages.find((m) => m.role === "user");
-    const title = firstPrompt ? firstPrompt.content.trim() || "Untitled" : null;
-
     const handleNewChat = () => {
         clear();
         setDraft("");
@@ -103,6 +101,7 @@ function Chat() {
 
             <ChatHeader
                 title={title}
+                started={messages.length > 0}
                 isLoading={isLoading}
                 onNewChat={handleNewChat}
                 onBack={() => navigate("/gallery")}

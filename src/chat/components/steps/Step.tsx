@@ -202,24 +202,20 @@ interface SequenceLineProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     children: ReactNode;
-    /** Full text for the tooltip, since the line truncates in a narrow panel. */
-    hint?: string;
 }
 
 /** A muted, clickable line with a trailing chevron, e.g. "Read the page, used 3 tools ›". */
-export function SequenceLine({controls, open, onOpenChange, children, hint}: SequenceLineProps) {
+export function SequenceLine({controls, open, onOpenChange, children}: SequenceLineProps) {
     return (
-        <Hint label={hint} align="start">
-            <button
-                type="button"
-                aria-expanded={open}
-                aria-controls={controls}
-                onClick={() => onOpenChange(!open)}
-                className="group/step flex max-w-full cursor-pointer items-center gap-2 self-start rounded-sm text-left text-[13px] leading-6 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-                {children}
-                <Chevron open={open}/>
-            </button>
-        </Hint>
+        <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={controls}
+            onClick={() => onOpenChange(!open)}
+            className="group/step flex max-w-full cursor-pointer items-center gap-2 self-start rounded-sm text-left text-[13px] leading-6 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+            {children}
+            <Chevron open={open}/>
+        </button>
     );
 }

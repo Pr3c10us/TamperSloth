@@ -27,7 +27,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,} from "@/components/ui/tooltip";
+import {PageHeader, PageHeaderAction, PageHeaderTitle} from "@/components/page-header";
 import {deleteScript, exportScript, importScriptsFromJson, loadScripts, updateScriptStatus,} from "./chat/lib/storage";
 import type {BackgroundScript} from "./chat/lib/types";
 
@@ -109,7 +109,7 @@ function App() {
     };
 
     return (
-        <div className="relative flex h-full flex-col overflow-hidden bg-background font-sans">
+        <div className="relative flex h-full flex-col overflow-hidden border-l border-border bg-background font-sans">
             {/* Hidden file input for import */}
             <input
                 ref={fileInputRef}
@@ -123,56 +123,26 @@ function App() {
             <Toaster position="bottom-center"/>
 
             {/* Header */}
-            <header className="flex shrink-0 items-center justify-between px-4 py-3.5">
-                <div className="flex items-center gap-1.5">
-                    <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => navigate("/")}
-                        aria-label="Back"
-                    >
-                        <ArrowLeft strokeWidth={2} className="size-4.5 text-foreground" />
-                    </Button>
-                    <h1 className="font-heading text-[22px] leading-none">Gallery</h1>
+            <PageHeader>
+                <PageHeaderAction label="Back" onClick={() => navigate("/")}>
+                    <ArrowLeft/>
+                </PageHeaderAction>
+                <PageHeaderTitle className="flex-1">Gallery</PageHeaderTitle>
+                <div className="flex shrink-0 items-center gap-0.5">
+                    {scripts.length > 0 && (
+                        <PageHeaderAction label="Import scripts" onClick={handleImport}>
+                            <Upload/>
+                        </PageHeaderAction>
+                    )}
+                    <PageHeaderAction label="Settings" onClick={() => navigate("/settings")}>
+                        <Settings/>
+                    </PageHeaderAction>
                 </div>
-                <TooltipProvider delayDuration={300}>
-                    <div className="flex items-center gap-1.5">
-                        {scripts.length > 0 && (
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        variant="outline"
-                                        size="icon"
-                                        onClick={handleImport}
-                                        className="h-8 w-8 rounded-lg text-foreground/60"
-                                    >
-                                        <Upload strokeWidth={1.5} className="size-[15px]"/>
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Import scripts</TooltipContent>
-                            </Tooltip>
-                        )}
-
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    variant="outline"
-                                    size="icon"
-                                    onClick={() => navigate("/settings")}
-                                    className="h-8 w-8 rounded-lg text-foreground/60"
-                                >
-                                    <Settings strokeWidth={1.5} className="size-[15px]"/>
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Settings</TooltipContent>
-                        </Tooltip>
-                    </div>
-                </TooltipProvider>
-            </header>
+            </PageHeader>
             {scripts.length > 0 && (
                 <>
                     {/* Search */}
-                    <div className="shrink-0 px-4 pb-2.5">
+                    <div className="shrink-0 px-4 pt-3 pb-2.5">
                         <div className="relative flex items-center">
                             <Search
                                 strokeWidth={1.5}
