@@ -21,7 +21,7 @@ function Settings() {
           className="gap-2 px-1.5"
         >
           <ArrowLeft strokeWidth={1.5} className="text-foreground" />
-          <img src="favicon.svg" className="h-5 w-5" alt="" />
+          <img src="icon-white.svg" className="h-5 w-5" alt="" />
           <span className="font-heading text-lg leading-none text-accent italic">
             gallery
           </span>

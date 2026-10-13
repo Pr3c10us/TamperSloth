@@ -16,7 +16,7 @@ export const browserSchemas = {
         kind:z.enum(['arrow','highlight','rectangle','ellipse','bracket','freehand','label']).default('bracket'),
         box:point.extend({width:z.number().nonnegative(),height:z.number().nonnegative()}).optional(),
         points:z.array(point).min(2).max(500).optional(), label:z.string().max(300).optional(), labelPosition:point.optional(),
-        color:z.enum(['moss','amber','sky','rose']).default('moss'), lineStyle:z.enum(['solid','dashed']).default('solid'),
+        color:z.enum(['lime','moss','amber','sky','rose']).default('lime').describe('All guide drawings use the app lime accent. Other values are accepted for legacy calls.'), lineStyle:z.enum(['solid','dashed']).default('solid'),
         lineWidth:z.number().min(1).max(8).default(2.5), lifetimeMs:z.number().int().min(0).max(120000).default(0),
         annotationIds:z.array(z.string().min(1).max(100)).max(30).default([]),
         completion:z.object({selector:z.string().min(1).max(1000),state:z.enum(['visible','absent','checked','selected','pressed'])}).optional(),

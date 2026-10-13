@@ -22,32 +22,182 @@ export function pageGuidance(args: any): any {
         style.textContent = `
             :host{pointer-events:none} *{box-sizing:border-box;pointer-events:none}
             svg{position:absolute;inset:0;width:100%;height:100%;overflow:hidden}
-            .mark{animation:arrive .22s ease-out;filter:drop-shadow(0 0 1px #faf8f2) drop-shadow(0 0 1px #faf8f2)}
+            .mark{filter:drop-shadow(0 0 1px #0f0f0e66)}
             .label,.cursor-tag{font:400 12px/1.5 'TamperSloth Geist','Geist Variable',system-ui,sans-serif;-webkit-font-smoothing:antialiased;border-radius:6px;box-shadow:0 2px 8px #0f0f0e14}
             .label{position:fixed;max-width:min(240px,calc(100vw - 24px));overflow-wrap:anywhere;background:#0f0f0e;color:#f6f4ef;padding:6px 12px;outline:1px solid #f6f4ef33;animation:arrive 160ms cubic-bezier(.22,.61,.36,1)}
             .sr-status{position:fixed;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
-            .cursor{position:fixed;left:0;top:0;width:25px;height:30px;transition:transform 90ms linear;filter:drop-shadow(0 1px 2px #0f0f0e26)}
-            .cursor svg{position:static;overflow:visible}
-            .cursor-tag{position:absolute;left:22px;top:22px;display:flex;align-items:center;gap:5px;white-space:nowrap;padding:3px 7px;background:#faf8f2;color:#0f0f0e;border:1px solid #c9c2b0;font:italic 400 14px/1.2 'TamperSloth Instrument','Instrument Serif',Georgia,serif;letter-spacing:-.02em}
-            .cursor-tag img{width:12px;height:12px;object-fit:contain}
-            .ripple{position:fixed;width:30px;height:30px;border:1.5px solid #3f4a2a;border-radius:50%;box-shadow:0 0 0 2px #f6f4ef;animation:pulse .45s cubic-bezier(.22,.61,.36,1) forwards}
+            .cursor{position:fixed;left:0;top:0;width:25px;height:30px;transition:transform 160ms cubic-bezier(.22,.61,.36,1)}
+            .cursor svg{position:static;overflow:visible;transform-origin:3px 3px;transform:rotate(-15deg);transition:transform 80ms ease-out;filter:drop-shadow(0 0 4px #a8bd85ee) drop-shadow(0 0 10px #a8bd8599)}
+            .cursor-tag{position:absolute;left:12px;top:34px;width:max-content;max-width:min(240px,calc(100vw - 24px));padding:8px 10px;background:#1d1f1b;color:#f6f4ef;border:1px solid #a8bd8566;border-radius:8px;box-shadow:0 4px 16px #0f0f0e26}
+            .cursor-tag-content{display:flex;align-items:center;gap:6px;max-width:218px}
+            .input-guard{position:absolute;inset:0;pointer-events:auto;cursor:progress}
+            .cursor-description{min-width:0;max-width:min(218px,calc(100vw - 44px));font:400 13px/1.45 'TamperSloth Geist',system-ui,sans-serif;overflow-wrap:anywhere;white-space:normal}
+            .cursor-description[data-typing="true"]::after{content:'';display:inline-block;height:1em;border-left:2px solid #a8bd85;margin-left:2px;vertical-align:-2px;animation:caret 1s steps(2,end) infinite}
+            .ripple{position:fixed;width:30px;height:30px;border:1.5px solid #a8bd85;border-radius:50%;box-shadow:0 0 0 2px #0f0f0e66;animation:pulse .45s cubic-bezier(.22,.61,.36,1) forwards}
             @keyframes arrive{from{opacity:0}to{opacity:1}} @keyframes pulse{to{transform:scale(1.9);opacity:0}}
-            @media(prefers-reduced-motion:reduce){.mark,.ripple{animation:none}.cursor{transition:none}}
+            @keyframes caret{50%{opacity:0}}
+            @media(prefers-reduced-motion:reduce){.mark,.ripple,.cursor-description::after{animation:none}.cursor,.cursor svg{transition:none}}
         `;
         root.append(style);
+        const inputGuard=document.createElement('div');inputGuard.className='input-guard';inputGuard.hidden=true;inputGuard.setAttribute('aria-hidden','true');root.append(inputGuard);
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('aria-hidden', 'true'); root.append(svg);
         // Waiting is shown in chat; retain announcements for assistive technology only.
         const status = document.createElement('div'); status.className = 'sr-status'; status.hidden = true;
         status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); root.append(status);
         const cursor = document.createElement('div'); cursor.className = 'cursor'; cursor.hidden = true;
-        cursor.innerHTML = '<svg viewBox="0 0 25 30" aria-hidden="true"><path d="M3 3L21 16L12 18L8 27Z" fill="#f6f4ef" stroke="#f6f4ef" stroke-width="4" stroke-linejoin="round"/><path d="M3 3L21 16L12 18L8 27Z" fill="#0f0f0e" stroke="#0f0f0e" stroke-width="1.5" stroke-linejoin="round"/></svg><div class="cursor-tag"><span>Sloth</span></div>';
-        if(args.assets?.icon) {
-            const logo=document.createElement('img');logo.src=args.assets.icon;logo.alt='';
-            cursor.querySelector('.cursor-tag')!.prepend(logo);
-        }
+        // Supplied SVG path, uniformly scaled with its rounded tip at the (3, 3) hotspot.
+        cursor.innerHTML = '<svg viewBox="0 0 25 30" aria-hidden="true"><g transform="translate(2.1 1.74) scale(.063)"><path d="M41.1621 6.11426C50.3285 5.55172 56.4049 7.10811 61.7979 9.94043C67.5827 12.9786 72.7214 17.5049 80.29 23.7646L80.292 23.7666L99.6143 39.7344L99.6172 39.7373L172.763 100.113L260.784 172.793L288.688 195.827L288.688 195.828C299.721 204.931 308.114 210.166 312.016 221.188L312.198 221.718C314.957 229.952 314.333 238.946 310.463 246.721C306.354 254.959 299.012 261.124 290.188 263.74H290.188C287.229 264.618 283.08 265.006 278.274 265.117C273.425 265.23 268.846 265.064 264.431 265.062L224.271 265.053L220.9 265.036C204.037 264.888 186.952 263.912 169.137 269.92L169.086 269.937L169.035 269.955C158.71 273.644 149.202 279.306 141.04 286.629L141.029 286.639L141.018 286.649C132.171 294.668 122.869 308.119 116.184 316.961L116.183 316.962L81.4727 362.884C75.0195 371.344 67.8902 376.508 57.96 377.783L57.958 377.784C49.2069 378.911 40.3672 376.509 33.3896 371.109L33.376 371.1L32.7217 370.582C26.0355 365.161 21.751 357.311 20.8242 348.73L20.8213 348.705L20.8184 348.679C20.209 343.462 20.2064 337.766 19.8887 331.771H19.8896L17.9434 291.823V291.822L11.959 169.128L7.91113 86.1465V86.1455L6.76172 62.7061L6.76074 62.6797L6.75879 62.6543L6.44531 57.3682C6.11716 51.7185 5.81264 45.3319 6.13281 41.3994C6.7646 33.6452 9.71963 26.2606 14.6113 20.2109L14.625 20.1943L14.6377 20.1777C21.2131 11.9249 30.3825 7.3599 41.1621 6.11426Z" fill="black" stroke="#ffffff" stroke-width="32"/></g></svg>';
+        const cursorTag=document.createElement('div');cursorTag.className='cursor-tag';cursorTag.hidden=true;
+        const cursorName=document.createElement('span');cursorName.textContent='Sloth';
+        const cursorContent=document.createElement('div');cursorContent.className='cursor-tag-content';
+        const cursorBody=document.createElement('div');cursorBody.className='cursor-description';cursorBody.hidden=true;
+        cursorContent.append(cursorBody);cursorTag.append(cursorContent);cursor.append(cursorTag);
         root.append(cursor); document.documentElement.append(host);
-        state = win.__tamperSlothGuidance = {host, root, svg, status, cursor, marks: new Map(), wait: null};
+        state = win.__tamperSlothGuidance = {host, root, svg, status, cursor,cursorTag,cursorName,cursorBody,inputGuard, marks: new Map(), wait: null,drawQueue:[],drawing:null};
+        state.setInputLocked=(locked: boolean)=>{
+            if(state.inputLocked===locked) return;
+            state.inputLocked=locked;inputGuard.hidden=!locked;
+            clearTimeout(state.inputLockTimer);
+            if(locked){state.message('Drawing the guide','Site input is briefly paused. Escape cancels.');state.inputLockTimer=setTimeout(()=>pageGuidance({action:'clear'}),7000);}
+        };
+        state.blockInput=(event: Event)=>{
+            if(!state.inputLocked || !event.isTrusted) return;
+            if(event.type==='keydown' && (event as KeyboardEvent).key==='Escape') pageGuidance({action:'clear'});
+            event.preventDefault();event.stopImmediatePropagation();
+        };
+        state.lockEvents=['pointerdown','pointermove','pointerup','mousedown','mousemove','mouseup','click','dblclick','dragstart','dragover','drop','touchstart','touchmove','touchend','wheel','keydown','keyup','keypress','beforeinput','input','change','submit'];
+        for(const type of state.lockEvents) window.addEventListener(type,state.blockInput,{capture:true,passive:false});
+        state.reduced=()=>typeof matchMedia==='undefined' || matchMedia('(prefers-reduced-motion: reduce)').matches;
+        state.positionTooltip=()=>{
+            const p=state.cursorPoint;if(!p) return;
+            cursorTag.hidden=cursor.hidden || cursorBody.hidden;
+            if(cursorTag.hidden) return;
+            const width=cursorTag.offsetWidth,height=cursorTag.offsetHeight,margin=12;
+            // Keep the bubble below the pointer. Near the bottom, lift the resting
+            // pointer rather than flipping its description above it.
+            if(state.resting && !state.drawing && p.y+34+height>innerHeight-margin) {
+                p.y=Math.max(margin,innerHeight-height-34-margin);
+                cursor.style.transform=`translate(${p.x}px,${p.y}px)`;
+            }
+            const y=p.y+34;
+            const candidates=[p.x+12,p.x-width+12,p.x-width/2].map(x=>Math.max(margin,Math.min(innerWidth-width-margin,x)));
+            const x=candidates.find(x=>!(state.protectedBoxes ?? []).some((b: any)=>x<b.x+b.width+8 && x+width>b.x-8 && y<b.y+b.height+8 && y+height>b.y-8));
+            const fits=x!==undefined && width<=innerWidth-margin*2 && y+height<=innerHeight-margin;
+            cursorTag.style.visibility=fits ? 'visible' : 'hidden';
+            if(fits){cursorTag.style.left=`${x-p.x}px`;cursorTag.style.top='34px';}
+        };
+        state.moveCursor=(point: any,drawing=false,resting=false)=>{
+            state.resting=resting;
+            // The drawing hotspot must stay on the ink, including at viewport edges.
+            const old=state.cursorPoint,p=drawing ? {x:point.x,y:point.y} : {x:Math.max(0,Math.min(innerWidth-25,point.x)),y:Math.max(0,Math.min(innerHeight-30,point.y))};
+            cursor.hidden=false;cursor.style.transition=drawing || state.reduced() ? 'none' : '';
+            cursor.style.transform=`translate(${p.x}px,${p.y}px)`;
+            const direction=old ? Math.atan2(p.y-old.y,p.x-old.x) : 0;
+            const angle=!state.reduced() && old ? drawing ? Math.sin(direction)*16+Math.cos(direction)*8 : Math.max(-8,Math.min(8,(p.x-old.x)*.18+(p.y-old.y)*.08)) : 0;
+            cursor.querySelector('svg')!.style.transform=`rotate(${angle-15}deg)`;
+            clearTimeout(state.rotationTimer);state.rotationTimer=setTimeout(()=>{cursor.querySelector('svg')!.style.transform='rotate(-15deg)';},180);
+            state.cursorPoint=p;
+            // Avoid repeated DOM scans on every animation frame.
+            if(!drawing || !state.tooltipAt || performance.now()-state.tooltipAt>80){state.positionTooltip();state.tooltipAt=performance.now();}
+        };
+        state.describe=(mark: any)=>{
+            clearTimeout(state.typingTimer);state.guideOwner=mark.id;
+            cursorBody.hidden=false;cursorBody.setAttribute('aria-label',mark.label.getAttribute('aria-label') ?? mark.label.textContent);
+            const text=mark.label.textContent;cursorBody.textContent=text;
+            cursorTag.hidden=false;cursorTag.style.width='';cursorBody.style.minHeight='';
+            state.message('Sloth',cursorBody.getAttribute('aria-label'));
+            // Natural content width grows with the typed instruction.
+            if(state.reduced()){cursorBody.setAttribute('data-typing','false');state.positionTooltip();return;}
+            cursorBody.setAttribute('data-typing','true');
+            let count=0;cursorBody.textContent='';
+            const type=()=>{
+                if(!state.marks.has(mark.id)) return;
+                count=Math.min(text.length,count+1);cursorBody.textContent=text.slice(0,count);state.positionTooltip();
+                if(count<text.length) state.typingTimer=setTimeout(type,45);
+                else cursorBody.setAttribute('data-typing','false');
+            };type();
+        };
+        state.park=(mark: any)=>{
+            const b=mark.currentBox ?? mark.box;
+            const points=[{x:b.x+b.width+16,y:b.y},{x:b.x-30,y:b.y},{x:b.x,y:b.y-34},{x:b.x,y:b.y+b.height+16}];
+            const p=points.find(p=>p.x>=0 && p.x<innerWidth-25 && p.y>=0 && p.y<innerHeight-30) ?? points[0];
+            state.moveCursor(p,false,true);cursorName.textContent='Sloth';
+        };
+        state.drawNext=()=>{
+            if(state.drawing || state.clearing) return;
+            let mark;while(state.drawQueue.length && !mark){const next=state.drawQueue.shift();if(state.marks.has(next.id)) mark=next;}
+            if(!mark) return;
+            state.drawing=mark;
+            clearTimeout(state.typingTimer);cursorBody.hidden=true;
+            const done=()=>{clearTimeout(mark.animationTimer);mark.measurements?.remove();mark.group.style.filter='';mark.group.style.visibility='visible';mark.drawn=true;state.drawing=null;state.park(mark);if(mark.label) state.describe(mark);mark.resolveDrawing?.({ok:true,id:mark.id});if(!state.drawQueue.length){state.setInputLocked(false);state.wait?.armTimeout?.();}state.drawNext();};
+            if(mark.animate===false || state.reduced() || typeof mark.shape.getTotalLength!=='function'){done();return;}
+            const ns='http://www.w3.org/2000/svg',stages: any[]=[],nodes=[mark.shape,...(mark.echo.style.display==='none' ? [] : [mark.echo]),...(mark.hatch ? [mark.hatch] : [])];
+            const measurements=document.createElementNS(ns,'defs');mark.measurements=measurements;mark.group.append(measurements);
+            const originals=new Map<any,string>();
+            let length=0,lastPoint: any;
+            for(const node of nodes) {
+                const source=node.getAttribute('d') ?? '';originals.set(node,source);
+                for(const subpath of source.match(/M[^M]*/g) ?? []) {
+                    const geometry=document.createElementNS(ns,'path');geometry.setAttribute('d',subpath);
+                    // Connected SVG geometry is measurable even when it is not painted.
+                    measurements.append(geometry);
+                    const size=geometry.getTotalLength();if(!size || !Number.isFinite(size)) continue;
+                    const first=geometry.getPointAtLength(0);
+                    if(lastPoint){const travel=Math.hypot(first.x-lastPoint.x,first.y-lastPoint.y)*.35;if(travel>1){stages.push({travel:true,from:lastPoint,to:first,start:length,length:travel});length+=travel;}}
+                    // Sample connected geometry once. SVG geometry queries during every
+                    // frame force repeated path measurement and can stall visible painting.
+                    const count=Math.max(1,Math.ceil(size/2)),points=[];
+                    for(let i=0;i<=count;i++){const p=geometry.getPointAtLength(size*i/count);points.push({x:p.x,y:p.y});}
+                    stages.push({node,points,start:length,length:size,drawn:0,started:false});length+=size;lastPoint=points[count];
+                }
+            }
+            if(!length || !Number.isFinite(length)){done();return;}
+            for(const node of nodes){node.setAttribute('d','');node.style.strokeDasharray='';}
+            mark.animationNodes=new Map(nodes.map(node=>[node,'']));mark.drawingActive=true;
+            state.setInputLocked(true);
+            // A changing SVG filter bounding box can defer painting thin partial strokes.
+            // Paint the live ink directly; restore its subtle shadow when complete.
+            mark.group.style.filter='none';
+            mark.group.style.visibility='visible';
+            const start=performance.now(),duration=Math.max(1100,Math.min(4500,length*4));cursorName.textContent='Sloth · drawing';
+            // A background tab can suspend RAF; never leave a drawing tool waiting forever.
+            mark.animationTimer=setTimeout(()=>{
+                if(state.drawing!==mark) return;
+                if(typeof cancelAnimationFrame==='function') cancelAnimationFrame(state.drawFrame);
+                for(const [node,source] of originals) node.setAttribute('d',source);
+                mark.drawingActive=false;done();
+            },duration+1000);
+            const frame=(now: number)=>{
+                if(!state.marks.has(mark.id) || state.drawing!==mark) return;
+                const progress=Math.min(1,Math.max(0,(now-start)/duration)),distance=length*progress;
+                let p: any;
+                for(const stage of stages) {
+                    if(distance<stage.start) break;
+                    const at=Math.min(stage.length,distance-stage.start);
+                    if(stage.travel){p={x:stage.from.x+(stage.to.x-stage.from.x)*at/stage.length,y:stage.from.y+(stage.to.y-stage.from.y)*at/stage.length};}
+                    else {
+                        let d=mark.animationNodes.get(stage.node) ?? '';
+                        if(!stage.started){
+                            const first=stage.points[0];d+=` M${first.x},${first.y}`;stage.started=true;
+                            // RAF can first run with zero elapsed time. Persist the move
+                            // even before any line is added, or the next frame starts with
+                            // an invalid L command and nothing paints until completion.
+                            stage.node.setAttribute('d',d);mark.animationNodes.set(stage.node,d);
+                        }
+                        const index=at/stage.length*(stage.points.length-1),lower=Math.floor(index),fraction=index-lower;
+                        const a=stage.points[lower],b=stage.points[Math.min(lower+1,stage.points.length-1)];
+                        p={x:a.x+(b.x-a.x)*fraction,y:a.y+(b.y-a.y)*fraction};
+                        for(let i=Math.floor(stage.drawn/stage.length*(stage.points.length-1))+1;i<=lower;i++){const point=stage.points[i];d+=` L${point.x},${point.y}`;}
+                        if(at>stage.drawn){d+=` L${p.x},${p.y}`;stage.drawn=at;stage.node.setAttribute('d',d);mark.animationNodes.set(stage.node,d);}
+                    }
+                    if(at<stage.length) break;
+                }
+                const b=mark.currentBox ?? mark.box;if(p) state.moveCursor({x:b.x+p.x-3,y:b.y+p.y-3},true);
+                if(progress<1 && !state.reduced()) state.drawFrame=requestAnimationFrame(frame);
+                else{for(const [node,source] of originals) node.setAttribute('d',source);mark.drawingActive=false;done();}
+            };state.drawFrame=requestAnimationFrame(frame);
+        };
         state.brief = (text: string) => {
             const compact=text.replace(/^\s*Step\s+\d+\s*:\s*/i,'').replace(/\s+/g,' ').trim();
             if(compact.length<=90) return compact;
@@ -165,18 +315,16 @@ export function pageGuidance(args: any): any {
                 boxes.set(mark,mark.selector && !el ? null : el?.getBoundingClientRect() ?? mark.box);
             }
             const protectedBoxes=[...boxes.values()].filter(b=>b?.width && b?.height);
-            const occupied: any[]=[];
+            state.protectedBoxes=protectedBoxes;
             for (const mark of state.marks.values()) {
                 const box=boxes.get(mark);
                 mark.group.style.display = mark.selector && (!box?.width || !box?.height) ? 'none' : '';
                 if(mark.label) mark.label.style.display=mark.group.style.display;
-                if (!box || mark.group.style.display==='none') continue;
-                state.sketch(mark,box);
-                if (mark.label && !mark.label.hidden) {
-                    mark.label.style.display = mark.group.style.display;
-                    const placed=state.place(mark.label,box,protectedBoxes,occupied,mark.labelPosition,true);
-                    if(placed) occupied.push(placed);
-                }
+                if (!box || mark.group.style.display==='none') {if(state.guideOwner===mark.id) cursorBody.hidden=true;continue;}
+                mark.currentBox=box;
+                mark.group.setAttribute('transform',`translate(${box.x},${box.y})`);
+                if(!mark.drawingActive) state.sketch(mark,box);
+                if(state.guideOwner===mark.id && !state.drawing) state.park(mark);
             }
         };
         let scheduled = false;
@@ -189,23 +337,33 @@ export function pageGuidance(args: any): any {
         state.mutations.observe(document.documentElement, {subtree:true,childList:true,attributes:true});
         const actionTypes=['click','input','change','submit','focusin','pointerup'];
         state.annotationListener=(event: Event)=>{
-            if(!event.isTrusted) return;
+            if(!event.isTrusted || state.inputLocked) return;
             for(const mark of state.marks.values()) {
                 if(!mark.selector) continue;
                 let target;try{target=state.find(mark.selector);}catch{continue;}
                 if(event.composedPath().includes(target)) {
                     mark.actions.add(event.type);
                     if(mark.label && (!state.wait || state.wait.result || event.type===state.wait.event)) mark.label.hidden=true;
+                    if(state.guideOwner===mark.id && (!state.wait || state.wait.result || event.type===state.wait.event)) {
+                        clearTimeout(state.typingTimer);cursorBody.hidden=true;state.guideOwner=undefined;state.positionTooltip();
+                    }
                 }
             }
         };
         state.remove = (id: string) => {
             const m=state.marks.get(id);
+            if(m) clearTimeout(m.animationTimer);
+            m?.resolveDrawing?.({ok:true,id,removed:true});
+            if(state.drawing===m && m){if(typeof cancelAnimationFrame==='function') cancelAnimationFrame(state.drawFrame);state.drawing=null;}
+            state.drawQueue=state.drawQueue.filter((mark: any)=>mark.id!==id);
+            if(state.guideOwner===id){clearTimeout(state.typingTimer);cursorBody.hidden=true;state.guideOwner=undefined;state.positionTooltip();}
             if(m){clearTimeout(m.timer);m.group.remove();if(m.label) state.resize.unobserve(m.label);m.label?.remove();state.marks.delete(id);}
             if(!state.marks.size && state.annotationListening) {
                 for(const type of actionTypes) document.removeEventListener(type,state.annotationListener,true);
                 state.annotationListening=false;
             }
+            state.drawNext();
+            if(!state.drawing && !state.drawQueue.length) state.setInputLocked(false);
         };
         state.cue = (el: Element, action: string) => {
             const b=el.getBoundingClientRect();
@@ -213,7 +371,7 @@ export function pageGuidance(args: any): any {
         };
         state.finish = (result: any) => {
             const w = state.wait; if (!w || w.result) return;
-            w.result = {...result, elapsedMs:Date.now()-w.started, unexpectedActions:w.unexpected, url:location.href};
+            w.result = {...result, actionObserved:w.acted && w.event!=='state', elapsedMs:Date.now()-w.started, unexpectedActions:w.unexpected, url:location.href};
             clearTimeout(w.timer); clearInterval(w.check);
             for (const type of [...actionTypes,'keydown']) document.removeEventListener(type,w.listener,true);
             for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);
@@ -226,6 +384,7 @@ export function pageGuidance(args: any): any {
         pageGuidance({action:'clear'});
         state.cursor.hidden=true;
         window.removeEventListener('scroll',state.schedule,true);window.removeEventListener('resize',state.schedule);
+        for(const type of state.lockEvents) window.removeEventListener(type,state.blockInput,true);
         state.host.remove();delete win.__tamperSlothGuidance;
         return {ok:true};
     }
@@ -242,26 +401,29 @@ export function pageGuidance(args: any): any {
             const box = document.activeElement?.getBoundingClientRect();
             if (box?.width && document.activeElement!==document.body && document.activeElement!==document.documentElement) {
                 point = {x:box.right,y:box.top+box.height/2};
-                pageGuidance({action:'draw',id:'__focus',kind:'bracket',box:{x:box.x,y:box.y,width:box.width,height:box.height},lifetimeMs:1000});
+                pageGuidance({action:'draw',id:'__focus',kind:'bracket',box:{x:box.x,y:box.y,width:box.width,height:box.height},lifetimeMs:1000,animate:false});
             }
         }
         if (point) {
-            state.cursor.hidden=false; state.cursor.style.transform=`translate(${Math.max(0,Math.min(innerWidth-25,point.x))}px,${Math.max(0,Math.min(innerHeight-30,point.y))}px)`;
-            state.cursor.querySelector('span').textContent = /Wheel/.test(type) ? 'Sloth · scroll' : /Key|insertText/.test(args.method) ? 'Sloth · typing' : p.buttons || /touch/.test(type) ? 'Sloth · drag' : 'Sloth';
+            state.moveCursor(point);
+            state.cursorName.textContent = /Wheel/.test(type) ? 'Sloth · scroll' : /Key|insertText/.test(args.method) ? 'Sloth · typing' : p.buttons || /touch/.test(type) ? 'Sloth · drag' : 'Sloth';
             if (['mousePressed','touchStart'].includes(type)) {
                 const ripple=document.createElement('div'); ripple.className='ripple'; ripple.style.left=`${point.x-15}px`; ripple.style.top=`${point.y-15}px`; state.root.append(ripple); setTimeout(()=>ripple.remove(),550);
             }
         }
         // Only the action cue expires; the cursor remains at its last position.
-        clearTimeout(state.cursorTimer); state.cursorTimer=setTimeout(()=>{state.cursor.querySelector('span').textContent='Sloth';},1400);
+        clearTimeout(state.cursorTimer); state.cursorTimer=setTimeout(()=>{state.cursorName.textContent='Sloth';},1400);
         return {ok:true};
     }
     if (args.action === 'clear') {
+        state.clearing=true;state.drawQueue=[];
         if (state.wait && !state.wait.result) state.finish({status:'cancelled',hint:'Guidance cleared.'});
         for (const id of [...state.marks.keys()]) state.remove(id);
-        clearTimeout(state.cursorTimer); clearTimeout(state.statusTimer);
+        clearTimeout(state.cursorTimer); clearTimeout(state.statusTimer);clearTimeout(state.rotationTimer);
+        state.setInputLocked(false);
         state.resize.disconnect(); state.mutations.disconnect();
-        state.cursor.querySelector('span').textContent='Sloth';
+        state.cursorName.textContent='Sloth';
+        state.clearing=false;
         state.status.hidden=true; return {ok:true};
     }
     if (args.action === 'remove') {state.remove(args.id); return {ok:true};}
@@ -277,15 +439,15 @@ export function pageGuidance(args: any): any {
         const box=el?.getBoundingClientRect() ?? args.box;
         if (!box && !args.points?.length) throw new Error('Supply a selector, box, or path points');
         const ns='http://www.w3.org/2000/svg';
-        const group=document.createElementNS(ns,'g'); group.setAttribute('class','mark');
+        const group=document.createElementNS(ns,'g'); group.setAttribute('class','mark');group.style.visibility='hidden';
         const shape=document.createElementNS(ns,'path'),echo=document.createElementNS(ns,'path');
-        const color=({moss:'#3f4a2a',amber:'#92611c',sky:'#286d87',rose:'#994f64'} as any)[args.color ?? 'moss'];
+        const color='#a8bd85';
         for(const stroke of [shape,echo]) {
             stroke.setAttribute('stroke',color);stroke.setAttribute('stroke-width',String((args.lineWidth ?? 2.5)*(stroke===echo ? .6 : .8)));
             stroke.setAttribute('stroke-linecap','round');stroke.setAttribute('stroke-linejoin','round');stroke.setAttribute('fill','none');
         }
-        echo.setAttribute('opacity','.4');
-        if(args.lineStyle==='dashed') echo.style.display='none';
+        // One outline pass: a second perimeter would look like tracing an existing shape.
+        echo.setAttribute('opacity','.4');echo.style.display='none';
         if(args.lineStyle==='dashed' && args.kind==='ellipse') shape.setAttribute('stroke-dasharray','8 5 6 6 10 4');
         let hatch,clipShape;
         if(args.kind==='highlight') {
@@ -295,16 +457,18 @@ export function pageGuidance(args: any): any {
         }
         group.append(shape,echo); state.svg.append(group);
         let label: HTMLDivElement | undefined;
-        if (args.label) {label=document.createElement('div'); label.className='label'; label.textContent=state.brief(args.label);label.setAttribute('aria-label',args.label); state.root.append(label);state.resize.observe(label);}
+        if (args.label) {label=document.createElement('div'); label.hidden=true;label.className='label'; label.textContent=state.brief(args.label);label.setAttribute('aria-label',args.label);}
         let seed=2166136261;for(const char of id) seed=Math.imul(seed^char.charCodeAt(0),16777619);
-        const mark={...args,seed,box:box ?? {x:args.points[0].x,y:args.points[0].y,width:0,height:0},group,shape,echo,hatch,clipShape,label,actions:new Set(),stepId:state.wait && !state.wait.result ? state.wait.id : undefined,timer:undefined as any};
+        const mark={...args,id,seed,box:box ?? {x:args.points[0].x,y:args.points[0].y,width:0,height:0},group,shape,echo,hatch,clipShape,label,actions:new Set(),stepId:state.wait && !state.wait.result ? state.wait.id : undefined,timer:undefined as any};
         state.marks.set(id,mark);
         if(!state.annotationListening) {
             for(const type of ['click','input','change','submit','focusin','pointerup']) document.addEventListener(type,state.annotationListener,true);
             state.annotationListening=true;
         }
         state.render();
+        state.drawQueue.push(mark);state.drawNext();
         if (args.lifetimeMs) mark.timer=setTimeout(()=>state.remove(id),args.lifetimeMs);
+        if(args.waitForDrawing && !mark.drawn) return new Promise(resolve=>{(mark as any).resolveDrawing=resolve;});
         return {ok:true,id};
     }
     if (args.action === 'start') {
@@ -346,12 +510,14 @@ export function pageGuidance(args: any): any {
             if (args.expectedState==='checked') return el.checked === true || el.getAttribute('aria-checked')==='true';
             const b=el.getBoundingClientRect(); return b.width>0 && b.height>0 && getComputedStyle(el).visibility!=='hidden';
         };
-        const w: any=state.wait={id:args.id,event:args.event,started:Date.now(),unexpected:0,acted:alreadyActed || args.event==='state',result:null,timer:null,check:null,listener:null};
+        const w: any=state.wait={id:args.id,event:args.event,started:Date.now(),waitingForDraw:true,unexpected:0,acted:alreadyActed || args.event==='state',result:null,timer:null,check:null,listener:null};
         if(alreadyActed) for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);
         w.listener=(event:any)=> {
-            if (!event.isTrusted) return;
+            if (!event.isTrusted || state.inputLocked) return;
             if (event.type==='keydown' && event.key==='Escape') {state.finish({status:'cancelled',hint:'Cancelled with Escape.'});return;}
-            const hit=event.composedPath().includes(target);
+            // Framework updates may replace the original DOM node while drawing.
+            let currentTarget=target;try{if(args.selector) currentTarget=state.find(args.selector);}catch{currentTarget=null;}
+            const hit=event.composedPath().includes(currentTarget);
             if (event.type===args.event && hit) {
                 w.acted=true;
                 // Remove the instruction immediately, even if its resulting state takes time.
@@ -364,25 +530,30 @@ export function pageGuidance(args: any): any {
         if(w.acted && matches()) {state.finish({status:'completed'});return w.result;}
         for (const type of ['click','input','change','submit','focusin','pointerup','keydown']) document.addEventListener(type,w.listener,true);
         w.check=setInterval(()=>{if(w.acted && matches()) state.finish({status:'completed'});},200);
-        w.timer=setTimeout(()=>state.finish({status:'timeout',hint:w.acted ? 'The action happened, but the expected page change did not. Check validation or loading, then retry.' : 'Try Tab to focus the marked control and Enter or Space to activate it, or ask for a smaller step.'}),args.timeoutMs);
+        w.armTimeout=()=>{
+            if(w.result || w.timer) return;
+            w.waitingForDraw=false;
+            w.timer=setTimeout(()=>state.finish({status:'timeout',hint:w.acted ? 'The action happened, but the expected page change did not. Check validation or loading, then retry.' : 'Try Tab to focus the marked control and Enter or Space to activate it, or ask for a smaller step.'}),args.timeoutMs);
+        };
         state.message(alreadyActed ? 'Checking the page' : 'Your turn',alreadyActed ? 'Waiting for the expected change' : 'Use the marked control · Escape to pause');
         if (target && !w.acted) {
             // A supplied canvas region can be more precise than its full element bounds.
             if(retained.size) {
                 const mark=[...state.marks.values()].find(m=>m.stepId===w.id);
                 if(mark && !mark.label) {
-                    const label=document.createElement('div');label.className='label';label.textContent=state.brief(args.instruction);label.setAttribute('aria-label',args.instruction);
-                    state.root.append(label);state.resize.observe(label);mark.label=label;
+                    const label=document.createElement('div');label.hidden=true;label.className='label';label.textContent=state.brief(args.instruction);label.setAttribute('aria-label',args.instruction);mark.label=label;
+                    if(mark.drawn){state.describe(mark);state.park(mark);}
                 }
                 state.render();
             } else pageGuidance({action:'draw',id:'__step',kind:'bracket',selector:args.selector,label:args.instruction});
         }
-        return {status:'waiting',id:w.id};
+        if(!state.inputLocked) w.armTimeout();
+        return {status:'waiting',id:w.id,ready:!w.waitingForDraw};
     }
     if (args.action === 'poll' || args.action === 'cancel') {
         if (!state.wait || state.wait.id!==args.id) return {status:'lost',hint:'This step was replaced or the page navigated. Inspect the current page.'};
         if(args.action==='cancel') state.finish({status:'cancelled',hint:'Guidance cancelled.'});
-        return state.wait.result ?? {status:'waiting',unexpectedActions:state.wait.unexpected};
+        return state.wait.result ?? {status:'waiting',ready:!state.wait.waitingForDraw,actionObserved:state.wait.acted && state.wait.event!=='state',unexpectedActions:state.wait.unexpected};
     }
     throw new Error('Unknown guidance action');
 }
@@ -394,9 +565,8 @@ export async function runPageGuidance(tabId: number, args: any) {
     const assets=chrome.runtime.getURL ? {
         sans:chrome.runtime.getURL('fonts/geist-latin-wght-normal.woff2'),
         heading:chrome.runtime.getURL('fonts/instrument-serif-latin-400-italic.woff2'),
-        icon:chrome.runtime.getURL('favicon.svg'),
     } : undefined;
-    const [result] = await chrome.scripting.executeScript({target:{tabId},func:pageGuidance,args:[{...args,assets}]});
+    const [result] = await chrome.scripting.executeScript({target:{tabId},func:pageGuidance,args:[{...args,assets,waitForDrawing:args.action==='draw'}]});
     if (!result?.result) throw new Error('Guidance is unavailable on this page');
     return result.result;
 }

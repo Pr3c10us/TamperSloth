@@ -138,7 +138,9 @@ test('todo projection keeps rich UI data without echoing old and new lists', asy
 test('tools expand monotonically and group guidance is sent only once', async () => {
     const {load, tools} = fixture();
     const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(tools, {request: 'Summarize this article', findPrevious: () => undefined});
-    assert.equal(runtime.activeTools().length, 9);
+    assert.equal(runtime.activeTools().length, 11);
+    assert.ok(runtime.activeTools().includes('annotatePage'));
+    assert.ok(runtime.activeTools().includes('waitForUserAction'));
     assert.ok(!runtime.activeTools().includes('saveScript'));
     const first = (await invoke(runtime.tools, 'enableTools', {groups: ['scripting']})).output;
     assert.ok(first.guidance[0].includes('named function'));

@@ -6,6 +6,7 @@ import {TodoWriteCard} from "@/src/chat/components/todo/todoWriteCard.tsx";
 import {TodoReadCard} from "@/src/chat/components/todo/todoReadCard.tsx";
 import {TodoClearCard} from "@/src/chat/components/todo/todoClearCard.tsx";
 import {AskUserCard} from "@/src/chat/components/askUser/askUserCard.tsx";
+import {guidanceStatusLabel} from '../lib/guidanceStatus';
 
 const PULSE = "slothPulse 1.4s cubic-bezier(.22,.61,.36,1) infinite";
 
@@ -22,10 +23,10 @@ export function ToolCallInline({ tc, i }: { tc: ToolCall, i: number }) {
     if (name === "TodoClear") return <TodoClearCard key={key} tc={tc}/>;
     if (name === "askUser") return <AskUserCard key={key} tc={tc}/>;
 
-    const guidanceResult=name==='waitForUserAction' ? tc.result as {status?:string;alreadySatisfied?:boolean} | undefined : undefined;
+    const guidanceResult=['waitForUserAction','annotatePage'].includes(name) ? tc.result as Parameters<typeof guidanceStatusLabel>[0] : undefined;
     const needsReview=guidanceResult?.status==='needsReview';
-    const label = isPending ? meta.activeLabel : isError ? meta.errorLabel : needsReview ? 'Page progress ready for review'
-        : guidanceResult?.alreadySatisfied ? 'Step already complete' : guidanceResult?.status==='cancelled' ? 'Guidance paused' : meta.doneLabel;
+    const label = isPending ? meta.activeLabel : isError ? meta.errorLabel : name==='annotatePage' && needsReview ? 'Guide drawing needs a new target'
+        : name==='waitForUserAction' ? guidanceStatusLabel(guidanceResult) : meta.doneLabel;
     const description = tc.args?.description as string | undefined;
 
     return (
