@@ -83,7 +83,6 @@ function App() {
     const sidebarTabId = Number(new URLSearchParams(window.location.search).get("tabId")) || 0;
 
 
-
     const handleToggleStatus = async (script: BackgroundScript) => {
         const next = script.status === "active" ? "paused" : "active";
         await updateScriptStatus(script.id, next);
@@ -125,14 +124,17 @@ function App() {
 
             {/* Header */}
             <header className="flex shrink-0 items-center justify-between px-4 py-3.5">
-                <Button
-                    variant="ghost"
-                    size="icon-lg"
-                    onClick={() => navigate("/")}
-                    aria-label="Back to chat"
-                >
-                    <ArrowLeft strokeWidth={2.25} className="size-5 text-foreground"/>
-                </Button>
+                <div className="flex items-center gap-1.5">
+                    <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => navigate("/")}
+                        aria-label="Back"
+                    >
+                        <ArrowLeft strokeWidth={2} className="size-4.5 text-foreground" />
+                    </Button>
+                    <h1 className="font-heading text-[22px] leading-none">Gallery</h1>
+                </div>
                 <TooltipProvider delayDuration={300}>
                     <div className="flex items-center gap-1.5">
                         {scripts.length > 0 && (

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { Lock } from "lucide-react";
 import { ProviderCard } from "./ProviderCard";
 import { PROVIDERS_PRIMARY } from "./providers";
+import { SettingsGroup, SettingsSection, TabIntro } from "./Section";
 import {
     deleteApiKey,
     getApiKeys,
@@ -58,34 +60,48 @@ export function ConnectionsTab() {
         if (editing === id) setEditing(null);
     };
 
+    const connectedCount = PROVIDERS_PRIMARY.filter((p) => keys[p.id]).length;
+
     return (
-        <>
-            <h2 className="mb-1 font-heading text-3xl leading-tight">
-                Bring your own key.
-            </h2>
-            <p className="mb-4 text-[13px]  leading-relaxed text-muted-foreground">
+        <div className="flex flex-col gap-6">
+            <TabIntro title={<>Bring your own <em>key.</em></>}>
                 The sloth needs a model. Paste a key and we'll do the lifting.
+            </TabIntro>
+
+            <SettingsSection
+                title="Providers"
+                action={
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                        {connectedCount} of {PROVIDERS_PRIMARY.length} connected
+                    </span>
+                }
+            >
+                <SettingsGroup>
+                    {PROVIDERS_PRIMARY.map((p) => (
+                        <ProviderCard
+                            key={p.id}
+                            p={p}
+                            connected={!!keys[p.id]}
+                            editing={editing === p.id}
+                            apiKey={
+                                editing === p.id
+                                    ? (drafts[p.id] ?? "")
+                                    : (keys[p.id] ?? "")
+                            }
+                            onSetKey={(k) => setDrafts((s) => ({ ...s, [p.id]: k }))}
+                            onSave={() => handleSave(p.id)}
+                            onEdit={() => handleEdit(p.id)}
+                            onDelete={() => handleDelete(p.id)}
+                            onCancel={handleCancel}
+                        />
+                    ))}
+                </SettingsGroup>
+            </SettingsSection>
+
+            <p className="flex gap-2 px-0.5 text-[12px] leading-relaxed text-muted-foreground">
+                <Lock strokeWidth={1.5} className="mt-0.5 size-3.5 shrink-0" />
                 Keys live in your browser, never on a server, ours or anyone's.
             </p>
-
-            {PROVIDERS_PRIMARY.map((p) => (
-                <ProviderCard
-                    key={p.id}
-                    p={p}
-                    connected={!!keys[p.id]}
-                    editing={editing === p.id}
-                    apiKey={
-                        editing === p.id
-                            ? (drafts[p.id] ?? "")
-                            : (keys[p.id] ?? "")
-                    }
-                    onSetKey={(k) => setDrafts((s) => ({ ...s, [p.id]: k }))}
-                    onSave={() => handleSave(p.id)}
-                    onEdit={() => handleEdit(p.id)}
-                    onDelete={() => handleDelete(p.id)}
-                    onCancel={handleCancel}
-                />
-            ))}
-        </>
+        </div>
     );
 }
