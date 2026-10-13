@@ -42,7 +42,7 @@ export function pageGuidance(args: any): any {
             .cursor-description[data-typing="true"]::after{content:'';display:inline-block;height:1em;border-left:2px solid #a8bd85;margin-left:2px;vertical-align:-2px;animation:caret 1s steps(2,end) infinite}
             .ripple{position:fixed;width:30px;height:30px;border:1.5px solid #a8bd85;border-radius:50%;box-shadow:0 0 0 2px #0f0f0e66;animation:pulse .45s cubic-bezier(.22,.61,.36,1) forwards}
             @keyframes arrive{from{opacity:0}to{opacity:1}} @keyframes pulse{to{transform:scale(1.9);opacity:0}}
-            .lock-pill{position:fixed;right:12px;bottom:12px;display:flex;align-items:center;gap:6px;padding:5px 9px;background:#0f0f0ebf;color:#f6f4efd9;border-radius:6px;font:400 11px/1.3 'TamperSloth Geist','Geist Variable',system-ui,sans-serif;-webkit-font-smoothing:antialiased;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);opacity:1;transition:opacity 180ms ease,visibility 0s}
+            .lock-pill{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);display:flex;white-space:nowrap;align-items:center;gap:6px;padding:5px 9px;background:#0f0f0ebf;color:#f6f4efd9;border-radius:6px;font:400 11px/1.3 'TamperSloth Geist','Geist Variable',system-ui,sans-serif;-webkit-font-smoothing:antialiased;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);opacity:1;transition:opacity 180ms ease,visibility 0s}
             .lock-pill[hidden]{display:flex;opacity:0;visibility:hidden;transition:opacity 180ms ease,visibility 0s 180ms}
             .lock-dot{flex:none;width:5px;height:5px;border-radius:50%;background:#a8bd85}
             .lock-hint{color:#f6f4ef80}
