@@ -1,4 +1,5 @@
 import {tool} from "ai";
+import {createBrowserTools, browserImageOutput} from './browserTools';
 import {z} from "zod";
 import type {BackgroundScript} from "./types";
 import {
@@ -21,7 +22,6 @@ import {isValidMatchPattern} from "./url";
 import {type AskUserAnswer, rejectPendingAsk, setPendingAsk,} from "./askUserBus";
 import { skills, type SkillId } from "./skills";
 
-const tabId = Number(new URLSearchParams(window.location.search).get("tabId"));
 
 // Output budgets. Every tool result stays in the message history and is re-sent
 // on each subsequent step, so an uncapped result is charged many times over.
@@ -75,8 +75,26 @@ function diffTodoChanges(previous: TodoItem[], current: TodoItem[]): string[] {
 
 const SKILL_IDS = Object.keys(skills) as [SkillId, ...SkillId[]];
 
-export function createAgentTools(context: { conversationId: string }) {
+export function createAgentTools(context: { conversationId: string; abortSignal?: AbortSignal }) {
+    let tabId = Number(new URLSearchParams(window.location.search).get("tabId"));
+    // Check cancellation at each browser mutation, including later steps of a tool.
+    const guard = async () => {
+        if (context.abortSignal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    };
+    const guardedAPI = <T extends object,>(api: T, mutations: string[]): T => api && new Proxy(api, {
+        get(target, property) {
+            const value = Reflect.get(target, property);
+            if (typeof value !== 'function' || !mutations.includes(String(property))) return value;
+            return async (...args: unknown[]) => { await guard(); return Reflect.apply(value, target, args); };
+        },
+    });
+    const chrome = {...globalThis.chrome,
+        scripting: guardedAPI(globalThis.chrome.scripting, ['executeScript']),
+        tabs: guardedAPI(globalThis.chrome.tabs, ['create', 'update', 'remove', 'reload', 'goBack', 'goForward']),
+        windows: guardedAPI(globalThis.chrome.windows, ['update']),
+    };
     return {
+        ...createBrowserTools(() => tabId, id => { tabId = id; }),
         // ═══════════════════════════════════════════════
         //  Skills
         // ═══════════════════════════════════════════════
@@ -650,20 +668,10 @@ export function createAgentTools(context: { conversationId: string }) {
                     maxWidth: detail === "full" ? undefined : 1280,
                 });
                 if (response?.error) throw new Error(response.error);
-                return {screenshot: response.dataUrl as string};
+                return {screenshot: response.dataUrl as string, metadata: response.metadata};
             },
             toModelOutput: ({output}) => {
-                const base64 = output.screenshot.split(",")[1];
-                return {
-                    type: "content",
-                    value: [
-                        {
-                            type: "file" as const,
-                            data: {type: "data" as const, data: base64},
-                            mediaType: "image/jpeg",
-                        },
-                    ],
-                };
+                return browserImageOutput(output);
             },
         }),
 

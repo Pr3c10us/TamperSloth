@@ -16,6 +16,10 @@ option without the thinking-binding beta header. Dropping earlier thinking can
 make Claude spend more tokens reasoning again. Other providers keep their reasoning.
 See [Anthropic's preserved-thinking rules](https://platform.claude.com/docs/en/build-with-claude/preserved-thinking).
 
+Each live tab context snapshot stays in the run transcript immediately before
+the response it informed. Later steps append fresh metadata while replaying
+earlier snapshots unchanged, preserving the history bound to Claude's thinking.
+
 OpenAI requests use `store: false` and explicitly include encrypted reasoning.
 The SDK replays complete reasoning and function-call items, avoiding reliance
 on stored item references (including accounts where storage is disabled).

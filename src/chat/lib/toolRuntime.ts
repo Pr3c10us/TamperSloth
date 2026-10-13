@@ -2,17 +2,29 @@ import {tool, type ToolSet} from "ai";
 import {z} from "zod";
 import {compactToolOutput, isFailed, resultReceipt, serialize, type ToolMetric} from "./efficiency";
 import {skills} from "./skills";
+import {browserImageOutput} from './browserTools';
 
 export const TOOL_GROUPS = {
     browsing: ["clickElement", "typeText", "selectOption", "scrollPage", "submitForm", "waitForElement", "navigateHistory", "reloadPage"],
     scripting: ["viewCodeFiles", "createFileTool", "strReplaceTool", "deleteFileTool", "executeContentScript", "saveScript", "listScripts", "toggleScript", "removeScript", "reloadPage"],
     debugging: ["getDebugInfo", "getLocalStorage", "getCookies"],
-    visual: ["takeScreenshot"],
+    visual: ["takeScreenshot", "takeMarkedScreenshot"],
     tracking: ["TodoWrite", "TodoRead", "TodoClear"],
+    browser: ['browserTabs', 'accessibilityTree', 'persistentStore', 'siteRecipes', 'evaluateJavaScript'],
+    input: ['clickTarget', 'browserGesture', 'trustedInput', 'deepDOM', 'takeMarkedScreenshot'],
+    network: ['networkCapture', 'deepDOM'],
+    system: ['clipboard', 'browserDownload', 'browserNotify'],
 } as const;
 type Group = keyof typeof TOOL_GROUPS;
 type ModelOutputOptions = Parameters<NonNullable<ToolSet[string]["toModelOutput"]>>[0];
 const CORE = ["getCurrentTab", "getPageText", "getPageStructure", "getElementDetails", "navigateTo", "askUser", "getSkill", "enableTools", "readToolResult"];
+const PAGE_BARRIERS = new Set(['takeScreenshot', 'takeMarkedScreenshot', 'navigateTo', 'navigateHistory', 'reloadPage',
+    'clickElement', 'typeText', 'selectOption', 'scrollPage', 'submitForm', 'waitForElement', 'executeContentScript',
+    'saveScript', 'toggleScript', 'removeScript', 'evaluateJavaScript', 'clickTarget', 'browserGesture', 'trustedInput']);
+function needsPageBarrier(name: string, input: any) {
+    return PAGE_BARRIERS.has(name) || name === 'browserTabs' && input.action !== 'list'
+        || name === 'deepDOM' && input.action === 'evaluate' || name === 'networkCapture' && input.action === 'replay';
+}
 
 export interface ArchivedResult {name: string; input: unknown; output: unknown}
 
@@ -22,6 +34,10 @@ export function initialToolGroups(request: string): Group[] {
     if (/\b(click|fill|submit|scroll|select|search|browse|navigate)\b/i.test(request)) groups.push("browsing");
     if (/\b(debug|error|broken|fails?|not working|console|network)\b/i.test(request)) groups.push("debugging");
     if (/\b(screenshot|layout|appearance|restyle|dark mode)\b/i.test(request)) groups.push("visual");
+    if (/\b(tabs?|popups?|accessibility|recipes?|persistent|evaluate|javascript)\b/i.test(request)) groups.push('browser');
+    if (/\b(hover|canvas|drag|touch|rich text|keyboard|shadow|iframe|cross-origin)\b/i.test(request)) groups.push('input');
+    if (/\b(network|websocket|replay|requests?)\b/i.test(request)) groups.push('network');
+    if (/\b(clipboard|downloads?|notifications?)\b/i.test(request)) groups.push('system');
     return groups;
 }
 
@@ -38,6 +54,7 @@ export function createToolRuntime(rawTools: ToolSet, options: {
     findPrevious: (id: string) => ArchivedResult | undefined;
     onResult?: (id: string, result: ArchivedResult) => void;
 }) {
+    let pageChain: Promise<void> = Promise.resolve();
     const enabled = new Set<string>(CORE);
     const groups = new Set<Group>(initialToolGroups(options.request));
     for (const group of groups) TOOL_GROUPS[group].forEach(name => enabled.add(name));
@@ -51,8 +68,8 @@ export function createToolRuntime(rawTools: ToolSet, options: {
     const tools: ToolSet = {...rawTools};
 
     tools.enableTools = tool({
-        description: "Enable capabilities for this run: browsing (interact), scripting (files/saved scripts), debugging (logs/storage), visual (screenshots), tracking (todos).",
-        inputSchema: z.object({groups: z.array(z.enum(["browsing", "scripting", "debugging", "visual", "tracking"])).min(1).max(5)}),
+        description: "Enable groups: browsing (DOM input), scripting (files/scripts), debugging, visual, tracking, browser (tabs/raw JS/AX/store/recipes), input (trusted CDP events/deep DOM/frames), network (CDP capture/WebSocket/replay), system (clipboard/downloads/notifications).",
+        inputSchema: z.object({groups: z.array(z.enum(["browsing", "scripting", "debugging", "visual", "tracking", "browser", "input", "network", "system"])).min(1).max(9)}),
         execute: async ({groups: requested}) => {
             const added = [...new Set(requested)].filter(group => !groups.has(group));
             for (const group of added) {
@@ -69,7 +86,7 @@ export function createToolRuntime(rawTools: ToolSet, options: {
         execute: async ({resultId, offset, length, includeInput}) => {
             const entry = archive.get(resultId) ?? options.findPrevious(resultId);
             if (!entry) return {error: "Result not found in this conversation. Reinspect the source."};
-            if (entry.name === "takeScreenshot" && !includeInput) return entry.output;
+            if (entry.output && typeof entry.output === 'object' && 'screenshot' in entry.output && !includeInput) return entry.output;
             const text = serialize(includeInput ? entry.input : entry.output);
             let count = length;
             const page = () => ({resultId, tool: entry.name, offset, totalChars: text.length, text: text.slice(offset, offset + count),
@@ -96,6 +113,7 @@ export function createToolRuntime(rawTools: ToolSet, options: {
                 const start = performance.now();
                 let output: unknown;
                 try {
+                    if (callOptions.abortSignal?.aborted) throw new DOMException('Aborted', 'AbortError');
                     if (name === "getSkill" && loadedSkills.has(input.skill_id)) {
                         output = {ok: true, alreadyLoaded: input.skill_id, hint: "The skill is already in this run's context."};
                     } else {
@@ -106,11 +124,13 @@ export function createToolRuntime(rawTools: ToolSet, options: {
                             const navigation = output as Record<string, unknown>;
                             const wait = navigation.waitForSelector as {found?: boolean; error?: unknown} | undefined;
                             if (!wait?.error && wait?.found !== false) {
+                                if (callOptions.abortSignal?.aborted) throw new DOMException('Aborted', 'AbortError');
                                 const page = await rawTools.getPageText.execute!({selector: input.readSelector, responseFormat: "concise", maxLength: 3000, offset: 0}, callOptions);
                                 output = {...navigation, page};
                             }
                         }
                     }
+                    if (callOptions.abortSignal?.aborted) throw new DOMException('Aborted', 'AbortError');
                 } catch (error) {
                     if (callOptions.abortSignal?.aborted) throw error;
                     output = {error: error instanceof Error ? error.message : String(error)};
@@ -129,8 +149,8 @@ export function createToolRuntime(rawTools: ToolSet, options: {
             toModelOutput: async ({toolCallId, input, output}: ModelOutputOptions) => {
                 // Screenshot data is image content, never a base64 text payload.
                 let projection;
-                if (output && typeof output === "object" && "screenshot" in output && (name === "takeScreenshot" || name === "readToolResult")) {
-                    projection = await rawTools.takeScreenshot.toModelOutput!({toolCallId, input, output});
+                if (output && typeof output === "object" && "screenshot" in output) {
+                    projection = browserImageOutput(output);
                 } else if (originalProjection && !isFailed(output)) {
                     projection = await originalProjection({toolCallId, input, output});
                 } else {
@@ -140,6 +160,19 @@ export function createToolRuntime(rawTools: ToolSet, options: {
                 if (metric) metric.modelOutputChars = serialize(projection).length;
                 return projection;
             },
+        };
+        const wrappedExecute = tools[name].execute!;
+        tools[name].execute = async (input, callOptions) => {
+            if (!needsPageBarrier(name, input)) return wrappedExecute(input, callOptions);
+            // Reserve synchronously, before any await: a screenshot in
+            // the same model batch must follow earlier mutations and tab changes.
+            const previous = pageChain;
+            let release!: () => void;
+            pageChain = new Promise<void>(resolve => { release = resolve; });
+            try {
+                await previous;
+                return await wrappedExecute(input, callOptions);
+            } finally { release(); }
         };
     }
     return {tools, initialGuidance,

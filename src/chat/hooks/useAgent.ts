@@ -3,6 +3,7 @@ import {type ModelMessage, isStepCount, streamText, type UserContent} from "ai";
 import {getModel, MODELPROVIDERS, type ProviderId} from "../lib/provider.ts";
 import {createAgentTools} from "../lib/tools.ts";
 import {saveConversation, type StoredConversation} from "../lib/storage.ts";
+import {createConversationSaver} from '../lib/conversationSaver';
 import SYSTEM_PROMPT from "../lib/prompt.ts";
 import type {PendingAttachment} from "../components/AttachmentChip.tsx";
 import {createToolRuntime} from "../lib/toolRuntime";
@@ -107,21 +108,20 @@ export function useAgent() {
     const abortRef = useRef<AbortController | null>(null);
     const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingSaveRef = useRef<StoredConversation | null>(null);
-    const saveChainRef = useRef<Promise<void>>(Promise.resolve());
-
+    const saveRef = useRef<ReturnType<typeof createConversationSaver> | null>(null);
+    if (!saveRef.current) saveRef.current = createConversationSaver(saveConversation, error => {
+        setError(`Could not save chat: ${error instanceof Error ? error.message : String(error)}`);
+    });
     useEffect(() => {
         messagesRef.current = messages;
     }, [messages]);
 
-    // Writes whatever snapshot is pending, chained behind any in-flight write so
-    // concurrent read-modify-writes can't drop each other's updates.
+    // Keep one latest pending snapshot per chat while a write is in flight.
     const flushSave = useCallback(() => {
         const pending = pendingSaveRef.current;
         if (!pending) return;
         pendingSaveRef.current = null;
-        saveChainRef.current = saveChainRef.current
-            .then(() => saveConversation(pending))
-            .catch(() => {});
+        saveRef.current!(pending);
     }, []);
 
     useEffect(() => {
@@ -265,7 +265,7 @@ export function useAgent() {
                 let stepContext = {activeTools: 0, contextChars: 0, recordedAt: startedAt};
                 const metrics: RunMetrics = {providerId, modelId: resolvedModelId, startedAt,
                     steps: [], tools: [], compactedResults: 0, elapsedMs: 0};
-                const runtime = createToolRuntime(createAgentTools({conversationId}), {
+                const runtime = createToolRuntime(createAgentTools({conversationId, abortSignal: abortController.signal}), {
                     request: text,
                     findPrevious: (id) => {
                         for (const message of updatedMessages) {

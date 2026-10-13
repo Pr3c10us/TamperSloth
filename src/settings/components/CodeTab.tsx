@@ -6,9 +6,9 @@ import {
   deleteFile,
   deleteAllFilesForConversation,
   listAllCodeFiles,
-  loadConversations,
+  loadConversationHistory,
   type CodeFileEntry,
-  type StoredConversation,
+  type ConversationSummary,
 } from "@/src/chat/lib/storage";
 
 interface ConversationGroup {
@@ -23,13 +23,13 @@ export function CodeTab() {
 
   const load = async () => {
     setLoading(true);
-    const [files, conversations] = await Promise.all([
+    const [files, history] = await Promise.all([
       listAllCodeFiles(),
-      loadConversations(),
+      loadConversationHistory(),
     ]);
 
-    const convMap = new Map<string, StoredConversation>(
-      conversations.map((c) => [c.id, c]),
+    const convMap = new Map<string, ConversationSummary>(
+      history.conversations.map((c) => [c.id, c]),
     );
 
     const byConv = new Map<string, CodeFileEntry[]>();

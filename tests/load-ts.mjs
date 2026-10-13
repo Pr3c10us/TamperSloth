@@ -12,7 +12,8 @@ export function createLoader({globals = {}, mocks = {}} = {}) {
     const cache = new Map();
     const context = vm.createContext({console, URL, URLSearchParams, performance, crypto,
         setTimeout, clearTimeout, Blob, AbortController, DOMException,
-        window: {location: {search: '?tabId=7'}}, ...globals});
+        window: {location: {search: '?tabId=7'}},
+        chrome: {runtime: {sendMessage: async () => ({ok: true})}}, ...globals});
     function load(filename) {
         filename = path.resolve(filename);
         if (cache.has(filename)) return cache.get(filename).exports;

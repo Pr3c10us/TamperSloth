@@ -1,4 +1,6 @@
 import type {BackgroundScript, ScriptExecutionLog} from "@/src/chat/lib/types.ts";
+import {handleBrowserMessage, cdp} from './browserService';
+import {captureViewportScreenshot} from './screenshotCapture';
 import {
     deleteScriptValue,
     getScriptValue,
@@ -8,6 +10,15 @@ import {
 } from "@/src/chat/lib/storage.ts";
 
 chrome.sidePanel.setOptions({enabled: false});
+
+// Clear state left by the removed global stop control on extension reload.
+// Script registration below depends only on each script's own status.
+void Promise.all([
+    chrome.storage.local.remove(['ts_browser_control', 'ts_browser_audit']),
+    chrome.storage.session.remove(['ts_browser_status', 'ts_debugger_tabs']),
+    chrome.action.setBadgeText({text: ''}),
+    chrome.action.setTitle({title: 'TamperSloth'}),
+]).catch(error => console.warn('[Tampersloth] Could not clear legacy browser control state:', error));
 
 chrome.action.onClicked.addListener(async (tab) => {
     chrome.sidePanel.setOptions({
@@ -194,7 +205,12 @@ async function executeOnTab(
 
 // ── Registered Scripts Sync (auto-execution on matching pages) ──
 
-async function syncRegisteredScripts() {
+let syncChain: Promise<void> = Promise.resolve();
+function syncRegisteredScripts() {
+    syncChain = syncChain.catch(() => {}).then(syncRegisteredScriptsNow);
+    return syncChain;
+}
+async function syncRegisteredScriptsNow() {
     if (!hasUserScripts()) {
         console.warn('[Tampersloth] Skipping script registration — userScripts API not available. Go to chrome://extensions > Tampersloth details > enable "Allow User Scripts", then reload.');
         return;
@@ -256,11 +272,13 @@ function handleUserScriptMessage(message: any, _: any, sendResponse: (r: any) =>
         return true;
     }
     if (message.type === 'SCRIPT_SET_VALUE') {
-        setScriptValue(message.scriptId, message.key, message.value).then(() => sendResponse({ok: true}));
+        void setScriptValue(message.scriptId, message.key, message.value)
+            .then(() => sendResponse({ok: true}), error => sendResponse({error: error.message}));
         return true;
     }
     if (message.type === 'SCRIPT_DELETE_VALUE') {
-        deleteScriptValue(message.scriptId, message.key).then(() => sendResponse({ok: true}));
+        void deleteScriptValue(message.scriptId, message.key)
+            .then(() => sendResponse({ok: true}), error => sendResponse({error: error.message}));
         return true;
     }
     if (message.type === 'SCRIPT_LIST_VALUES') {
@@ -290,7 +308,17 @@ if (chrome.runtime.onUserScriptMessage) {
     chrome.runtime.onUserScriptMessage.addListener(handleUserScriptMessage);
 }
 
-chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // Only the extension's own UI may control tabs or evaluate code.
+    if (message.type === 'CLIPBOARD_OFFSCREEN') return false;
+    if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL('')) || sender.tab) {
+        sendResponse({error: 'Browser control is restricted to the extension UI'});
+        return false;
+    }
+    if (message.type?.startsWith('BROWSER_')) {
+        void handleBrowserMessage(message).then(sendResponse).catch(error => sendResponse({error: error.message}));
+        return true;
+    }
     // On-demand script execution (temp scripts from AI)
     if (message.type === 'EXECUTE_SCRIPT') {
         (async () => {
@@ -310,30 +338,7 @@ chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
     if (message.type === 'TAKE_SCREENSHOT') {
         (async () => {
             try {
-                const tab = await chrome.tabs.get(message.tabId);
-                if (!tab?.windowId) throw new Error('No window for tab');
-                await chrome.windows.update(tab.windowId, {focused: true});
-                await chrome.tabs.update(message.tabId, {active: true});
-                let dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
-                    format: 'jpeg',
-                    quality: 80,
-                });
-                if (message.maxWidth && message.maxWidth > 0) {
-                    const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
-                    try {
-                        if (bitmap.width > message.maxWidth) {
-                            const width = message.maxWidth;
-                            const canvas = new OffscreenCanvas(width, Math.max(1, Math.round(bitmap.height * width / bitmap.width)));
-                            canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-                            const blob = await canvas.convertToBlob({type: 'image/jpeg', quality: 0.8});
-                            const bytes = new Uint8Array(await blob.arrayBuffer());
-                            let binary = '';
-                            for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-                            dataUrl = 'data:image/jpeg;base64,' + btoa(binary);
-                        }
-                    } finally { bitmap.close(); }
-                }
-                sendResponse({dataUrl});
+                sendResponse(await captureViewportScreenshot(message.tabId, message.maxWidth));
             } catch (e: any) {
                 sendResponse({error: e.message});
             }
@@ -387,8 +392,10 @@ chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
     }
     // Reload a specific tab (e.g. after pausing/deleting a script)
     if (message.type === 'RELOAD_TAB') {
-        if (message.tabId) chrome.tabs.reload(message.tabId).catch(() => {});
-        sendResponse({ok: true});
+        void (async () => {
+            if (message.tabId) await chrome.tabs.reload(message.tabId);
+            sendResponse({ok: true});
+        })().catch(error => sendResponse({error: error.message}));
         return true;
     }
 
@@ -459,19 +466,14 @@ chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
 
         (async () => {
             try {
-                await chrome.debugger.attach({tabId: targetTabId}, '1.3');
-                await chrome.debugger.sendCommand({tabId: targetTabId}, 'Runtime.enable');
-                await chrome.debugger.sendCommand({tabId: targetTabId}, 'Log.enable');
-                await chrome.debugger.sendCommand({tabId: targetTabId}, 'Network.enable');
+                await cdp.attach(targetTabId);
 
                 await new Promise(resolve => setTimeout(resolve, duration));
 
                 chrome.debugger.onEvent.removeListener(onEvent);
-                await chrome.debugger.detach({tabId: targetTabId}).catch(() => {});
                 sendResponse({logs: captured});
             } catch (e: any) {
                 chrome.debugger.onEvent.removeListener(onEvent);
-                await chrome.debugger.detach({tabId: targetTabId}).catch(() => {});
                 sendResponse({error: e.message});
             }
         })();

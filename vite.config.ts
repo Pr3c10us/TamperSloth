@@ -25,6 +25,7 @@ export default defineConfig({
       input: {
         main: "./index.html",
         background: resolve(__dirname, "src/background/index.ts"),
+        clipboard: resolve(__dirname, "clipboard.html"),
       },
       output: {
         entryFileNames: (chunk) => {

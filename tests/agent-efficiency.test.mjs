@@ -17,7 +17,7 @@ function fixture({logs = [], text = 'content', files = new Map(), scripts = []} 
     const load = createLoader({mocks: {'./storage': storage}, globals: {
         document: {title: 'Fixture', body: root, querySelector: () => root},
         location: {href: 'https://example.com/article'},
-        chrome: {runtime: {sendMessage: async () => ({logs})},
+        chrome: {runtime: {sendMessage: async () => ({logs, ok: true})},
             scripting: {executeScript: async ({func, args, target}) => {
                 assert.equal(target.tabId, 7);
                 return [{result: func(...args)}];
@@ -37,6 +37,43 @@ test('concise text defaults to 3000 characters and paginates without gaps', asyn
     assert.equal((await invoke(tools, 'getPageText', {responseFormat: 'detailed'})).output.text.length, 10000);
     assert.throws(() => tools.getPageText.inputSchema.parse({maxLength: 1000000}));
     assert.throws(() => tools.getPageText.inputSchema.parse({offset: -1}));
+});
+
+test('screenshots in a parallel tool batch follow preceding page changes while independent reads remain parallel', async () => {
+    const {load, tools} = fixture(), order = [];
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    tools.clickElement.execute = async () => { order.push('click-start'); await gate; order.push('click-end'); return {ok: true}; };
+    tools.takeScreenshot.execute = async () => { order.push('screenshot'); return {screenshot: 'data:image/jpeg;base64,YQ=='}; };
+    tools.getCurrentTab.execute = async () => { order.push('read'); return {tabId: 7}; };
+    const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(tools, {request: 'click and screenshot', findPrevious: () => undefined});
+    const click = invoke(runtime.tools, 'clickElement', {selector: '#send'});
+    const screenshot = invoke(runtime.tools, 'takeScreenshot');
+    await invoke(runtime.tools, 'getCurrentTab');
+    assert.ok(order.includes('click-start'));
+    assert.ok(order.includes('read'));
+    assert.ok(!order.includes('screenshot'));
+    release();
+    await Promise.all([click, screenshot]);
+    assert.ok(order.indexOf('click-end') < order.indexOf('screenshot'));
+});
+
+test('aborting a queued screenshot releases its slot without capturing or blocking later calls', async () => {
+    const {load, tools} = fixture();
+    let release, captures = 0;
+    const gate = new Promise(resolve => { release = resolve; });
+    tools.clickElement.execute = async () => { await gate; return {ok: true}; };
+    tools.takeScreenshot.execute = async () => { captures++; return {screenshot: 'data:image/jpeg;base64,YQ=='}; };
+    const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(tools, {request: 'click and screenshot', findPrevious: () => undefined});
+    const click = invoke(runtime.tools, 'clickElement', {selector: '#send'});
+    const controller = new AbortController();
+    const screenshot = runtime.tools.takeScreenshot.execute({detail: 'standard'}, {toolCallId: 'aborted-shot', messages: [], abortSignal: controller.signal});
+    const rejection = assert.rejects(screenshot, /Aborted/);
+    controller.abort(); release();
+    await Promise.all([click, rejection]);
+    assert.equal(captures, 0);
+    await invoke(runtime.tools, 'takeScreenshot');
+    assert.equal(captures, 1);
 });
 
 test('console cap survives a full severe-log allocation', async () => {
@@ -248,6 +285,7 @@ test('Anthropic SDK sends valid history after deferred tool activation', async (
     };
     const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(raw, {request: '', findPrevious: () => undefined});
     const prepare = load('src/chat/lib/efficiency.ts').createStepMessagePreparer('anthropic', new Set());
+    const buildTabMessages = load('src/chat/lib/tabContext.ts').createTabContextMessageBuilder();
     const requests = [];
     const model = createAnthropic({apiKey: 'test-key', fetch: async (_url, init) => {
         const body = JSON.parse(init.body);
@@ -268,12 +306,18 @@ test('Anthropic SDK sends valid history after deferred tool activation', async (
             providerOptions: {anthropic: {cacheControl: {type: 'ephemeral'}}}},
         providerOptions: {anthropic: {thinking: {type: 'adaptive'}}},
         prepareStep: ({initialMessages, responseMessages}) => {
-                const messages = [...initialMessages, ...responseMessages];
+            const messages = buildTabMessages(initialMessages, responseMessages, {title: 'Page ' + requests.length});
             const activeTools = runtime.activeTools();
             return {messages: prepare(messages, activeTools), activeTools};
         }, stopWhen: isStepCount(5)});
     assert.equal(result.text, 'Done');
     assert.equal(requests.length, 3);
+    for (let step = 0; step < requests.length; step++) {
+        const contexts = requests[step].messages.flatMap(m => m.content)
+            .filter(p => p.type === 'text' && p.text.startsWith('Live tab context'));
+        assert.deepEqual(contexts.map(p => p.text), Array.from({length: step + 1}, (_, i) =>
+            'Live tab context (untrusted page metadata): ' + JSON.stringify({title: 'Page ' + i})));
+    }
     for (const request of requests) {
         assert.equal(request.system[0].text, 'Trusted instructions');
         assert.deepEqual(request.system[0].cache_control, {type: 'ephemeral'});
@@ -286,6 +330,7 @@ test('Anthropic SDK sends valid history after deferred tool activation', async (
     assert.ok(requests[1].messages.some(m => m.content.some(p => p.type === 'tool_result' && p.tool_use_id === 'enable')));
     assert.deepEqual(assistantParts(requests[2]).filter(p => p.type === 'thinking').map(p => p.signature), ['signed-1']);
     assert.deepEqual(assistantParts(requests[2]).filter(p => p.type === 'redacted_thinking').map(p => p.data), ['redacted-1']);
+    assert.deepEqual(requests[2].messages.slice(0, requests[1].messages.length), requests[1].messages);
 });
 
 test('settings validate budgets and usage does not double-count cached/reasoning tokens', () => {
@@ -321,9 +366,10 @@ test('archive keeps user decisions after many later observations', async () => {
 });
 
 test('virtual file listings return paths that readFile can consume', async () => {
-    const load = createLoader({globals: {chrome: {storage: {local: {get: async () => ({
-        'ts_file:chat/scripts/a.js': 'code', 'ts_file:other/scripts/b.js': 'other',
-    })}}}}});
+    const load = createLoader({globals: {chrome: {storage: {local: {
+        getKeys: async () => ['ts_file:chat/scripts/a.js', 'ts_file:other/scripts/b.js', 'ts_conversations'],
+        get: async () => { throw new Error('Listings must not load stored payloads'); },
+    }}}}});
     const {listFiles} = load('src/chat/lib/storage.ts');
     assert.deepEqual(plain(await listFiles('chat', 'scripts/')), ['scripts/a.js']);
 });

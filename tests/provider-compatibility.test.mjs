@@ -10,6 +10,44 @@ const {agentProviderOptions} = load('src/chat/lib/providerCompatibility.ts');
 const {createStepMessagePreparer} = load('src/chat/lib/efficiency.ts');
 const {createToolRuntime} = load('src/chat/lib/toolRuntime.ts');
 
+test('Gemini: production tools expose nonrecursive store values and decode JSON before execution', async () => {
+    const messages = [];
+    const browserLoad = createLoader({globals: {chrome: {runtime: {sendMessage: async message => {
+        messages.push(message);
+        return {ok: true};
+    }}}}});
+    const tools = browserLoad('src/chat/lib/tools.ts').createAgentTools({conversationId: 'gemini-store'});
+    const modelId = MODELPROVIDERS.find(p => p.id === 'google').defaultModel;
+    const value = {nested: {items: [1, false, null, {text: 'hello'}]}};
+    let requests = 0;
+    const transport = async (_url, init) => {
+        const body = JSON.parse(init.body);
+        const declarations = body.tools.flatMap(t => t.functionDeclarations ?? []);
+        const schema = declarations.find(t => t.name === 'persistentStore').parametersJsonSchema;
+        assert.equal(schema.properties.value.type, 'string');
+        assert.ok(!JSON.stringify(schema).includes('$ref'), 'Store schema must not expose recursive JSON references');
+        assert.ok(!schema.required.includes('value'), 'Read/list/delete do not need a value');
+        const calls = requests++ === 0 ? [{name: 'persistentStore', input: {
+            action: 'set', namespace: 'test', key: 'nested', value: JSON.stringify(value),
+        }}] : [];
+        return new Response(JSON.stringify(response('google', modelId, requests - 1, calls)),
+            {headers: {'content-type': 'application/json'}});
+    };
+    const result = await generateText({model: getModel('google', 'test-key', modelId, transport),
+        prompt: 'Store the nested JSON value', tools, stopWhen: isStepCount(3)});
+    assert.equal(result.text, 'Done');
+    assert.equal(requests, 2);
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].operation, 'store');
+    assert.deepEqual(messages[0].input.value, value);
+    const storeSchema = tools.persistentStore.inputSchema;
+    for (const sample of [false, 0, 'hello', [], {}]) {
+        assert.deepEqual(storeSchema.parse({action: 'set', namespace: 'test', value: JSON.stringify(sample)}).value, sample);
+    }
+    assert.throws(() => storeSchema.parse({action: 'set', namespace: 'test', value: '{broken'}), /valid JSON/);
+    assert.throws(() => storeSchema.parse({action: 'set', namespace: 'test', value: '1e999'}));
+});
+
 for (const provider of ['openai', 'anthropic', 'google', 'deepseek']) {
     test(`${provider}: canonical image files reach the provider without losing media data`, async () => {
         let request;
