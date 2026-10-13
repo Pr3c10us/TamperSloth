@@ -1,6 +1,6 @@
 import type { ProviderId } from "./provider.ts";
 import type { BackgroundScript } from "./types.ts";
-import {readChat, readChatSummaries, writeChat, removeChat, type ConversationSummary} from './conversationDB';
+import {readChat, readChatSummaries, writeChat, removeChat, writeAttachments, readAttachment, type ConversationSummary, type StoredAttachmentData} from './conversationDB';
 export type {ConversationSummary} from './conversationDB';
 
 
@@ -91,6 +91,15 @@ export async function saveConversation(conversation: StoredConversation): Promis
     // One conversation per record; no chrome.storage.onChanged payloads and no
     // read/modify/write of other chats. Transcript and summary commit atomically.
     await writeChat(conversation);
+}
+
+/** Attachment bytes are written once, when the message is sent; transcripts reference them by id. */
+export async function saveAttachments(records: StoredAttachmentData[]): Promise<void> {
+    if (records.length) await writeAttachments(records);
+}
+
+export async function loadAttachment(id: string): Promise<Blob | null> {
+    return readAttachment(id);
 }
 
 export async function deleteConversation(id: string): Promise<void> {

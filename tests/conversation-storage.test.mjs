@@ -101,3 +101,19 @@ test('slow saves coalesce snapshots per conversation without dropping other chat
     assert.deepEqual(writes.map(c => [c.id, c.updatedAt]), [['a', 1], ['a', 99], ['b', 4], ['bad', 5], ['c', 6]]);
     assert.deepEqual(errors, ['disk failure']);
 });
+
+test('attachments persist apart from transcripts and are removed with their chat', async () => {
+    const f = fixture();
+    await f.storage.saveConversation(chat('with-images'));
+    await f.storage.saveConversation(chat('other'));
+    await f.storage.saveAttachments([
+        {id: 'img-1', conversationId: 'with-images', blob: new Blob(['png-bytes'], {type: 'image/png'})},
+        {id: 'img-2', conversationId: 'other', blob: new Blob(['other'])},
+    ]);
+    const reloaded = f.reload();
+    const blob = await reloaded.loadAttachment('img-1');
+    assert.equal(await blob.text(), 'png-bytes');
+    await reloaded.deleteConversation('with-images');
+    assert.equal(await reloaded.loadAttachment('img-1'), null);
+    assert.ok(await reloaded.loadAttachment('img-2'), 'Other chats keep their attachments');
+});

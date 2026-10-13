@@ -1,8 +1,21 @@
-import { memo } from "react";
-import type { ChatMessage } from "../hooks/useAgent";
+import { memo, useEffect, useState } from "react";
+import type { ChatMessage, StoredAttachment } from "../hooks/useAgent";
+import { attachmentUrl } from "../lib/attachmentUrls";
 import { MarkdownContent } from "./Markdown";
 import { PickedElementChip } from "./PickedElementChip";
 import { AttachmentChip } from "./AttachmentChip";
+
+// Stored chats only keep an attachment id; the thumbnail URL is minted from IndexedDB.
+function SentAttachment({ att }: { att: StoredAttachment }) {
+    const [url, setUrl] = useState<string | null>(null);
+    useEffect(() => {
+        if (att.kind !== "image" || !att.id) return;
+        let live = true;
+        void attachmentUrl(att.id).then((u) => live && setUrl(u));
+        return () => { live = false; };
+    }, [att.id, att.kind]);
+    return <AttachmentChip att={{ ...att, url }} />;
+}
 
 // Streaming re-renders the whole list on every delta; `msg` keeps its identity
 // for every message except the one being written, so memo skips the rest.
@@ -17,7 +30,7 @@ export const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage
             {attachments.length > 0 && (
                 <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
                     {attachments.map((a, i) => (
-                        <AttachmentChip key={i} att={a} />
+                        <SentAttachment key={a.id ?? i} att={a} />
                     ))}
                 </div>
             )}

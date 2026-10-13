@@ -6,6 +6,15 @@ transaction. History and code-file grouping read summaries; selecting a chat
 reads just its transcript. Saving a chat does not read other chats or broadcast
 their contents through `chrome.storage.onChanged`.
 
+Attachment bytes live in a separate `attachments` store (database version 2),
+written once when the message is sent and keyed by an id the transcript keeps;
+autosave never rewrites them. Thumbnails mint fresh object URLs from that store
+on each panel load, because `blob:` URLs die with the document. Deleting a chat
+deletes its attachments in the same transaction. Chats saved before this change
+have no stored bytes, so their images show a placeholder. When building model
+input, the newest message sends all its attachments and earlier ones share a
+budget of `MAX_HISTORY_ATTACHMENTS` (newest first); the rest are named in a note.
+
 The previous implementation stored all conversations in the `ts_conversations`
 Chrome storage key. Autosave repeatedly read and rewrote the whole archive.
 Chrome delivers both old and new values to storage listeners, so large archives
