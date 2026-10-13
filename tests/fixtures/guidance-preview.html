@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TamperSloth · Guidance lab</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f6f4ef;color:#0f0f0e;font:15px/1.6 system-ui}main{max-width:1040px;margin:64px auto;padding:0 32px}header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #c9c2b0;padding-bottom:20px}.brand{font:bold 18px system-ui;letter-spacing:-.6px}.eyebrow{font:11px system-ui;letter-spacing:2px;text-transform:uppercase;color:#7a7368}h1{font:normal 64px/1.05 Georgia;margin:40px 0 16px;letter-spacing:-2px}h1 em{color:#3f4a2a}p{color:#7a7368;max-width:550px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:64px;margin-top:68px}.panel{border:1px solid #c9c2b0;border-radius:16px;padding:32px;background:#faf8f2}h2{font:28px Georgia;margin-top:0}label{display:block;margin:20px 0 8px;color:#3a2e26}input,select{width:100%;padding:12px;border:1px solid #c9c2b0;border-radius:8px;background:transparent;font:inherit}button{background:#3f4a2a;color:#faf8f2;border:0;border-radius:8px;padding:12px 18px;cursor:pointer;font:inherit}button:focus-visible{outline:3px solid #92611c;outline-offset:4px}.controls{display:flex;flex-wrap:wrap;gap:8px;margin-top:28px}.secondary{background:#e5dfd3;color:#3f4a2a}#save{margin-top:24px}#saved{color:#3f4a2a}code{font-size:12px}#result{color:#3f4a2a;min-height:28px;margin-top:24px}@media(max-width:650px){.grid{grid-template-columns:1fr}h1{font-size:44px}}
+</style>
+<main><header><span class="brand">tampersloth<span style="color:#6b7a4f"> ✳</span></span><span class="eyebrow">Guidance lab</span></header>
+<span class="eyebrow" style="display:block;margin-top:40px">A little direction goes a long way</span><h1>Follow along.<br><em>At your own pace.</em></h1><p>A real-page fixture for annotations, the agent cursor, and guided steps. Use Tab to reach the form. Escape pauses a waiting step.</p>
+<div class="grid"><section class="panel"><h2>Your preferences</h2><label for="name">Display name</label><input id="name" placeholder="Your name"><label for="plan">Workspace plan</label><select id="plan"><option>Personal</option><option>Team</option></select><button id="save">Save preferences</button><p id="saved" hidden>Preferences saved.</p></section>
+<section><h2 style="margin-top:0">Make the next step clear.</h2><p>Choose a drawing, then try the guided step. Wrong clicks leave the step waiting; Save completes it after the confirmation appears.</p><div class="controls"><button data-kind="bracket">Brackets</button><button data-kind="arrow">Arrow</button><button data-kind="highlight">Highlight</button><button data-kind="ellipse">Ellipse</button><button data-kind="rectangle">Rectangle</button><button id="path">Freehand</button><button id="cursor">Cursor cues</button><button id="wait">Guide me</button><button id="clear" class="secondary">Clear</button></div><div id="result" role="status"></div></section></div></main>
+<script type="module">
+import {pageGuidance} from '/src/background/pageGuidance.ts';
+const draw=args=>pageGuidance({...args,assets:{sans:'/fonts/geist-latin-wght-normal.woff2',heading:'/fonts/instrument-serif-latin-400-italic.woff2',icon:'/favicon.svg'}});
+const result=document.querySelector('#result');
+for(const [kind,title] of [['rectangle','Dashed outline'],['highlight','Dashed highlight']]) {
+    const button=document.createElement('button');button.textContent=title;
+    button.onclick=()=>{draw({action:'clear'});draw({action:'draw',id:'dashed-demo',kind,lineStyle:'dashed',selector:'#save',label:'Save your preferences'});};
+    document.querySelector('.controls').append(button);
+}
+document.querySelector('#save').onclick=()=>{document.querySelector('#saved').hidden=false;};
+document.querySelectorAll('[data-kind]').forEach(button=>button.onclick=()=>{draw({action:'clear'});draw({action:'draw',id:'demo',kind:button.dataset.kind,selector:'#save',label:'Save your preferences',color:'moss'});});
+document.querySelector('#path').onclick=()=>{draw({action:'clear'});const b=document.querySelector('#name').getBoundingClientRect();draw({action:'draw',kind:'freehand',points:[{x:b.x,y:b.bottom+8},{x:b.x+b.width*.3,y:b.bottom+12},{x:b.right,y:b.bottom+8}],color:'amber'});};
+document.querySelector('#clear').onclick=()=>draw({action:'clear'});
+document.querySelector('#cursor').onclick=()=>{const b=document.querySelector('#save').getBoundingClientRect();draw({action:'cursor',method:'Input.dispatchMouseEvent',params:{type:'mousePressed',x:b.x+b.width/2,y:b.y+b.height/2}});};
+document.querySelector('#wait').onclick=()=>{document.querySelector('#saved').hidden=true;draw({action:'start',id:'demo-step',event:'click',selector:'#save',expectedSelector:'#saved',expectedState:'visible',instruction:'Save your preferences',timeoutMs:15000});result.textContent='Waiting for your action…';const timer=setInterval(()=>{const r=draw({action:'poll',id:'demo-step'});if(r.status!=='waiting'){clearInterval(timer);result.textContent=r.status+(r.hint?' · '+r.hint:' · Confirmed from the page.');}},250);};
+draw({action:'draw',kind:'bracket',selector:'#save',label:'Save your preferences'});
+</script></html>

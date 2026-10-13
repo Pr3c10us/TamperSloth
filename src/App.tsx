@@ -126,7 +126,7 @@ function App() {
             {/* Header */}
             <header className="flex shrink-0 items-center justify-between px-4 py-3.5">
                 <div className="flex items-center gap-2.5">
-                    <img src="favicon.svg" className="h-[22px] w-[22px]" alt=""/>
+                    {/*<img src="favicon.svg" className="h-[22px] w-[22px]" alt=""/>*/}
                 </div>
                 <TooltipProvider delayDuration={300}>
                     <div className="flex items-center gap-1.5">
@@ -171,7 +171,7 @@ function App() {
                             className="flex w-full cursor-pointer items-center gap-3 rounded-[10px] bg-foreground px-3.5 py-3 text-left transition-transform active:scale-[0.99]"
                         >
                             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-background">
-                                <Sparkles strokeWidth={1.5} className="size-[18px] text-foreground"/>
+                                <img src="icon.svg" className="h-7 w-7" alt=""/>
                             </div>
                             <div className="min-w-0 flex-1">
                                 <div

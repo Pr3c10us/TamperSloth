@@ -470,6 +470,8 @@ export function useAgent() {
                     setError(err.message ?? "Something went wrong");
                 }
             } finally {
+                // Keep the cursor through idle tool pauses, then remove all run decorations.
+                await chrome.runtime.sendMessage({type:'BROWSER_RUN_END'}).catch(()=>{});
                 updateAssistant(m => ({...m, runMetrics: m.runMetrics
                     ? {...m.runMetrics, elapsedMs: Math.round(performance.now() - started)} : undefined}));
                 abortRef.current = null;

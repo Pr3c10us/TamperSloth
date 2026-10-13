@@ -1,6 +1,7 @@
 import type {BackgroundScript, ScriptExecutionLog} from "@/src/chat/lib/types.ts";
 import {handleBrowserMessage, cdp} from './browserService';
 import {captureViewportScreenshot} from './screenshotCapture';
+import {installPanelLifecycle, cleanupBrowserGuidance} from './panelLifecycle';
 import {
     deleteScriptValue,
     getScriptValue,
@@ -10,6 +11,7 @@ import {
 } from "@/src/chat/lib/storage.ts";
 
 chrome.sidePanel.setOptions({enabled: false});
+if(chrome.runtime.onConnect) installPanelLifecycle(cdp);
 
 // Clear state left by the removed global stop control on extension reload.
 // Script registration below depends only on each script's own status.
@@ -314,6 +316,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL('')) || sender.tab) {
         sendResponse({error: 'Browser control is restricted to the extension UI'});
         return false;
+    }
+    if(message.type==='BROWSER_RUN_END') {
+        void cleanupBrowserGuidance(cdp).then(()=>sendResponse({ok:true})).catch(error=>sendResponse({error:error.message}));
+        return true;
     }
     if (message.type?.startsWith('BROWSER_')) {
         void handleBrowserMessage(message).then(sendResponse).catch(error => sendResponse({error: error.message}));

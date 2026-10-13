@@ -30,7 +30,7 @@ export function browserImageOutput(output: any) {
     ]};
 }
 
-export function createBrowserTools(getTabId: () => number, selectTab: (id: number) => void) {
+export function createBrowserTools(getTabId: () => number, selectTab: (id: number) => void, abortSignal?: AbortSignal) {
     const make = <K extends BrowserOperation,>(operation: K, description: string) => tool({
         description, inputSchema: (operation === 'store' ? storeToolSchema : browserSchemas[operation]) as z.ZodType<Record<string, unknown>>,
         execute: async input => {
@@ -43,6 +43,56 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
         ...(['perception', 'gesture'].includes(operation) ? {toModelOutput: ({output}: {output: any}) => output.screenshot ? browserImageOutput(output) : {type: 'text' as const, value: JSON.stringify(output)}} : {}),
     });
     return {
+        annotatePage: tool({description:'Draw/remove/clear non-blocking on-page guidance: arrow, highlight, rectangle, ellipse, bracket, freehand or label. Anchor to a unique CSS selector (tracks layout/scroll), or viewport CSS box/points. Labels are text; labelPosition places them away from controls. Colors moss/amber/sky/rose; solid/dashed lines; lifetimeMs 0 persists. Clear when finished.',
+            inputSchema:browserSchemas.guidance.omit({completion:true,annotationIds:true,instruction:true,event:true,expectedSelector:true,expectedState:true,timeoutMs:true,index:true,cue:true}).extend({action:z.enum(['draw','remove','clear'])}),
+            execute:input=>browserCall('guidance',{...input,tabId:input.tabId ?? getTabId()}),
+        }),
+        waitForUserAction: tool({
+            description:'Atomically draw one brief target tip and wait for user click/input/change/submit/focus, pointerup for drawing/dragging, or event state. completion {selector,state:visible|absent|checked|selected|pressed} proves success and skips an already-finished step before waiting. Choose a success condition, not button visibility. expectedSelector requires a resulting change after action. annotationIds retains intentional drawings until action. Observation failures return needsReview with fresh DOM/screenshot: inspect progress and resume at the first unfinished step, preserving visual guidance. Never collect field values. Escape or Stop cancels.',
+            inputSchema: browserSchemas.guidance.pick({tabId:true,completion:true,annotationIds:true,selector:true,instruction:true,event:true,expectedSelector:true,expectedState:true,timeoutMs:true}).extend({instruction:z.string().min(1).max(300)}),
+            execute: async (input, options) => {
+                const tabId=input.tabId ?? getTabId(), id=crypto.randomUUID();
+                const signal=abortSignal ?? options.abortSignal;
+                if (input.event==='state' && !input.expectedSelector && !input.completion) throw new Error('State waits require expectedSelector or completion');
+                if (signal?.aborted) throw new DOMException('Aborted','AbortError');
+                const page=async()=>{try{const tab=await chrome.tabs.get(tabId);return {url:tab.url,title:tab.title};}catch{return {unavailable:true};}};
+                const recover=async(reason: string, observation: any={})=>{
+                    if(signal?.aborted) throw new DOMException('Aborted','AbortError');
+                    await browserCall('guidance',{tabId,id,action:'cancel'}).catch(()=>{});
+                    const [dom,image]=await Promise.allSettled([
+                        browserCall('accessibility',{tabId,mode:'dom',maxNodes:80}),
+                        browserCall('perception',{tabId,mode:'plain'}),
+                    ]);
+                    if(signal?.aborted) throw new DOMException('Aborted','AbortError');
+                    return {...observation,status:'needsReview',recoverable:true,reason,page:await page(),
+                        instruction:input.instruction,completion:input.completion,
+                        ...(dom.status==='fulfilled' ? {currentState:dom.value} : {inspectionIssue:String(dom.reason)}),
+                        ...(image.status==='fulfilled' ? image.value : {}),
+                        hint:'Inspect this fresh DOM/screenshot against completed steps. Resume visual guidance at the first unfinished step with current selectors. Do not repeat finished actions or abandon highlighting because this observation failed. If the page is still loading, wait for readiness. After two recovery attempts without new evidence, ask the user how to proceed.'};
+                };
+                let started;
+                try {started=await browserCall('guidance',{...input,tabId,id,action:'start'});}
+                catch(error){return recover(error instanceof Error ? error.message : String(error));}
+                if(started.status!=='waiting') return {...started,page:await page()};
+                const cancel=()=>{void browserCall('guidance',{tabId,id,action:'cancel'}).catch(()=>{});};
+                signal?.addEventListener('abort',cancel,{once:true});
+                const deadline=Date.now()+input.timeoutMs+1000;
+                try {
+                    while (true) {
+                        if(signal?.aborted) throw new DOMException('Aborted','AbortError');
+                        let result;
+                        try{result=await browserCall('guidance',{tabId,id,action:'poll'});}
+                        catch(error){return await recover(error instanceof Error ? error.message : String(error));}
+                        if(result.status!=='waiting') {
+                            if(['lost','timeout'].includes(result.status)) return await recover(result.hint ?? result.status,result);
+                            return {...result,page:await page(),hint:result.hint ?? 'Read the updated DOM or screenshot to verify the outcome before the next instruction.'};
+                        }
+                        if(Date.now()>=deadline) return await recover('The page stopped reporting progress.');
+                        await new Promise<void>(resolve=>setTimeout(resolve,250));
+                    }
+                } finally {signal?.removeEventListener('abort',cancel); await browserCall('guidance',{tabId,id,action:'cancel'}).catch(()=>{});}
+            },
+        }),
         clickTarget: make('gesture', 'Trusted element-anchored click. Use target {selector}, {role,name}, {text}, or {mark,snapshotId}; no pixel arithmetic. Scrolls into view, rejects ambiguity/occlusion, resolves again after hover, then returns actual hit/focus/DOM/URL/dialog feedback. Default action click. Coordinates {x,y} are viewport CSS fallback.'),
         browserGesture: make('gesture', 'Composite trusted gestures: hover(target,duration), drag(from,to,steps,duration,humanize), scroll(target or delta,smooth), type(text,perKeyDelay), press(chord such as Ctrl+Shift+K), pinch(target,factor), rotate(target,angle), selectRange(from,to). Element targets accept selector, role+name, text, or mark+snapshotId. Feedback defaults to 500ms; postScreenshot adds a crop.'),
         takeMarkedScreenshot: make('perception', 'Screenshot with marks and full selector/role/name/bbox legend; marks include only visible, non-occluded interactables, capped at 50. Click via clickTarget target {mark,snapshotId}. For canvas use mode grid (100 CSS px cells), then region C4 with snapshotId, scale 3 and gridSize 10 for precision. crosshair {x,y} previews a proposed point. Metadata reports CSS/device/image pixels, DPR, scroll, viewport, frame offsets and crop transforms. mode contours emits unverified visual shape marks (no OCR).'),

@@ -6,6 +6,12 @@ import Settings from "@/src/settings";
 import Chat from "@/src/chat";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
+// Chrome disconnects this port when the side-panel document closes.
+if(typeof globalThis.chrome!=='undefined' && typeof chrome.runtime?.connect==='function' && new URLSearchParams(location.search).has('tabId')) {
+  const panelPort=chrome.runtime.connect({name:'tampersloth-panel'});
+  window.addEventListener('pagehide',()=>panelPort.disconnect(),{once:true});
+}
+
 createRoot(document.getElementById('root')!).render(
   <HashRouter>
     <TooltipProvider delayDuration={300}>
