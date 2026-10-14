@@ -44,7 +44,7 @@ function PlaceholderImage({ label }: { label: string }) {
             className="flex h-full w-full items-end p-1"
             style={{
                 backgroundImage:
-                    "repeating-linear-gradient(45deg, var(--sand), var(--sand) 4px, var(--dust) 4px, var(--dust) 8px)",
+                    "repeating-linear-gradient(45deg, var(--placeholder-a), var(--placeholder-a) 4px, var(--placeholder-b) 4px, var(--placeholder-b) 8px)",
             }}
         >
             <span className="rounded-sm bg-background px-1 py-px font-mono text-[8px] tracking-[.04em] text-foreground/80">
