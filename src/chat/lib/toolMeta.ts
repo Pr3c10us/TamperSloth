@@ -30,6 +30,7 @@ MousePointerClick,
     FilePlus,
     FilePen,
     FileX,
+    Hourglass,
 } from 'lucide-react';
 
 export type ToolCategory = 'data' | 'compute' | 'web' | 'utility' | 'communication' | 'media';
@@ -205,6 +206,11 @@ const toolMeta: Record<string, ToolMeta> = {
         displayName: 'Wait for Element',
         icon: Eye,
         category: 'web',
+    },
+    wait: {
+        displayName: 'Wait',
+        icon: Hourglass,
+        category: 'utility',
     },
     // ── Debugging ──
     getDebugInfo: {

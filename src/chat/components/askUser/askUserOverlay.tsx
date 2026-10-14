@@ -11,16 +11,16 @@ import { Eyebrow, CARD_DUR, CARD_EASE } from "./shared";
 
 const OTHER_KEY = "__other__";
 
-function usePendingAsk() {
+function usePendingAsk(conversationId: string) {
     return useSyncExternalStore(
         subscribeAskUser,
-        getPendingAsk,
+        () => getPendingAsk(conversationId),
         () => null,
     );
 }
 
-export function AskUserOverlay() {
-    const pending = usePendingAsk();
+export function AskUserOverlay({ conversationId }: { conversationId: string }) {
+    const pending = usePendingAsk(conversationId);
     const [otherText, setOtherText] = useState("");
     const [focusedKey, setFocusedKey] = useState<string | null>(null);
     const otherInputRef = useRef<HTMLInputElement>(null);
@@ -38,13 +38,13 @@ export function AskUserOverlay() {
     if (!pending) return null;
 
     const submitOption = (label: string, emoji?: string) => {
-        answerPendingAsk({ label, emoji, custom: false });
+        answerPendingAsk(conversationId, { label, emoji, custom: false });
     };
 
     const submitCustom = () => {
         const text = otherText.trim();
         if (!text) return;
-        answerPendingAsk({ label: text, custom: true });
+        answerPendingAsk(conversationId, { label: text, custom: true });
     };
 
     return (

@@ -107,12 +107,10 @@ interface StepProps {
     children?: ReactNode;
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
-    /** Always-visible content under the title, such as a screenshot. */
-    extra?: ReactNode;
     trailing?: ReactNode;
 }
 
-export function Step({icon, state, title, titleKey, hint, meta, children, open = false, onOpenChange, extra, trailing}: StepProps) {
+export function Step({icon, state, title, titleKey, hint, meta, children, open = false, onOpenChange, trailing}: StepProps) {
     const bodyId = useId();
     const expandable = children != null && onOpenChange != null;
     const header = (
@@ -156,7 +154,6 @@ export function Step({icon, state, title, titleKey, hint, meta, children, open =
                 </Hint>
                 {trailing}
             </div>
-            {extra && <div className="pb-1.5 pl-9 pr-1.5 pt-0.5">{extra}</div>}
             {children != null && (
                 <Collapse id={bodyId} open={open}>
                     <div className="pb-1.5 pl-9 pr-1.5 pt-0.5">{children}</div>

@@ -3,10 +3,9 @@ import { MoreHorizontal, PanelLeftClose, Plus, Search, Settings, Trash2 } from "
 import {
     deleteConversation,
     loadConversationHistory,
-    loadStoredConversation,
     type ConversationSummary,
-    type StoredConversation,
 } from "../lib/storage";
+import { discardConversation, useRunningChats } from "../hooks/useAgent";
 import { Button } from "@/components/ui/button";
 import {
     Sheet,
@@ -54,7 +53,8 @@ interface HistoryDrawerProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     activeId: string;
-    onSelect: (conversation: StoredConversation) => void;
+    /** Shows the chat; rejects if it can no longer be loaded. */
+    onSelect: (id: string) => Promise<void>;
     onNewChat: () => void;
     onOpenSettings: () => void;
 }
@@ -70,6 +70,7 @@ export function HistoryDrawer({
     const [conversations, setConversations] = useState<ConversationSummary[]>([]);
     const [error, setError] = useState('');
     const [query, setQuery] = useState("");
+    const running = useRunningChats();
 
     useEffect(() => {
         let live = true;
@@ -86,6 +87,7 @@ export function HistoryDrawer({
 
     const handleDelete = async (id: string) => {
         try {
+            discardConversation(id);
             await deleteConversation(id);
             setConversations((prev) => prev.filter((c) => c.id !== id));
         } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
@@ -93,9 +95,7 @@ export function HistoryDrawer({
 
     const handleSelect = async (id: string) => {
         try {
-            const conversation = await loadStoredConversation(id);
-            if (!conversation) throw new Error('This conversation is no longer available.');
-            onSelect(conversation);
+            await onSelect(id);
             onOpenChange(false);
         } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
     };
@@ -161,6 +161,7 @@ export function HistoryDrawer({
                                 <ul>
                                     {group.items.map((c) => {
                                         const isActive = c.id === activeId;
+                                        const isRunning = running.includes(c.id);
                                         return (
                                             <li
                                                 key={c.id}
@@ -174,9 +175,15 @@ export function HistoryDrawer({
                                                     onClick={() => { void handleSelect(c.id); }}
                                                     aria-current={isActive ? "true" : undefined}
                                                     title={c.title || "Untitled"}
-                                                    className="block w-full truncate rounded-lg px-2 py-1.5 pr-8 text-left text-[13px] focus-visible:bg-muted/60 focus-visible:outline-none"
+                                                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 pr-8 text-left text-[13px] focus-visible:bg-muted/60 focus-visible:outline-none"
                                                 >
-                                                    {c.title || "Untitled"}
+                                                    {isRunning && (
+                                                        <span className="relative flex size-1.5 shrink-0" aria-label="Working" role="status">
+                                                            <span className="absolute inset-0 animate-ping rounded-full bg-accent opacity-60" />
+                                                            <span className="relative size-1.5 rounded-full bg-accent" />
+                                                        </span>
+                                                    )}
+                                                    <span className="truncate">{c.title || "Untitled"}</span>
                                                 </button>
                                                 <div className="absolute right-1 top-1/2 -translate-y-1/2">
                                                     <DropdownMenu>

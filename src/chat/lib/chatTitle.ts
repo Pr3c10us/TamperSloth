@@ -57,6 +57,9 @@ export async function generateChatTitle(model: LanguageModel, providerId: Provid
         instructions: TITLE_INSTRUCTIONS,
         prompt: context || "Request: (empty)",
         providerOptions: titleProviderOptions(providerId),
+        // Retrying a 429 here would spend more of the key's rate limit
+        // that the run needs; the request text stands in instead.
+        maxRetries: 0,
     });
     return cleanTitle(text);
 }

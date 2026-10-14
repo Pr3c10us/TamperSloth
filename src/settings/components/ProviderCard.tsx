@@ -2,6 +2,7 @@ import {ArrowUpRight, Plus} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {cn} from "@/lib/utils";
+import {ProviderLogo} from "@/src/chat/components/ProviderLogo";
 import type {Provider} from "./providers";
 
 type Props = {
@@ -38,8 +39,8 @@ export function ProviderCard({
         <div className={cn("px-3.5 py-3 transition-colors duration-[160ms]", editing && "bg-background")}>
             <div className="flex items-center gap-3">
                 <div className="relative shrink-0">
-                    <div className="flex size-9 items-center justify-center rounded-lg border border-border bg-background font-heading text-lg text-foreground">
-                        {p.logo}
+                    <div className="flex size-9 items-center justify-center rounded-lg border border-border bg-background text-foreground">
+                        <ProviderLogo provider={p.id} className="size-[18px]" />
                     </div>
                     {connected && (
                         <span

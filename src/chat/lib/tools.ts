@@ -16,6 +16,7 @@ import {
 } from "./storage";
 import {isValidMatchPattern} from "./url";
 import {type AskUserAnswer, rejectPendingAsk, setPendingAsk,} from "./askUserBus";
+import {leaseTabTools} from "./tabLease";
 import { skills, type SkillId } from "./skills";
 
 
@@ -163,7 +164,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
         tabs: guardedAPI(globalThis.chrome.tabs, ['create', 'update', 'remove', 'reload', 'goBack', 'goForward']),
         windows: guardedAPI(globalThis.chrome.windows, ['update']),
     };
-    return {
+    return leaseTabTools({
         ...createBrowserTools(() => tabId, id => { tabId = id; }, context.abortSignal),
         // ═══════════════════════════════════════════════
         //  Skills
@@ -1994,6 +1995,87 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             },
         }),
 
+        wait: tool({
+            description:
+                "Pause while something outside your control happens: a support agent or chatbot replying, someone messaging back, a job finishing, an email arriving. " +
+                "By default returns early once page text (frames included) changes and then holds still for 2s. Read or screenshot the page afterward.",
+            inputSchema: z.object({
+                seconds: z
+                    .number()
+                    .min(1)
+                    .max(300)
+                    .describe("Maximum wait in seconds (1–300). Call again to wait longer."),
+                returnOnChange: z
+                    .boolean()
+                    .optional()
+                    .default(true)
+                    .describe("Return once the watched text changes and settles. false always waits the full time."),
+                selector: z
+                    .string()
+                    .optional()
+                    .describe("Optional CSS selector to scope change detection, e.g. a chat message list. Checked in every frame; defaults to the whole page."),
+            }),
+            execute: async ({seconds, returnOnChange, selector}, {abortSignal}) => {
+                if (selector) {
+                    const invalid = selectorError(selector);
+                    if (invalid) return invalid;
+                }
+                const signal = abortSignal ?? context.abortSignal;
+                const sleep = (ms: number) => new Promise<void>((resolve, reject) => {
+                    const abort = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); };
+                    const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, ms);
+                    if (signal?.aborted) abort();
+                    else signal?.addEventListener('abort', abort, {once: true});
+                });
+                // Chat widgets usually live in cross-origin iframes, so hash text in every frame.
+                const fingerprint = async () => {
+                    try {
+                        const results = await chrome.scripting.executeScript({
+                            target: {tabId, allFrames: true},
+                            func: (sel: string | null) => {
+                                const root = sel ? document.querySelector(sel) : document.body;
+                                const text = (root as HTMLElement | null)?.innerText ?? '';
+                                let hash = 5381;
+                                for (let i = 0; i < text.length; i++) hash = ((hash * 33) ^ text.charCodeAt(i)) >>> 0;
+                                return `${text.length}:${hash}`;
+                            },
+                            args: [selector ?? null],
+                        });
+                        return results.map(r => r.result ?? '').join('|');
+                    } catch (error) {
+                        if (signal?.aborted) throw error;
+                        return null;
+                    }
+                };
+
+                const start = Date.now();
+                const deadline = start + seconds * 1000;
+                const elapsed = () => Math.round((Date.now() - start) / 100) / 10;
+                let last = returnOnChange ? await fingerprint() : null;
+                if (last === null) {
+                    await sleep(Math.max(0, deadline - Date.now()));
+                    return {waitedSeconds: elapsed(), watched: false};
+                }
+                let changed = false;
+                while (Date.now() < deadline) {
+                    await sleep(Math.min(2000, deadline - Date.now()));
+                    const current = await fingerprint();
+                    if (current === null) continue;
+                    if (current !== last) {
+                        last = current;
+                        changed = true;
+                    } else if (changed) {
+                        return {waitedSeconds: elapsed(), changed: true, settled: true,
+                            hint: "Page text changed. Read or screenshot it to see what arrived."};
+                    }
+                }
+                return {waitedSeconds: elapsed(), changed, settled: false,
+                    hint: changed
+                        ? "Page text is still changing. Read it now, or wait again briefly."
+                        : "No change. Wait again if a reply is still expected, otherwise report back."};
+            },
+        }),
+
         // ═══════════════════════════════════════════════
         //  DEBUGGING (network, console)
         // ═══════════════════════════════════════════════
@@ -2417,25 +2499,30 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 question: z.string().min(1).describe("The question to ask the user."),
                 options: z
                     .array(
-                        z.object({
-                            label: z.string().min(1).describe("Short option label."),
-                            emoji: z
-                                .string()
-                                .optional()
-                                .describe("Optional single emoji shown alongside the label."),
-                        }),
+                        // Weaker models (e.g. Gemini Flash Lite) send bare strings; accept both shapes.
+                        z.union([
+                            z.string().min(1),
+                            z.object({
+                                label: z.string().min(1).describe("Short option label."),
+                                emoji: z
+                                    .string()
+                                    .optional()
+                                    .describe("Optional single emoji shown alongside the label."),
+                            }),
+                        ]),
                     )
                     .min(2)
                     .max(5)
                     .describe("The options to present. Do not include an \"Other\" option."),
             }),
-            execute: async ({question, options}, {toolCallId, abortSignal}) => {
+            execute: async ({question, options: rawOptions}, {toolCallId, abortSignal}) => {
+                const options = rawOptions.map((opt) => (typeof opt === "string" ? {label: opt} : opt));
                 return new Promise<{ answer: AskUserAnswer }>((resolve, reject) => {
                     const onAbort = () => {
-                        rejectPendingAsk(new Error("aborted"));
+                        rejectPendingAsk(context.conversationId, new Error("aborted"));
                     };
                     abortSignal?.addEventListener("abort", onAbort, {once: true});
-                    setPendingAsk({
+                    setPendingAsk(context.conversationId, {
                         id: toolCallId,
                         question,
                         options,
@@ -2451,5 +2538,5 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 });
             },
         }),
-    };
+    }, context.conversationId, () => tabId, context.abortSignal);
 }

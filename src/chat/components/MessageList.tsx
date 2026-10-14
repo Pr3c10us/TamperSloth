@@ -1,11 +1,12 @@
 import {forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState} from "react";
-import { AlertCircle, ArrowDown } from "lucide-react";
+import { ArrowDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "../hooks/useAgent";
 import { UserMessage } from "./UserMessage";
 import { AssistantMessage } from "./AssistantMessage";
 import { EmptyState } from "./EmptyState";
 import { Hint } from "./Hint";
+import { ErrorNotice } from "./ErrorNotice";
 import {DEFAULT_AGENT_SETTINGS, loadAgentSettings, onAgentSettingsChange} from "../lib/agentSettings";
 
 interface MessageListProps {
@@ -132,10 +133,7 @@ export const MessageList = forwardRef<HTMLDivElement, MessageListProps>(
                             )
                         )}
                         {error && !isLoading && (
-                            <div className="flex items-center gap-2 px-1 text-sm text-destructive">
-                                <AlertCircle className="size-3.5 shrink-0" strokeWidth={1.5} />
-                                <span>{error}</span>
-                            </div>
+                            <ErrorNotice message={error} className="px-1"/>
                         )}
                     </div>
                 </div>

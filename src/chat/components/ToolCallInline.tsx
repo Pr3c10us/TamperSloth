@@ -10,6 +10,8 @@ import {formatStepDuration, screenshotSource, toolErrorMessage} from "../lib/too
 import {toolVerb} from "../lib/stepSummary";
 import {Step, useNow, type StepState} from "./steps/Step";
 import {Hint} from "./Hint";
+import {ErrorDetails} from "./ErrorNotice";
+import {summarizeError} from "../lib/errorSummary";
 
 /** Tools that render as their own cards rather than steps. */
 export const CARD_TOOLS = new Set(["askUser"]);
@@ -67,17 +69,18 @@ interface ToolCallInlineProps {
     live: boolean;
 }
 
-/** One line: the model's reason for the call. Screenshots also show the image. */
+/** One line: the model's reason for the call. Screenshots also show the image in a collapsible body. */
 export const ToolCallInline = memo(function ToolCallInline({ tc, metric, live }: ToolCallInlineProps) {
     const isPending = tc.status === "calling" && live;
     const now = useNow(isPending);
+    const [open, setOpen] = useState(false);
     const name = tc.name;
 
     if (name === "askUser") return <WithTokens metric={metric}><AskUserCard tc={tc}/></WithTokens>;
 
     const meta = getToolMeta(name);
     const reason = toolReason(tc.args);
-    const error = tc.status === "error" ? toolErrorMessage(tc.result) ?? "The tool failed." : undefined;
+    const error = tc.status === "error" ? summarizeError(toolErrorMessage(tc.result) ?? "The tool failed.") : undefined;
     const state: StepState = isPending ? "active" : tc.status === "error" ? "error" : tc.status === "calling" ? "stopped" : "done";
     const elapsed = isPending && tc.startedAt !== undefined ? now - tc.startedAt : undefined;
     const screenshot = tc.status === "done" ? screenshotSource(name, tc.result) : undefined;
@@ -95,17 +98,25 @@ export const ToolCallInline = memo(function ToolCallInline({ tc, metric, live }:
             state={state}
             title={title}
             titleKey={reason ? "reason" : "pending"}
-            hint={error ? `${meta.displayName} failed: ${error}` : state === "stopped" ? `${meta.displayName} was stopped` : meta.displayName}
+            hint={error ? `${meta.displayName} failed: ${error.summary}` : state === "stopped" ? `${meta.displayName} was stopped` : meta.displayName}
             meta={elapsed !== undefined && elapsed >= 1000 ? formatStepDuration(elapsed) : metric ? <ToolTokens metric={metric}/> : undefined}
-            extra={screenshot && (
+            open={open}
+            onOpenChange={screenshot || error ? setOpen : undefined}
+            trailing={IS_DEV && error ? <CopyToolError tc={tc}/> : undefined}
+        >
+            {error ? (
+                <div className="flex flex-col gap-1.5">
+                    <p className="text-[12px] leading-snug text-muted-foreground">{error.summary}</p>
+                    {error.details && <ErrorDetails details={error.details}/>}
+                </div>
+            ) : screenshot ? (
                 <img
                     src={screenshot}
                     alt={reason ? `Screenshot: ${reason}` : "Captured screenshot"}
                     loading="lazy"
                     className="ts-enter max-h-56 w-auto max-w-full rounded-md border border-border object-contain object-left-top"
                 />
-            )}
-            trailing={IS_DEV && error ? <CopyToolError tc={tc}/> : undefined}
-        />
+            ) : undefined}
+        </Step>
     );
 });
