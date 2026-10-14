@@ -20,6 +20,15 @@ import { cn } from "@/lib/utils";
 import { clearPickedMarkers, useElementPicker } from "../hooks/useElementPicker";
 import { useDrawOverlay } from "../hooks/useDrawOverlay";
 import { usePanelRequests } from "../hooks/usePanelRequests";
+import { useDictation } from "../hooks/useDictation";
+import {
+    DEFAULT_DICTATION_SETTINGS,
+    loadDictationSettings,
+    saveDictationSettings,
+    type DictationSettings,
+} from "../lib/dictation";
+import { DictationButton } from "./DictationButton";
+import { DictationWave } from "./DictationWave";
 import type { Quote } from "../lib/panelRequests";
 import { QuoteChip } from "./QuoteChip";
 import { ModelSelector, type SelectedModelEntry } from "./ModelSelector";
@@ -101,8 +110,24 @@ export function Composer({
     const fileInputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const previewRef = useRef<HTMLDivElement>(null);
     const [skippedFiles, setSkippedFiles] = useState(0);
     const filesFull = pendingFiles.length >= MAX_ATTACHMENTS;
+    const [dictationSettings, setDictationSettings] = useState<DictationSettings>(DEFAULT_DICTATION_SETTINGS);
+    const dictation = useDictation(conversationId, dictationSettings);
+    // While the mic is on, the input shows the transcript with the words still being heard after it.
+    const listening = dictation.status === "starting" || dictation.status === "listening" || dictation.status === "stopping";
+    // Enter while dictating sends once the last words have landed in the draft.
+    const [sendQueued, setSendQueued] = useState(false);
+
+    useEffect(() => {
+        void loadDictationSettings().then(setDictationSettings);
+    }, []);
+
+    const changeDictationSettings = (next: DictationSettings) => {
+        setDictationSettings(next);
+        void saveDictationSettings(next).catch((error) => console.warn("[Tampersloth] Could not save dictation options:", error));
+    };
 
     // The limit notice clears itself after a few seconds.
     useEffect(() => {
@@ -162,6 +187,8 @@ export function Composer({
             setQuotes((prev) => (prev.some((q) => q.text === text) ? prev : [...prev, { text, url, title }]));
         } else if (request.kind === "image") {
             setSkippedFiles(addFiles([dataUrlToFile(request.dataUrl, request.name)]));
+        } else if (request.kind === "dictate") {
+            void dictation.start();
         } else {
             setQueuedAction(request.kind);
         }
@@ -208,9 +235,52 @@ export function Composer({
     const canSend =
         !!selectedModel &&
         (draft.trim().length > 0 ||
+            (listening && dictation.interim.length > 0) ||
             pendingFiles.length > 0 ||
             pickedElements.length > 0 ||
             quotes.length > 0);
+
+    const toggleDictation = () => {
+        if (dictation.status === "idle") void dictation.start();
+        else void dictation.stop();
+    };
+
+    // Ends dictation, then focuses the input with the caret after the transcript.
+    const stopDictationAndEdit = async () => {
+        await dictation.stop();
+        const ta = textareaRef.current;
+        if (!ta) return;
+        ta.focus();
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+    };
+
+    const send = async () => {
+        if (!canSend || isLoading) return;
+        if (!listening) {
+            onSend();
+            return;
+        }
+        await dictation.stop();
+        setSendQueued(true);
+    };
+
+    // Sends on the render after dictation's last words reach the draft, so they go with the message.
+    useEffect(() => {
+        if (!sendQueued) return;
+        setSendQueued(false);
+        if (canSend && !isLoading) onSend();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sendQueued]);
+
+    // The live transcript keeps its newest words in view, and takes keyboard focus so Enter and Esc work.
+    useEffect(() => {
+        const preview = previewRef.current;
+        if (!preview || !listening) return;
+        preview.scrollTop = preview.scrollHeight;
+    }, [listening, draft, dictation.interim]);
+    useEffect(() => {
+        if (listening) previewRef.current?.focus({ preventScroll: true });
+    }, [listening]);
 
     const handleAttach = () => fileInputRef.current?.click();
 
@@ -334,6 +404,40 @@ export function Composer({
                     )}
 
                     <div className="flex items-end gap-2">
+                        {listening && (
+                            <div
+                                ref={previewRef}
+                                tabIndex={0}
+                                role="textbox"
+                                aria-readonly
+                                aria-label="Dictation"
+                                aria-live="polite"
+                                onClick={() => void stopDictationAndEdit()}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.shiftKey) {
+                                        e.preventDefault();
+                                        void send();
+                                    } else if (e.key === "Escape") {
+                                        e.preventDefault();
+                                        void stopDictationAndEdit();
+                                    }
+                                }}
+                                className="max-h-[8.6rem] min-w-0 flex-1 cursor-text overflow-y-auto whitespace-pre-wrap break-words px-1 py-0.5 font-sans text-sm leading-relaxed text-foreground outline-none [scrollbar-width:thin]"
+                            >
+                                {draft}
+                                {dictation.interim && (
+                                    <span className="italic text-muted-foreground">
+                                        {draft && !/\s$/.test(draft) ? " " : ""}
+                                        {dictation.interim}
+                                    </span>
+                                )}
+                                {!draft && !dictation.interim && (
+                                    <span className="text-muted-foreground">
+                                        {dictation.status === "starting" ? "Starting the mic…" : "Listening… start talking"}
+                                    </span>
+                                )}
+                            </div>
+                        )}
                         <textarea
                             ref={textareaRef}
                             value={draft}
@@ -342,13 +446,24 @@ export function Composer({
                             onKeyDown={(e) => {
                                 if (e.key === "Enter" && !e.shiftKey) {
                                     e.preventDefault();
-                                    if (canSend && !isLoading) onSend();
+                                    void send();
                                 }
                             }}
                             placeholder="Tell the sloth what to do…"
                             rows={1}
-                            className="min-w-0 flex-1 resize-none border-0 bg-transparent px-1 py-0.5 font-sans text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
+                            className={cn(listening && "hidden", "min-w-0 flex-1 resize-none border-0 bg-transparent px-1 py-0.5 font-sans text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground")}
                         />
+
+                        {listening && (
+                            <button
+                                type="button"
+                                onClick={() => void dictation.stop()}
+                                aria-label="Stop dictation"
+                                className="mb-0.5 flex max-w-[24%] shrink-0 justify-end overflow-hidden rounded-md px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                            >
+                                <DictationWave levels={dictation.levels} className={cn(dictation.status === "stopping" && "opacity-40")} />
+                            </button>
+                        )}
 
                         {isLoading ? (
                             <Button
@@ -366,7 +481,7 @@ export function Composer({
                                 type="button"
                                 variant="ghost"
                                 size="icon-sm"
-                                onClick={onSend}
+                                onClick={() => void send()}
                                 disabled={!canSend}
                                 aria-label="Send"
                                 className="shrink-0 text-foreground"
@@ -448,16 +563,32 @@ export function Composer({
                                 Draw on the page
                             </TooltipContent>
                         </Tooltip>
-                        {(isPicking || isDrawing || queuedAction || pageNotice) && (
+                        <DictationButton
+                            status={dictation.status}
+                            settings={dictationSettings}
+                            onSettingsChange={changeDictationSettings}
+                            onToggle={toggleDictation}
+                        />
+                        {(isPicking || isDrawing || queuedAction || pageNotice || dictation.status !== "idle" || dictation.notice) && (
                             <span role="status" className="ml-1.5 flex min-w-0 items-center gap-1.5 font-mono text-[11px] text-accent">
-                                {(isPicking || isDrawing) && (
+                                {(isPicking || isDrawing || dictation.status === "listening") && (
                                     <span
                                         className="size-1.5 shrink-0 rounded-full bg-accent"
                                         style={{ animation: "slothPulse 1.4s infinite" }}
                                     />
                                 )}
                                 <span className="truncate">
-                                    {isPicking
+                                    {dictation.status === "listening"
+                                        ? "Listening · Enter sends · Esc stops"
+                                        : dictation.status === "starting"
+                                          ? "Starting the mic…"
+                                          : dictation.status === "stopping"
+                                            ? "Finishing up…"
+                                            : dictation.status === "permission"
+                                              ? "Allow the mic in the window that opened"
+                                              : dictation.notice
+                                                ? dictation.notice
+                                                : isPicking
                                         ? "Click elements · Esc when done"
                                         : isDrawing
                                           ? "Drawing · Add to chat when done"
