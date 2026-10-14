@@ -63,38 +63,41 @@
     --moss: #3f4a2a;
     --moss-soft: #6b7a4f;
 
-    --background: var(--paper);
-    --foreground: var(--ink);
-    --card: var(--cream);
-    --card-foreground: var(--ink);
-    --popover: var(--cream);
-    --popover-foreground: var(--ink);
-    --primary: var(--ink);
-    --primary-foreground: var(--paper);
-    --secondary: var(--dust);
-    --secondary-foreground: var(--ink);
-    --muted: var(--dust);
-    --muted-foreground: var(--stone);
-    --accent: var(--moss);
-    --accent-foreground: var(--paper);
-    --destructive: oklch(0.55 0.18 25);
-    --border: var(--sand);
-    --input: var(--sand);
-    --ring: var(--moss);
-    --chart-1: var(--ink);
-    --chart-2: var(--bark);
-    --chart-3: var(--stone);
-    --chart-4: var(--sand);
-    --chart-5: var(--dust);
+    /* Light theme: cool neutrals on the dark theme's green-grey hue, not warm paper. */
+    --background: #f3f4f2;
+    --foreground: #141513;
+    --card: #ffffff;
+    --card-foreground: #141513;
+    --popover: #ffffff;
+    --popover-foreground: #141513;
+    --primary: #141513;
+    --primary-foreground: #ffffff;
+    --secondary: #e8eae6;
+    --secondary-foreground: #141513;
+    --muted: #e8eae6;
+    --muted-foreground: #5d6359;
+    --accent: #4e6a32;
+    --accent-foreground: #ffffff;
+    --destructive: oklch(0.55 0.2 25);
+    --border: #d9ddd5;
+    --input: #cfd4cb;
+    --ring: var(--accent);
+    --chart-1: #141513;
+    --chart-2: #4e6a32;
+    --chart-3: #5d6359;
+    --chart-4: #a3aa9e;
+    --chart-5: #d9ddd5;
     --radius: 0.5rem;
-    --sidebar: var(--cream);
-    --sidebar-foreground: var(--ink);
-    --sidebar-primary: var(--ink);
-    --sidebar-primary-foreground: var(--paper);
-    --sidebar-accent: var(--dust);
-    --sidebar-accent-foreground: var(--ink);
-    --sidebar-border: var(--sand);
-    --sidebar-ring: var(--moss);
+    --sidebar: #ffffff;
+    --sidebar-foreground: #141513;
+    --sidebar-primary: #141513;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #e8eae6;
+    --sidebar-accent-foreground: #141513;
+    --sidebar-border: #d9ddd5;
+    --sidebar-ring: var(--accent);
+    --placeholder-a: #dfe2dc;
+    --placeholder-b: #eceee9;
 
     /* Type scale — editorial */
     --fs-display: clamp(56px, 9vw, 128px);
@@ -116,9 +119,9 @@
     --tracking-tight: -0.02em;
     --tracking-wide: 0.12em;
 
-    --divider: var(--dust);
-    --link: var(--moss);
-    --link-hover: var(--moss-soft);
+    --divider: var(--border);
+    --link: var(--accent);
+    --link-hover: #6b8a4a;
 
     --dur-fast: 160ms;
     --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
@@ -159,6 +162,8 @@
     --divider: var(--border);
     --link: var(--accent);
     --link-hover: #c4d5a7;
+    --placeholder-a: var(--sand);
+    --placeholder-b: var(--dust);
 }
 
 @layer base {

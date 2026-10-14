@@ -21,6 +21,7 @@ export function drawOverlay(args: {action: 'start' | 'dispose'; assets?: {sans: 
     const INK = '#0f0f0e';
     const PANEL = '#1d1f1b';
     const PAPER = '#f6f4ef';
+    const WHITE = '#ffffff';
     const ns = 'http://www.w3.org/2000/svg';
     const send = (message: any) => {
         try { return (globalThis as any).chrome.runtime.sendMessage(message); } catch { return Promise.resolve(); }
@@ -28,7 +29,7 @@ export function drawOverlay(args: {action: 'start' | 'dispose'; assets?: {sans: 
 
     // Bump when the overlay changes. Its state outlives an extension reload on the page,
     // so an overlay from an older build is removed rather than kept.
-    const VERSION = 2;
+    const VERSION = 3;
     if (args.action === 'dispose' || (win.__tamperSlothDraw && win.__tamperSlothDraw.version !== VERSION)) win.__tamperSlothDraw?.dispose();
     if (args.action === 'dispose') return {ok: true};
     if (win.__tamperSlothDraw) return {ok: true};
@@ -40,7 +41,7 @@ export function drawOverlay(args: {action: 'start' | 'dispose'; assets?: {sans: 
 
     // The toolbar matches the panel: white accents in dark mode, black in light mode.
     const T = args.theme === 'light'
-        ? {bar: PAPER, fg: INK, line: `${INK}1f`, soft: `${INK}0f`, muted: `${INK}b3`, faint: `${INK}66`, accent: INK, onAccent: PAPER, hintBg: `${PAPER}eb`, hintFg: `${INK}d9`}
+        ? {bar: WHITE, fg: INK, line: `${INK}1f`, soft: `${INK}0f`, muted: `${INK}b3`, faint: `${INK}66`, accent: INK, onAccent: WHITE, hintBg: `${WHITE}eb`, hintFg: `${INK}d9`}
         : {bar: PANEL, fg: PAPER, line: `${PAPER}26`, soft: `${PAPER}14`, muted: `${PAPER}b3`, faint: `${PAPER}66`, accent: PAPER, onAccent: INK, hintBg: `${INK}bf`, hintFg: `${PAPER}d9`};
     // No lime: that is Sloth's color on the page.
     const COLORS = [

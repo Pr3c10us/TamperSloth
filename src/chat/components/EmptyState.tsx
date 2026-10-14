@@ -1,7 +1,8 @@
 export function EmptyState() {
     return (
         <div className="flex flex-1 flex-col items-center justify-center gap-3.5 px-10 py-16 text-center min-h-[360px]">
-            <img src="icon-white.svg" alt="" className="h-14 w-14 opacity-85" />
+            <img src="icon.svg" alt="" className="h-14 w-14 opacity-85 dark:hidden" />
+            <img src="icon-white.svg" alt="" className="hidden h-14 w-14 opacity-85 dark:block" />
             <div className="font-heading text-3xl leading-[1.1] tracking-[-0.02em] text-nowrap">
                 What should the sloth <em>do?</em>
             </div>

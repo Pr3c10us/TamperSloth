@@ -7,6 +7,9 @@ import Chat from "@/src/chat";
 import MicrophoneAccess from "@/src/microphone";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { usePanelRequestRouting } from "@/src/chat/hooks/usePanelRequests";
+import { initTheme } from "@/src/settings/lib/theme";
+
+initTheme();
 
 function PanelRequestRouting() {
   usePanelRequestRouting();

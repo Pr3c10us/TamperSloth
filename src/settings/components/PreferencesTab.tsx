@@ -1,10 +1,11 @@
 import {useEffect, useRef, useState, type ReactNode} from "react";
-import {Check} from "lucide-react";
+import {Check, Monitor, Moon, Sun, type LucideIcon} from "lucide-react";
 import {Input} from "@/components/ui/input";
 import {Slider} from "@/components/ui/slider";
 import {Switch} from "@/components/ui/switch";
 import {cn} from "@/lib/utils";
 import {DEFAULT_AGENT_SETTINGS, loadAgentSettings, saveAgentSettings, type AgentSettings} from "@/src/chat/lib/agentSettings";
+import {saveThemePreference, useThemePreference, type ThemePreference} from "../lib/theme";
 import {SettingRow, SettingsGroup, SettingsSection, TabIntro} from "./Section";
 
 const BUDGET_PRESETS = [
@@ -18,6 +19,12 @@ const BUDGET_PRESETS = [
 const REASONING_OPTIONS: {value: AgentSettings["reasoning"]; label: string; hint: string}[] = [
     {value: "balanced", label: "Balanced", hint: "Lower effort, faster replies."},
     {value: "thorough", label: "Thorough", hint: "Maximum effort on every step."},
+];
+
+const THEME_OPTIONS: {value: ThemePreference; label: string; icon: LucideIcon}[] = [
+    {value: "dark", label: "Dark", icon: Moon},
+    {value: "light", label: "Light", icon: Sun},
+    {value: "system", label: "System", icon: Monitor},
 ];
 
 type SaveState = "idle" | "saved" | "error";
@@ -36,6 +43,7 @@ function Choice({selected, disabled, onSelect, children}: {
 }
 
 export function PreferencesTab() {
+    const theme = useThemePreference();
     const [settings, setSettings] = useState<AgentSettings>(DEFAULT_AGENT_SETTINGS);
     const [ready, setReady] = useState(false);
     const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -81,6 +89,24 @@ export function PreferencesTab() {
                     {saveState === "error" && "Couldn't save preferences. Try again."}
                 </p>
             </div>
+
+            <SettingsSection title="Appearance">
+                <SettingsGroup>
+                    <SettingRow stacked label="Theme"
+                        description={theme === "system" ? "Follows your system setting." : "Applies to the panel and settings."}>
+                        <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-0.5 rounded-lg bg-muted p-[3px]">
+                            {THEME_OPTIONS.map(({value, label, icon: Icon}) => (
+                                <Choice key={value} selected={theme === value}
+                                    onSelect={() => { void saveThemePreference(value).catch(() => setSaveState("error")); }}>
+                                    <span className="inline-flex items-center justify-center gap-1.5">
+                                        <Icon strokeWidth={1.75} className="size-3.5" />{label}
+                                    </span>
+                                </Choice>
+                            ))}
+                        </div>
+                    </SettingRow>
+                </SettingsGroup>
+            </SettingsSection>
 
             <SettingsSection title="Run limits">
                 <SettingsGroup>
