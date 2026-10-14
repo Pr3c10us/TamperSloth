@@ -12,6 +12,7 @@ export interface Quote {
 export type PanelRequest =
     | { kind: "pick" }
     | { kind: "draw" }
+    | { kind: "dictate" }
     | ({ kind: "quote" } & Quote)
     | { kind: "image"; dataUrl: string; name: string };
 

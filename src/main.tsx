@@ -4,6 +4,7 @@ import App from './App.tsx'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Settings from "@/src/settings";
 import Chat from "@/src/chat";
+import MicrophoneAccess from "@/src/microphone";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { usePanelRequestRouting } from "@/src/chat/hooks/usePanelRequests";
 
@@ -26,6 +27,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/" element={<Chat />} />
           <Route path="/gallery" element={<App />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/microphone" element={<MicrophoneAccess />} />
           <Route path="/chat" element={<Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

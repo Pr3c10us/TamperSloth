@@ -6,6 +6,7 @@ const MENU = {
     openSeparator: 'tampersloth-open-separator',
     pick: 'tampersloth-pick',
     draw: 'tampersloth-draw',
+    talk: 'tampersloth-talk',
     ask: 'tampersloth-ask',
 } as const;
 
@@ -23,6 +24,7 @@ function createMenus() {
         chrome.contextMenus.create({id: MENU.openSeparator, parentId: MENU.show, type: 'separator', contexts: SHOW_CONTEXTS});
         chrome.contextMenus.create({id: MENU.pick, parentId: MENU.show, title: 'Pick an element', contexts: SHOW_CONTEXTS});
         chrome.contextMenus.create({id: MENU.draw, parentId: MENU.show, title: 'Draw or highlight an area', contexts: SHOW_CONTEXTS});
+        chrome.contextMenus.create({id: MENU.talk, parentId: MENU.show, title: 'Talk to Sloth', contexts: SHOW_CONTEXTS});
         chrome.contextMenus.create({id: MENU.ask, title: 'Ask Sloth', contexts: ['selection']});
     });
 }
@@ -44,7 +46,7 @@ async function selectedText(tabId: number, info: chrome.contextMenus.OnClickData
     return text.length > MAX_QUOTE ? text.slice(0, MAX_QUOTE - 1) + '…' : text;
 }
 
-/** Adds "Show Sloth › Open Sloth / Pick an element / Draw or highlight an area" and "Ask Sloth" to the page's context menu. */
+/** Adds "Send to Sloth › Open Sloth / Pick an element / Draw or highlight an area / Talk to Sloth" and "Ask Sloth" to the page's context menu. */
 export function installContextMenu(openPanel: (tab: chrome.tabs.Tab) => Promise<void>) {
     if (!chrome.contextMenus) return;
     // Menus persist across restarts; rebuild them when the extension is installed or updated.
@@ -58,6 +60,7 @@ export function installContextMenu(openPanel: (tab: chrome.tabs.Tab) => Promise<
         void openPanel(tab).catch(error => console.warn('[Tampersloth] Could not open the panel:', error));
         if (info.menuItemId === MENU.pick) void queuePanelRequest(tabId, {kind: 'pick'});
         else if (info.menuItemId === MENU.draw) void queuePanelRequest(tabId, {kind: 'draw'});
+        else if (info.menuItemId === MENU.talk) void queuePanelRequest(tabId, {kind: 'dictate'});
         else if (info.menuItemId === MENU.ask) void (async () => {
             const text = await selectedText(tabId, info);
             if (text) await queuePanelRequest(tabId, {kind: 'quote', text, url: info.frameUrl ?? info.pageUrl ?? tab.url, title: tab.title});
