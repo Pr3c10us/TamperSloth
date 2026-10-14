@@ -18,10 +18,10 @@ export const TOOL_GROUPS = {
 } as const;
 type Group = keyof typeof TOOL_GROUPS;
 type ModelOutputOptions = Parameters<NonNullable<ToolSet[string]["toModelOutput"]>>[0];
-const CORE = ["getCurrentTab", "getPageText", "getPageStructure", "getElementDetails", "navigateTo", "askUser", "getSkill", "enableTools", "readToolResult", 'annotatePage', 'waitForUserAction'];
+const CORE = ["getCurrentTab", "getPageText", "getPageStructure", "getElementDetails", "navigateTo", "askUser", "getSkill", "enableTools", "readToolResult", 'annotatePage', 'waitForUserAction', 'wait'];
 const PAGE_BARRIERS = new Set(['takeScreenshot', 'takeMarkedScreenshot', 'navigateTo', 'navigateHistory', 'reloadPage',
     'clickElement', 'typeText', 'selectOption', 'scrollPage', 'submitForm', 'waitForElement', 'executeContentScript',
-    'saveScript', 'toggleScript', 'removeScript', 'evaluateJavaScript', 'clickTarget', 'browserGesture', 'trustedInput', 'annotatePage', 'waitForUserAction']);
+    'saveScript', 'toggleScript', 'removeScript', 'evaluateJavaScript', 'clickTarget', 'browserGesture', 'trustedInput', 'annotatePage', 'waitForUserAction', 'wait']);
 function needsPageBarrier(name: string, input: any) {
     return PAGE_BARRIERS.has(name) || name === 'browserTabs' && input.action !== 'list'
         || name === 'deepDOM' && input.action === 'evaluate' || name === 'networkCapture' && input.action === 'replay';

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createLoader} from './load-ts.mjs';
 
-function fixture({animate=false,measurable=true}={}) {
+function fixture({animate=false,measurable=true,chrome}={}) {
     const listeners = new Map(), timers = new Map(), intervals = new Map(); let sequence=0;
     const frames=new Map(),windowListeners=new Map();
     class Element {
@@ -16,6 +16,7 @@ function fixture({animate=false,measurable=true}={}) {
         querySelector(selector) {if(selector==='svg'){this.icon ??=new Element('svg');return this.icon;}return this.tag=new Element('span');}
         remove() {this.removed=true;if(this.parent) this.parent.children=this.parent.children.filter(x=>x!==this);}
         scrollIntoView() {}
+        addEventListener(type,fn) {(this.listeners ??= {})[type]=fn;}
     }
     const target=new Element('button'), expected=new Element('div'), elements=new Map([['#target',target]]);
     const document={documentElement:new Element('html'),activeElement:target,
@@ -26,7 +27,7 @@ function fixture({animate=false,measurable=true}={}) {
     };
     const window={addEventListener(type,fn){if(!windowListeners.has(type)) windowListeners.set(type,new Set());windowListeners.get(type).add(fn);},removeEventListener(type,fn){windowListeners.get(type)?.delete(fn);}};
     const storage=new Map(),sessionStorage={getItem:k=>storage.get(k) ?? null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)};
-    const load=createLoader({globals:{document,window,sessionStorage,location:{href:'https://example.com'},innerWidth:800,innerHeight:600,
+    const load=createLoader({globals:{...(chrome ? {chrome} : {}),document,window,sessionStorage,location:{href:'https://example.com'},innerWidth:800,innerHeight:600,
         getComputedStyle:()=>({visibility:'visible'}),matchMedia:()=>({matches:!animate}),
         requestAnimationFrame:fn=>{if(!animate){fn();return 0;}const id=++sequence;frames.set(id,fn);return id;},cancelAnimationFrame:id=>frames.delete(id),
         MutationObserver:class{observe(){}disconnect(){}},ResizeObserver:class{observe(){}unobserve(){}disconnect(){}},
@@ -675,7 +676,7 @@ test('agent gestures pause user input, let announced agent input through, and sh
     const f=fixture();
     f.run({action:'agentLock',locked:true});
     const state=f.window.__tamperSlothGuidance;
-    assert.equal(state.lockPill.hidden,false);assert.equal(state.lockTitle.textContent,'Sloth is working');
+    assert.equal(state.lockPill.hidden,false);assert.equal(state.lockTitle.textContent,'Stop Sloth');assert.equal(state.agentGlow.hidden,false);
     f.run({action:'cursor',method:'Input.dispatchMouseEvent',params:{type:'mousePressed',x:230,y:150}});
     assert.equal(f.fire('mousedown',f.target,true,{clientX:230,clientY:150}).defaultPrevented,false);
     assert.equal(f.fire('mousedown',f.target,true,{clientX:40,clientY:500}).defaultPrevented,true);
@@ -690,8 +691,20 @@ test('agent gestures pause user input, let announced agent input through, and sh
     f.run({action:'agentLock',locked:true});assert.equal(state.lockPill.hidden,false);
     f.run({action:'agentLock',locked:false});
     f.timers.get(state.agentLockTimer).fn();
-    assert.equal(state.lockPill.hidden,true);
+    assert.equal(state.lockPill.hidden,true);assert.equal(state.agentGlow.hidden,true);
     assert.equal(f.fire('mousedown',f.target,true,{clientX:40,clientY:500}).defaultPrevented,false);
+});
+
+test('the stop button stays clickable during an agent gesture and asks the panel to stop the run',()=>{
+    const sent=[];
+    const f=fixture({chrome:{runtime:{sendMessage:msg=>{sent.push(msg);return Promise.resolve();}}}});
+    f.run({action:'agentLock',locked:true});
+    const state=f.window.__tamperSlothGuidance;
+    // Clicks on the button reach the closed root retargeted to the host and are let through.
+    assert.equal(f.fire('click',state.host,true,{clientX:400,clientY:570}).defaultPrevented,false);
+    state.lockPill.listeners.click();
+    assert.deepEqual(sent.map(m=>m.type),['AGENT_STOP_REQUESTED']);
+    assert.equal(state.agentLocked,false);assert.equal(state.lockPill.hidden,true);assert.equal(state.agentGlow.hidden,true);
 });
 
 test('escape hands control back during an agent gesture, and the lock has a watchdog',()=>{

@@ -8,15 +8,25 @@
  * A pick also crops a screenshot of the element (overlay hidden) for the panel's
  * chip; the model only ever receives the HTML.
  *
- * Actions: start (pick one element), stop (end picking), remove {index},
- * clear (drop every picked mark), dispose (remove the overlay entirely).
+ * Marks are grouped by chat, since each chat keeps its own unsent picks; only
+ * the shown group is drawn.
+ *
+ * Actions: start {group} (pick one element into a group), stop (end picking),
+ * remove {group, index}, clear {group} (drop a group's marks), show {group}
+ * (draw only that group), dispose (remove the overlay entirely).
  */
-export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clear' | 'dispose'; index?: number}): unknown {
+export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clear' | 'show' | 'dispose'; index?: number; group?: string}): unknown {
     const win = window as any;
     const LIME = '#a8bd85';
     const INK = '#0f0f0e';
     const PAPER = '#f6f4ef';
+    const group = args.group ?? '';
     let state = win.__tamperSlothPicker;
+    // An overlay left by a version without groups is replaced, not extended.
+    if (state && !state.groups) {
+        state.dispose?.();
+        state = undefined;
+    }
 
     // Pages marked by older versions restyled elements in place; undo that too.
     const clearLegacy = () => document.querySelectorAll<HTMLElement>('[data-tampersloth-picked]').forEach(el => {
@@ -54,7 +64,9 @@ export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clea
         root.append(style, svg);
         document.documentElement.append(host);
 
-        state = win.__tamperSlothPicker = {host, root, svg, ns, picked: [] as any[], hover: null as any, picking: false};
+        state = win.__tamperSlothPicker = {host, root, svg, ns, groups: {} as Record<string, any[]>, shown: group, hover: null as any, picking: false};
+        state.marks = (name: string) => state.groups[name] ??= [];
+        state.count = () => Object.values(state.groups).reduce((n: number, marks: any) => n + marks.length, 0);
 
         /** Seeded wobble so a mark keeps the same hand-drawn shape while it moves. */
         const rng = (seed: number) => () => {
@@ -125,10 +137,17 @@ export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clea
             return box;
         };
         state.render = () => {
-            state.picked.forEach((mark: any, i: number) => {
-                if (mark.badge) mark.badge.textContent = String(i + 1);
-                state.place(mark, mark.el);
-            });
+            for (const [name, marks] of Object.entries(state.groups) as [string, any[]][]) {
+                marks.forEach((mark: any, i: number) => {
+                    if (name !== state.shown) {
+                        mark.group.style.display = 'none';
+                        if (mark.badge) mark.badge.style.display = 'none';
+                        return;
+                    }
+                    if (mark.badge) mark.badge.textContent = String(i + 1);
+                    state.place(mark, mark.el);
+                });
+            }
             if (state.hover?.el) {
                 const box = state.place(state.hover, state.hover.el);
                 const tag = state.hover.tag;
@@ -179,6 +198,8 @@ export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clea
         case 'start': {
             if (state.picking) return {ok: true};
             state.picking = true;
+            state.shown = group;
+            state.render();
             const capture = document.createElement('div');
             capture.className = 'capture';
             const hint = document.createElement('div');
@@ -239,7 +260,7 @@ export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clea
                 mark.badge = document.createElement('div');
                 mark.badge.className = 'badge';
                 state.root.append(mark.badge);
-                state.picked.push(mark);
+                state.marks(group).push(mark);
                 state.stopPicking();
                 state.render();
                 chrome.runtime.sendMessage({type: 'ELEMENT_PICKED', outerHTML, screenshot});
@@ -248,7 +269,7 @@ export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clea
                 if (event.key !== 'Escape') return;
                 event.preventDefault(); event.stopPropagation();
                 state.stopPicking();
-                if (!state.picked.length) state.dispose();
+                if (!state.count()) state.dispose();
                 chrome.runtime.sendMessage({type: 'PICKER_CANCELLED'});
             };
             document.addEventListener('keydown', state.onKey, true);
@@ -256,20 +277,24 @@ export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clea
         }
         case 'stop':
             state.stopPicking();
-            if (!state.picked.length) state.dispose();
+            if (!state.count()) state.dispose();
             return {ok: true};
         case 'remove': {
-            const [mark] = state.picked.splice(args.index ?? -1, 1);
+            const [mark] = state.marks(group).splice(args.index ?? -1, 1);
             if (mark) state.removeMark(mark);
-            if (!state.picked.length && !state.picking) state.dispose();
+            if (!state.count() && !state.picking) state.dispose();
             else state.render();
             return {ok: true};
         }
         case 'clear':
-            for (const mark of state.picked) state.removeMark(mark);
-            state.picked = [];
+            for (const mark of state.marks(group)) state.removeMark(mark);
+            delete state.groups[group];
             clearLegacy();
-            if (!state.picking) state.dispose();
+            if (!state.count() && !state.picking) state.dispose();
+            return {ok: true};
+        case 'show':
+            state.shown = group;
+            state.render();
             return {ok: true};
         case 'dispose':
             state.dispose();

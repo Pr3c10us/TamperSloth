@@ -14,7 +14,7 @@ const VERBS: Record<string, string> = {
     getElementDetails: "inspected an element", navigateTo: "opened a page", navigateHistory: "navigated",
     reloadPage: "reloaded the page", clickElement: "clicked", clickTarget: "clicked", typeText: "typed",
     selectOption: "picked an option", scrollPage: "scrolled", submitForm: "submitted a form",
-    waitForElement: "waited", takeScreenshot: "took a screenshot", takeMarkedScreenshot: "took a screenshot",
+    waitForElement: "waited", wait: "waited", takeScreenshot: "took a screenshot", takeMarkedScreenshot: "took a screenshot",
     executeContentScript: "ran a script", evaluateJavaScript: "ran JavaScript", saveScript: "saved a change",
     listScripts: "listed changes", toggleScript: "toggled a change", removeScript: "removed a change",
     viewCodeFiles: "viewed files", getSkill: "loaded guidance", enableTools: "enabled tools",

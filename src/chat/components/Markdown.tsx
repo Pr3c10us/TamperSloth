@@ -188,7 +188,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, classNam
     );
 
     return (
-        <div className={className}>
+        <div className={cn("wrap-anywhere", className)}>
             <Markdown remarkPlugins={[remarkGfm]} components={components}>
                 {content}
             </Markdown>

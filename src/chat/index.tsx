@@ -12,8 +12,9 @@ import {
 } from "./components/ModelSelector";
 import { getApiKeys as loadApiKeys } from "../settings/lib/storage";
 import { MAX_ATTACHMENTS, type PendingAttachment } from "./components/AttachmentChip";
-import { clearPickedMarkers } from "./hooks/useElementPicker";
+import { showPickedMarkers } from "./hooks/useElementPicker";
 import type { PickedElement } from "./components/PickedElementChip";
+import { clearDraft, updateDraft, useDraft } from "./lib/drafts";
 
 const tabId = Number(new URLSearchParams(window.location.search).get("tabId")) || 0;
 
@@ -31,15 +32,23 @@ function Chat() {
         loadConversation,
     } = useAgent();
 
-    const [draft, setDraft] = useState("");
-    const [pickedElements, setPickedElements] = useState<PickedElement[]>([]);
-    const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([]);
+    // Unsent text, picks and files belong to the chat, and wait for it while the user is elsewhere.
+    const { text: draft, pickedElements, files: pendingFiles } = useDraft(conversationId);
+    const setDraft = (text: string) => updateDraft(conversationId, (d) => ({ ...d, text }));
+    const setPickedElements = (updater: (prev: PickedElement[]) => PickedElement[]) =>
+        updateDraft(conversationId, (d) => ({ ...d, pickedElements: updater(d.pickedElements) }));
+    const setPendingFiles = (updater: (prev: PendingAttachment[]) => PendingAttachment[]) =>
+        updateDraft(conversationId, (d) => ({ ...d, files: updater(d.files) }));
     const [historyOpen, setHistoryOpen] = useState(false);
     const [selectedModel, setSelectedModel] = useState<SelectedModelEntry | null>(null);
 
     useEffect(() => {
         loadInitialSelectedModel().then(setSelectedModel);
     }, []);
+
+    useEffect(() => {
+        showPickedMarkers(tabId, conversationId);
+    }, [conversationId]);
 
 
     const handleSend = async () => {
@@ -52,10 +61,7 @@ function Chat() {
         const elementsForMsg = [...pickedElements];
         const filesForMsg = [...pendingFiles];
 
-        setDraft("");
-        setPickedElements([]);
-        setPendingFiles([]);
-        if (elementsForMsg.length > 0) clearPickedMarkers(tabId);
+        clearDraft(conversationId);
 
         void sendMessage(
             text,
@@ -78,13 +84,7 @@ function Chat() {
     const removeFile = (i: number) =>
         setPendingFiles((p) => p.filter((_, idx) => idx !== i));
 
-    const handleNewChat = () => {
-        clear();
-        setDraft("");
-        setPickedElements([]);
-        clearPickedMarkers(tabId);
-        setPendingFiles([]);
-    };
+    const handleNewChat = () => clear();
 
     return (
         <div className="relative flex h-full w-full flex-col overflow-hidden border-l border-border bg-background font-sans text-foreground">
@@ -131,6 +131,7 @@ function Chat() {
                 onSend={handleSend}
                 onCancel={cancel}
                 tabId={tabId}
+                conversationId={conversationId}
             />
 
             <HistoryDrawer

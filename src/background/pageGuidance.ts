@@ -42,12 +42,16 @@ export function pageGuidance(args: any): any {
             .cursor-description[data-typing="true"]::after{content:'';display:inline-block;height:1em;border-left:2px solid #a8bd85;margin-left:2px;vertical-align:-2px;animation:caret 1s steps(2,end) infinite}
             .ripple{position:fixed;width:30px;height:30px;border:1.5px solid #a8bd85;border-radius:50%;box-shadow:0 0 0 2px #0f0f0e66;animation:pulse .45s cubic-bezier(.22,.61,.36,1) forwards}
             @keyframes arrive{from{opacity:0}to{opacity:1}} @keyframes pulse{to{transform:scale(1.9);opacity:0}}
-            .lock-pill{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);display:flex;white-space:nowrap;align-items:center;gap:6px;padding:5px 9px;background:#0f0f0ebf;color:#f6f4efd9;border-radius:6px;font:400 11px/1.3 'TamperSloth Geist','Geist Variable',system-ui,sans-serif;-webkit-font-smoothing:antialiased;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);opacity:1;transition:opacity 180ms ease,visibility 0s}
+            .agent-glow{position:fixed;inset:0;box-shadow:inset 0 0 20px 3px #a8bd858c,inset 0 0 72px 14px #a8bd8547;opacity:1;transition:opacity 240ms ease,visibility 0s}
+            .agent-glow[hidden]{display:block;opacity:0;visibility:hidden;transition:opacity 240ms ease,visibility 0s 240ms}
+            .lock-pill{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);display:flex;white-space:nowrap;align-items:center;gap:8px;margin:0;padding:9px 16px 9px 13px;background:#1d1f1b;color:#f6f4ef;border:1px solid #a8bd8566;border-radius:10px;box-shadow:0 1px 2px #0f0f0e33,0 6px 20px #0f0f0e40,0 0 0 4px #a8bd8526;font:500 13px/1.2 'TamperSloth Geist','Geist Variable',system-ui,sans-serif;-webkit-font-smoothing:antialiased;appearance:none;cursor:pointer;pointer-events:auto;opacity:1;transition:opacity 180ms ease,visibility 0s,background-color 120ms ease}
+            .lock-pill:hover{background:#282b25} .lock-pill:active{transform:translateX(-50%) scale(.98)}
             .lock-pill[hidden]{display:flex;opacity:0;visibility:hidden;transition:opacity 180ms ease,visibility 0s 180ms}
-            .lock-dot{flex:none;width:5px;height:5px;border-radius:50%;background:#a8bd85}
+            .lock-pill[data-mode="guide"]{cursor:default;pointer-events:none}
+            .lock-icon{flex:none;width:16px;height:16px;color:#a8bd85} .lock-icon svg{position:static;display:block;width:16px;height:16px}
             .lock-hint{color:#f6f4ef80}
             @keyframes caret{50%{opacity:0}}
-            @media(prefers-reduced-motion:reduce){.mark,.ripple,.cursor-description::after{animation:none}.cursor,.cursor svg,.lock-pill{transition:none}}
+            @media(prefers-reduced-motion:reduce){.mark,.ripple,.cursor-description::after{animation:none}.cursor,.cursor svg,.lock-pill,.agent-glow{transition:none}}
         `;
         root.append(style);
         const inputGuard=document.createElement('div');inputGuard.className='input-guard';inputGuard.hidden=true;inputGuard.setAttribute('aria-hidden','true');root.append(inputGuard);
@@ -58,25 +62,37 @@ export function pageGuidance(args: any): any {
         status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); root.append(status);
         const cursor = document.createElement('div'); cursor.className = 'cursor'; cursor.hidden = true;
         // Supplied SVG path, uniformly scaled with its rounded tip at the (3, 3) hotspot.
-        cursor.innerHTML = '<svg viewBox="0 0 25 30" aria-hidden="true"><g transform="translate(2.1 1.74) scale(.063)"><path d="M41.1621 6.11426C50.3285 5.55172 56.4049 7.10811 61.7979 9.94043C67.5827 12.9786 72.7214 17.5049 80.29 23.7646L80.292 23.7666L99.6143 39.7344L99.6172 39.7373L172.763 100.113L260.784 172.793L288.688 195.827L288.688 195.828C299.721 204.931 308.114 210.166 312.016 221.188L312.198 221.718C314.957 229.952 314.333 238.946 310.463 246.721C306.354 254.959 299.012 261.124 290.188 263.74H290.188C287.229 264.618 283.08 265.006 278.274 265.117C273.425 265.23 268.846 265.064 264.431 265.062L224.271 265.053L220.9 265.036C204.037 264.888 186.952 263.912 169.137 269.92L169.086 269.937L169.035 269.955C158.71 273.644 149.202 279.306 141.04 286.629L141.029 286.639L141.018 286.649C132.171 294.668 122.869 308.119 116.184 316.961L116.183 316.962L81.4727 362.884C75.0195 371.344 67.8902 376.508 57.96 377.783L57.958 377.784C49.2069 378.911 40.3672 376.509 33.3896 371.109L33.376 371.1L32.7217 370.582C26.0355 365.161 21.751 357.311 20.8242 348.73L20.8213 348.705L20.8184 348.679C20.209 343.462 20.2064 337.766 19.8887 331.771H19.8896L17.9434 291.823V291.822L11.959 169.128L7.91113 86.1465V86.1455L6.76172 62.7061L6.76074 62.6797L6.75879 62.6543L6.44531 57.3682C6.11716 51.7185 5.81264 45.3319 6.13281 41.3994C6.7646 33.6452 9.71963 26.2606 14.6113 20.2109L14.625 20.1943L14.6377 20.1777C21.2131 11.9249 30.3825 7.3599 41.1621 6.11426Z" fill="black" stroke="#ffffff" stroke-width="32"/></g></svg>';
+        cursor.innerHTML = '<svg width="22" height="26" viewBox="0 0 22 26" fill="none" xmlns="http://www.w3.org/2000/svg">\n' +
+            '<path d="M3.22324 1.01515C3.80072 0.979711 4.18353 1.07776 4.52329 1.2562C4.88774 1.4476 5.21147 1.73276 5.6883 2.12712L5.68842 2.12725L6.90573 3.13322L6.90591 3.1334L11.5141 6.93707L17.0594 11.5159L18.8174 12.9671V12.9671C19.5124 13.5406 20.0412 13.8704 20.287 14.5648L20.2985 14.5982C20.4723 15.1169 20.433 15.6836 20.1892 16.1734C19.9303 16.6924 19.4678 17.0808 18.9119 17.2456C18.7255 17.3009 18.4641 17.3253 18.1613 17.3323C17.8558 17.3394 17.5673 17.329 17.2892 17.3289L14.7591 17.3283L14.5467 17.3272C13.4844 17.3179 12.408 17.2564 11.2857 17.6349L11.2824 17.636L11.2792 17.6371C10.6288 17.8695 10.0298 18.2262 9.51555 18.6876L9.51485 18.6882L9.51416 18.6888C8.9568 19.194 8.37077 20.0415 7.94962 20.5985L7.94956 20.5986L5.76281 23.4916C5.35625 24.0246 4.90711 24.35 4.28151 24.4303L4.28138 24.4303C3.73006 24.5013 3.17316 24.35 2.73357 24.0098L2.73271 24.0093L2.69149 23.9766C2.27026 23.6351 2.00034 23.1405 1.94195 22.5999L1.94177 22.5984L1.94159 22.5967C1.90319 22.2681 1.90303 21.9092 1.88301 21.5315L1.76046 19.0148V19.0147L1.38344 11.285L1.12843 6.05718L1.05601 4.58044L1.05595 4.57877L1.05583 4.57717L1.03608 4.24415C1.01541 3.88822 0.996222 3.48586 1.01639 3.23811C1.0562 2.7496 1.24236 2.28437 1.55054 1.90324L1.5514 1.90219L1.5522 1.90115C1.96645 1.38122 2.54412 1.09363 3.22324 1.01515Z" fill="black" stroke="#A8BD85" stroke-width="2.016"/>\n' +
+            '</svg>'
         const cursorTag=document.createElement('div');cursorTag.className='cursor-tag';cursorTag.hidden=true;
         const cursorName=document.createElement('span');cursorName.textContent='Sloth';
         const cursorContent=document.createElement('div');cursorContent.className='cursor-tag-content';
         const cursorBody=document.createElement('div');cursorBody.className='cursor-description';cursorBody.hidden=true;
         cursorContent.append(cursorBody);cursorTag.append(cursorContent);cursor.append(cursorTag);
-        // Visible while site input is paused, so a blocked click is never a mystery.
-        const lockPill=document.createElement('div');lockPill.className='lock-pill';lockPill.hidden=true;lockPill.setAttribute('role','status');
-        const lockDot=document.createElement('span');lockDot.className='lock-dot';
+        // Edge glow and a Stop button while Sloth drives the page, so a blocked click is never a mystery.
+        const agentGlow=document.createElement('div');agentGlow.className='agent-glow';agentGlow.hidden=true;agentGlow.setAttribute('aria-hidden','true');
+        const lockPill=document.createElement('button');lockPill.className='lock-pill';lockPill.hidden=true;lockPill.setAttribute('type','button');
+        const lockIcon=document.createElement('span');lockIcon.className='lock-icon';
+        lockIcon.innerHTML='<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.75" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="5.5" y="5.5" width="5" height="5" rx="1" fill="currentColor"/></svg>';
         const lockTitle=document.createElement('span');const lockHint=document.createElement('span');lockHint.className='lock-hint';
-        lockPill.append(lockDot,lockTitle,lockHint);
-        root.append(cursor,lockPill); document.documentElement.append(host);
-        state = win.__tamperSlothGuidance = {host, root, svg, status, cursor,cursorTag,cursorName,cursorBody,inputGuard,lockPill,lockTitle,lockHint, marks: new Map(), wait: null,drawQueue:[],drawing:null,agentPoints:[],agentKeys:[]};
+        lockPill.append(lockIcon,lockTitle,lockHint);
+        root.append(agentGlow,cursor,lockPill); document.documentElement.append(host);
+        state = win.__tamperSlothGuidance = {host, root, svg, status, cursor,cursorTag,cursorName,cursorBody,inputGuard,agentGlow,lockPill,lockIcon,lockTitle,lockHint, marks: new Map(), wait: null,drawQueue:[],drawing:null,agentPoints:[],agentKeys:[]};
         state.renderLock=()=>{
             lockPill.hidden=!state.inputLocked && !state.agentLocked;
-            if(state.inputLocked){lockTitle.textContent='Drawing guide';lockHint.textContent='Esc';}
-            else if(state.agentLocked){lockTitle.textContent='Sloth is working';lockHint.textContent='Esc';}
-            lockPill.setAttribute('aria-label',state.inputLocked ? 'Drawing guide. Input paused. Escape cancels.' : 'Sloth is working. Input paused. Escape to take over.');
+            agentGlow.hidden=!state.agentLocked || !!state.inputLocked;
+            const guide=!!state.inputLocked;
+            lockPill.setAttribute('data-mode',guide ? 'guide' : 'agent');lockIcon.hidden=guide;lockHint.hidden=!guide;
+            lockTitle.textContent=guide ? 'Drawing guide' : 'Stop Sloth';lockHint.textContent='Esc';
+            lockPill.setAttribute('aria-label',guide ? 'Drawing guide. Input paused. Escape cancels.' : 'Stop Sloth. Site input is paused while Sloth works.');
         };
+        // Our isolated world can reach runtime messaging; the side panel stops the run holding this tab.
+        state.requestStop=()=>{
+            state.setAgentLocked(false);
+            try{const sent=(globalThis as any).chrome?.runtime?.sendMessage({type:'AGENT_STOP_REQUESTED'});sent?.catch?.(()=>{});}catch{}
+        };
+        lockPill.addEventListener('click',()=>{if(!state.inputLocked) state.requestStop();});
         // Gestures arrive through CDP as trusted events, so a guard overlay would swallow
         // them too. Instead, only input matching what the agent announced gets through.
         // Batched actions unlock and relock back to back. Linger briefly so the gap
@@ -106,7 +122,8 @@ export function pageGuidance(args: any): any {
             if(!event.isTrusted) return;
             const escape=event.type==='keydown' && (event as KeyboardEvent).key==='Escape';
             if(state.inputLocked){if(escape) pageGuidance({action:'clear'});}
-            else if(!state.agentLocked || state.isAgentInput(event)) return;
+            // The closed root retargets clicks on the Stop button to the (otherwise inert) host.
+            else if(!state.agentLocked || state.isAgentInput(event) || event.composedPath()[0]===host) return;
             else if(escape) state.setAgentLocked(false);
             event.preventDefault();event.stopImmediatePropagation();
         };

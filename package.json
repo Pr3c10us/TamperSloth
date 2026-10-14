@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/agent-efficiency.test.mjs tests/provider-compatibility.test.mjs tests/pricing.test.mjs tests/browser-capabilities.test.mjs tests/visual-targeting.test.mjs tests/tab-context.test.mjs tests/screenshot-freshness.test.mjs tests/conversation-storage.test.mjs tests/page-guidance.test.mjs tests/reasoning.test.mjs tests/living-dots.test.mjs tests/history-messages.test.mjs tests/chat-title.test.mjs",
+    "test": "node --test tests/agent-efficiency.test.mjs tests/provider-compatibility.test.mjs tests/pricing.test.mjs tests/browser-capabilities.test.mjs tests/visual-targeting.test.mjs tests/tab-context.test.mjs tests/screenshot-freshness.test.mjs tests/conversation-storage.test.mjs tests/page-guidance.test.mjs tests/reasoning.test.mjs tests/living-dots.test.mjs tests/history-messages.test.mjs tests/chat-title.test.mjs tests/tab-lease.test.mjs tests/rate-limit.test.mjs tests/error-summary.test.mjs",
     "benchmark:context": "node tests/benchmark.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",

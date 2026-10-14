@@ -41,6 +41,21 @@ Autosaves serialize database writes and retain only the latest queued snapshot
 for each chat if disk writes fall behind the stream. Save errors appear in the
 chat panel.
 
+Open chats are held in a module-level store in `useAgent.ts`, not in the chat
+page, so a run keeps streaming and saving while the user starts a new chat,
+opens another from history, or visits the gallery or settings. Several chats can
+run at once; each has its own abort controller and pending `askUser` question.
+Only one chat at a time uses a tab (`lib/tabLease.ts`): a chat claims it on its
+first page tool call (reads included) and holds it until its run ends; others
+keep working with tab-free tools and queue in order for the page, showing a
+notice that can stop the holding chat.
+A chat that is off screen, idle and fully written is dropped from memory and
+reloaded from IndexedDB when reopened. Unsent composer drafts (text, picked
+elements, files) are kept per chat in `lib/drafts.ts`, and "New chat" reuses the
+one blank chat so its draft is found again; picked-element marks on the page are
+grouped by chat and only the open chat's are drawn. Everything lasts as long as
+the side panel document: closing the panel ends its runs and drops its drafts.
+
 `tests/conversation-storage.test.mjs` exercises actual IndexedDB semantics using
 `fake-indexeddb`, including concurrent saves, reopening storage, atomic failure,
 safe legacy reads, metadata-only history, and coalesced writes. The Chrome storage

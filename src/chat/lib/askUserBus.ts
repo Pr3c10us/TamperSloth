@@ -17,7 +17,9 @@ interface PendingAsk {
     reject: (err: Error) => void;
 }
 
-let current: PendingAsk | null = null;
+// Chats run side by side, so each keeps its own pending question; the overlay
+// shows only the one for the chat on screen.
+const pending = new Map<string, PendingAsk>();
 const listeners = new Set<() => void>();
 
 function notify() {
@@ -31,27 +33,27 @@ export function subscribeAskUser(fn: () => void): () => void {
     };
 }
 
-export function getPendingAsk(): PendingAsk | null {
-    return current;
+export function getPendingAsk(conversationId: string): PendingAsk | null {
+    return pending.get(conversationId) ?? null;
 }
 
-export function setPendingAsk(p: PendingAsk | null): void {
-    current = p;
+export function setPendingAsk(conversationId: string, p: PendingAsk): void {
+    pending.set(conversationId, p);
     notify();
 }
 
-export function answerPendingAsk(answer: AskUserAnswer): void {
-    const p = current;
+export function answerPendingAsk(conversationId: string, answer: AskUserAnswer): void {
+    const p = pending.get(conversationId);
     if (!p) return;
-    current = null;
+    pending.delete(conversationId);
     notify();
     p.resolve(answer);
 }
 
-export function rejectPendingAsk(err: Error): void {
-    const p = current;
+export function rejectPendingAsk(conversationId: string, err: Error): void {
+    const p = pending.get(conversationId);
     if (!p) return;
-    current = null;
+    pending.delete(conversationId);
     notify();
     p.reject(err);
 }

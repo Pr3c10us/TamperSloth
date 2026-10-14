@@ -1,8 +1,9 @@
-import { AlertCircle, HelpCircle } from "lucide-react";
+import { HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ToolCall } from "../../hooks/useAgent";
 import type { AskUserAnswer, AskUserOption } from "../../lib/askUserBus";
 import { Eyebrow, CARD_DUR, CARD_EASE } from "./shared";
+import { ErrorNotice } from "../ErrorNotice";
 
 interface AskUserArgs {
     description?: string;
@@ -55,10 +56,7 @@ export function AskUserCard({ tc }: { tc: ToolCall }) {
                 className="rounded-md border border-destructive/40 bg-card p-3.5"
                 style={{ animation: `cardEnter ${CARD_DUR}ms ${CARD_EASE} both` }}
             >
-                <div className="flex items-center gap-2 text-sm text-destructive">
-                    <AlertCircle className="size-3.5" strokeWidth={2} />
-                    <span>{errText}</span>
-                </div>
+                <ErrorNotice message={errText}/>
             </article>
         );
     }

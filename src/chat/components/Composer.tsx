@@ -25,6 +25,8 @@ import {
     type PendingAttachment,
 } from "./AttachmentChip";
 import { AskUserOverlay } from "@/src/chat/components/askUser/askUserOverlay.tsx";
+import { TabWaitNotice } from "./TabWaitNotice";
+import { RateLimitNotice } from "./RateLimitNotice";
 
 interface ComposerProps {
     draft: string;
@@ -41,6 +43,7 @@ interface ComposerProps {
     onSend: () => void;
     onCancel: () => void;
     tabId: number;
+    conversationId: string;
 }
 
 /** Label row for a group of attachments above the input: icon, name, count and "clear all". */
@@ -78,6 +81,7 @@ export function Composer({
     onSend,
     onCancel,
     tabId,
+    conversationId,
 }: ComposerProps) {
     const [isPicking, setIsPicking] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -110,6 +114,7 @@ export function Composer({
     const { start: startPicker, remove: removePickedFromDom } =
         useElementPicker({
             tabId,
+            group: conversationId,
             isPicking,
             setIsPicking,
             setPickedElements,
@@ -156,6 +161,22 @@ export function Composer({
         e.target.value = "";
     };
 
+    // Images on the clipboard (e.g. a copied screenshot) become attachments.
+    // Text still pastes normally; the default is suppressed only for image-only pastes.
+    const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+        if (isLoading) return;
+        const images = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
+        if (!images.length) return;
+        if (!e.clipboardData.types.includes("text/plain")) e.preventDefault();
+        const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+        const named = images.map((f, i) => {
+            const ext = f.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
+            const name = `pasted-${stamp}${images.length > 1 ? `-${i + 1}` : ""}.${ext}`;
+            return new File([f], name, { type: f.type, lastModified: f.lastModified });
+        });
+        setSkippedFiles(addFiles(named));
+    };
+
     const removePicked = (i: number) => {
         removePickedFromDom(i);
     };
@@ -166,12 +187,14 @@ export function Composer({
 
     const clearPicked = () => {
         setPickedElements(() => []);
-        clearPickedMarkers(tabId);
+        clearPickedMarkers(tabId, conversationId);
     };
 
     return (
         <div ref={containerRef} className="fixed bottom-0 inset-x-0 z-20 flex shrink-0 flex-col bg-background">
-            <AskUserOverlay />
+            <RateLimitNotice conversationId={conversationId} />
+            <TabWaitNotice conversationId={conversationId} />
+            <AskUserOverlay conversationId={conversationId} />
             <div className="flex flex-col gap-1.5 px-3 pb-2 pt-2">
                 <div className="flex flex-col gap-2.5 rounded-2xl border border-border bg-card p-2.5 shadow-xs transition-colors focus-within:border-foreground/40">
                     {pickedElements.length > 0 && (
@@ -228,6 +251,7 @@ export function Composer({
                             ref={textareaRef}
                             value={draft}
                             onChange={(e) => setDraft(e.target.value)}
+                            onPaste={handlePaste}
                             onKeyDown={(e) => {
                                 if (e.key === "Enter" && !e.shiftKey) {
                                     e.preventDefault();

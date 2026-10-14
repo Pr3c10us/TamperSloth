@@ -1,7 +1,7 @@
 import type {StoredConversation} from './storage';
 
 /** A slow disk must not retain every streamed snapshot in a promise chain. */
-export function createConversationSaver(write: (conversation: StoredConversation) => Promise<void>, onError: (error: unknown) => void) {
+export function createConversationSaver(write: (conversation: StoredConversation) => Promise<void>, onError: (error: unknown, conversation: StoredConversation) => void) {
     const pending = new Map<string, StoredConversation>();
     let running = false;
     return (conversation: StoredConversation) => {
@@ -14,7 +14,7 @@ export function createConversationSaver(write: (conversation: StoredConversation
                     const [id, next] = pending.entries().next().value!;
                     pending.delete(id);
                     try { await write(next); }
-                    catch (error) { onError(error); }
+                    catch (error) { onError(error, next); }
                 }
             } finally { running = false; }
         })();

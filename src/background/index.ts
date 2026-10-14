@@ -314,6 +314,8 @@ if (chrome.runtime.onUserScriptMessage) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'CLIPBOARD_OFFSCREEN') return false;
+    // The on-page Stop button is handled by the side panel that owns the run.
+    if (message.type === 'AGENT_STOP_REQUESTED') return false;
     // Element picker preview, requested by the picker overlay (our own isolated-world
     // script; page scripts cannot reach runtime messaging). It only captures the
     // sender's own visible tab, after the overlay has hidden itself.
