@@ -56,21 +56,23 @@ test('annotations follow target geometry, keep text safe and never intercept pag
     f.run({action:'remove',id:'a'});assert.equal(state.marks.size,0);
 });
 
-test('sketch strokes are deterministic across renders and highlights use bounded clipped hatching',()=>{
+test('guide strokes are clean, stable across renders, and highlights are a translucent wash',()=>{
     const f=fixture();
     for(const kind of ['rectangle','ellipse','bracket','arrow','highlight','freehand']) {
         f.run({action:'draw',id:kind,kind,selector:'#target',points:[{x:80,y:100},{x:140,y:120},{x:190,y:110}],lineStyle:'dashed'});
         const state=f.window.__tamperSlothGuidance,mark=state.marks.get(kind),path=mark.shape.attrs.d;
-        assert.ok(path.includes('C'));assert.doesNotMatch(path,/NaN|Infinity/);
-        assert.notEqual(mark.echo.attrs.d,path);
-        assert.equal(mark.shape.attrs['stroke-dasharray'],kind==='ellipse' ? '8 5 6 6 10 4' : undefined);
+        assert.ok(path.length);assert.doesNotMatch(path,/NaN|Infinity/);
+        // No hand-drawn wobble: edges are straight lines, rounded corners or true arcs.
+        assert.doesNotMatch(path,/C/);
+        assert.equal(mark.shape.attrs['stroke-dasharray'],'6 5');
         assert.equal(mark.echo.style.display,'none');
         state.render();assert.equal(mark.shape.attrs.d,path);
         f.target.box.x+=30;state.render();assert.equal(mark.shape.attrs.d,path);
+        if(kind==='rectangle' || kind==='highlight') assert.match(path,/ Q/,'boxes have rounded corners');
         if(kind==='highlight') {
-            assert.ok(mark.clipShape.attrs.d.endsWith(' Z'));assert.match(mark.hatch.attrs['clip-path'],/^url\(#ts-hatch-/);
-            assert.ok(mark.hatch.attrs.d.includes('C'));
-            assert.ok(mark.hatch.attrs.d.length<15000);assert.equal(mark.hatch.attrs.opacity,'.2');
+            assert.equal(mark.fill.attrs.d,path);assert.equal(mark.fill.attrs['fill-opacity'],'.16');assert.equal(mark.fill.attrs.stroke,'none');
+        } else {
+            assert.equal(mark.fill,undefined);
         }
     }
 });
@@ -428,7 +430,7 @@ test('live ink and the cursor hotspot stay together after layout shifts and at v
 test('reduced motion draws immediately and provides the full description in the cursor bubble',()=>{
     const f=fixture();f.run({action:'draw',kind:'highlight',selector:'#target',label:'Save preferences',color:'sky'});
     const state=f.window.__tamperSlothGuidance,mark=[...state.marks.values()][0];
-    assert.equal(mark.drawn,true);assert.equal(mark.group.style.mask,undefined);assert.equal(mark.hatch.attrs.stroke,'#a8bd85');
+    assert.equal(mark.drawn,true);assert.equal(mark.group.style.mask,undefined);assert.equal(mark.fill.attrs.fill,'#a8bd85');
     assert.equal(mark.label.hidden,true);assert.equal(state.cursorBody.textContent,'Save preferences');
     assert.equal(state.cursorBody.attrs['data-typing'],'false');
 });
@@ -450,7 +452,7 @@ test('unmeasurable geometry keeps the outline visible before showing its descrip
     const f=fixture({animate:true,measurable:false});
     f.run({action:'draw',id:'unmeasurable',kind:'rectangle',selector:'#target',label:'Click Continue'});
     const state=f.window.__tamperSlothGuidance,mark=state.marks.get('unmeasurable');
-    assert.equal(mark.drawn,true);assert.ok(mark.shape.attrs.d.includes('C'));
+    assert.equal(mark.drawn,true);assert.ok(mark.shape.attrs.d.endsWith(' Z'));
     assert.equal(mark.group.style.visibility,'visible');assert.equal(state.cursorBody.hidden,false);
     assert.equal(mark.measurements.removed,true);assert.equal(f.frames.size,0);
     assert.equal(state.inputLocked,false);
@@ -742,4 +744,17 @@ test('off-screen guidance targets scroll into view before drawing',()=>{
     assert.deepEqual({...f.window.__tamperSlothGuidance.marks.get('__step').box},{x:300,y:280,width:40,height:40});
     f.fire('pointerdown',f.expected,true,{clientX:320,clientY:300});
     assert.equal(f.run({action:'poll',id:'region'}).status,'completed');
+});
+
+test('an overlay left by an older build is replaced, not reused',()=>{
+    const f=fixture();
+    f.run({action:'draw',id:'old',kind:'rectangle',selector:'#target'});
+    const stale=f.window.__tamperSlothGuidance;
+    // An overlay from before an extension reload carries no version, or an older one.
+    delete stale.version;
+    f.run({action:'draw',id:'new',kind:'rectangle',selector:'#target'});
+    const state=f.window.__tamperSlothGuidance;
+    assert.notEqual(state,stale);
+    assert.equal(stale.host.removed,true);
+    assert.deepEqual([...state.marks.keys()],['new']);
 });

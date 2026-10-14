@@ -44,6 +44,7 @@ export interface TitleRequest {
     text: string;
     attachmentNames?: string[];
     pickedElements?: number;
+    quotes?: string[];
 }
 
 export async function generateChatTitle(model: LanguageModel, providerId: ProviderId, request: TitleRequest): Promise<string> {
@@ -51,6 +52,7 @@ export async function generateChatTitle(model: LanguageModel, providerId: Provid
         request.text.trim() && `Request: ${request.text.trim().slice(0, 2000)}`,
         request.attachmentNames?.length && `Attached files: ${request.attachmentNames.join(", ")}`,
         request.pickedElements && `Picked page elements: ${request.pickedElements}`,
+        request.quotes?.length && `Quoted page text: ${request.quotes.join(" / ").slice(0, 1000)}`,
     ].filter(Boolean).join("\n");
     const {text} = await generateText({
         model,

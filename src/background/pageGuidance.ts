@@ -2,7 +2,15 @@
 export function pageGuidance(args: any): any {
     const win = window as any;
     const actionTypes=['click','input','change','submit','focusin','pointerup','pointerdown'];
+    // Bump when the overlay's drawing changes. Its state, functions included, outlives an
+    // extension reload on the page; an older overlay is disposed and built afresh.
+    const VERSION=2;
     let state = win.__tamperSlothGuidance;
+    if (state && state.version!==VERSION) {
+        state.version=VERSION;
+        try{pageGuidance({action:'dispose'});}catch{state.host?.remove();delete win.__tamperSlothGuidance;}
+        state=undefined;
+    }
     if (!state && args.action==='agentLock' && !args.locked) return {ok:true};
     if (!state && ['poll', 'cancel', 'clear', 'dispose'].includes(args.action)) {
         // A full page load wipes window state; the acted marker survives same-origin navigations.
@@ -29,7 +37,7 @@ export function pageGuidance(args: any): any {
         style.textContent = `
             :host{pointer-events:none} *{box-sizing:border-box;pointer-events:none}
             svg{position:absolute;inset:0;width:100%;height:100%;overflow:hidden}
-            .mark{filter:drop-shadow(0 0 1px #0f0f0e66)}
+            .mark{filter:drop-shadow(0 0 1px #0f0f0e66)} .wash{transition:opacity 200ms ease}
             .label,.cursor-tag{font:400 12px/1.5 'TamperSloth Geist','Geist Variable',system-ui,sans-serif;-webkit-font-smoothing:antialiased;border-radius:6px;box-shadow:0 2px 8px #0f0f0e14}
             .label{position:fixed;max-width:min(240px,calc(100vw - 24px));overflow-wrap:anywhere;background:#0f0f0e;color:#f6f4ef;padding:6px 12px;outline:1px solid #f6f4ef33;animation:arrive 160ms cubic-bezier(.22,.61,.36,1)}
             .sr-status{position:fixed;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
@@ -78,7 +86,7 @@ export function pageGuidance(args: any): any {
         const lockTitle=document.createElement('span');const lockHint=document.createElement('span');lockHint.className='lock-hint';
         lockPill.append(lockIcon,lockTitle,lockHint);
         root.append(agentGlow,cursor,lockPill); document.documentElement.append(host);
-        state = win.__tamperSlothGuidance = {host, root, svg, status, cursor,cursorTag,cursorName,cursorBody,inputGuard,agentGlow,lockPill,lockIcon,lockTitle,lockHint, marks: new Map(), wait: null,drawQueue:[],drawing:null,agentPoints:[],agentKeys:[]};
+        state = win.__tamperSlothGuidance = {version:VERSION, host, root, svg, status, cursor,cursorTag,cursorName,cursorBody,inputGuard,agentGlow,lockPill,lockIcon,lockTitle,lockHint, marks: new Map(), wait: null,drawQueue:[],drawing:null,agentPoints:[],agentKeys:[]};
         state.renderLock=()=>{
             lockPill.hidden=!state.inputLocked && !state.agentLocked;
             agentGlow.hidden=!state.agentLocked || !!state.inputLocked;
@@ -191,9 +199,9 @@ export function pageGuidance(args: any): any {
             if(!mark) return;
             state.drawing=mark;
             clearTimeout(state.typingTimer);cursorBody.hidden=true;
-            const done=()=>{clearTimeout(mark.animationTimer);mark.measurements?.remove();mark.group.style.filter='';mark.group.style.visibility='visible';mark.drawn=true;state.drawing=null;state.park(mark);if(mark.label) state.describe(mark);mark.resolveDrawing?.({ok:true,id:mark.id});if(!state.drawQueue.length){state.setInputLocked(false);state.wait?.armTimeout?.();}state.drawNext();};
+            const done=()=>{clearTimeout(mark.animationTimer);if(mark.fill) mark.fill.style.opacity='';mark.measurements?.remove();mark.group.style.filter='';mark.group.style.visibility='visible';mark.drawn=true;state.drawing=null;state.park(mark);if(mark.label) state.describe(mark);mark.resolveDrawing?.({ok:true,id:mark.id});if(!state.drawQueue.length){state.setInputLocked(false);state.wait?.armTimeout?.();}state.drawNext();};
             if(mark.animate===false || state.reduced() || typeof mark.shape.getTotalLength!=='function'){done();return;}
-            const ns='http://www.w3.org/2000/svg',stages: any[]=[],nodes=[mark.shape,...(mark.echo.style.display==='none' ? [] : [mark.echo]),...(mark.hatch ? [mark.hatch] : [])];
+            const ns='http://www.w3.org/2000/svg',stages: any[]=[],nodes=[mark.shape,...(mark.echo.style.display==='none' ? [] : [mark.echo])];
             const measurements=document.createElementNS(ns,'defs');mark.measurements=measurements;mark.group.append(measurements);
             const originals=new Map<any,string>();
             let length=0,lastPoint: any;
@@ -216,6 +224,7 @@ export function pageGuidance(args: any): any {
             if(!length || !Number.isFinite(length)){done();return;}
             for(const node of nodes){node.setAttribute('d','');node.style.strokeDasharray='';}
             mark.animationNodes=new Map(nodes.map(node=>[node,'']));mark.drawingActive=true;
+            if(mark.fill) mark.fill.style.opacity='0';
             state.setInputLocked(true);
             // A changing SVG filter bounding box can defer painting thin partial strokes.
             // Paint the live ink directly; restore its subtle shadow when complete.
@@ -358,38 +367,20 @@ export function pageGuidance(args: any): any {
         state.recentHit=(selector: string,el: Element | null,wanted: string)=>state.recent.some((entry: any)=>state.sameAction(entry.type,wanted) && state.hits({composedPath:()=>entry.path} as any,selector,el));
         state.recordEvents=['pointerdown','click','input','change','submit','focusin','pointerup','keyup'];
         for(const type of state.recordEvents) window.addEventListener(type,state.recordAction,{capture:true,passive:true});
+        // Clean geometry: straight edges, rounded corners and true curves. Dashes come
+        // from stroke-dasharray, and highlights are a translucent wash of the color.
         state.sketch = (mark: any, box: any) => {
             const {width:w,height:h}=box;
-            const path=(pass: number,dashed=mark.lineStyle==='dashed')=>{
-                let seed=mark.seed ^ (pass*0x9e3779b9);
-                const wobble=()=>{seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return ((seed>>>0)/4294967296-.5)*2;};
-                const line=(a: any,b: any,move=true)=>{
-                    const dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy),rough=Math.min(3.5,len/8);
-                    if(dashed && len>2) {
-                        // Draw each dash as its own pencil stroke, instead of mechanically
-                        // chopping a perfect SVG edge with stroke-dasharray.
-                        let d='',offset=0;
-                        const scale=Math.max(1,len/1600);
-                        while(offset<len) {
-                            const end=Math.min(len,offset+(6.5+(wobble()+1)*2.2)*scale);
-                            const jitter=()=>wobble()*.65;
-                            const sx=a.x+dx*offset/len+jitter(),sy=a.y+dy*offset/len+jitter();
-                            const ex=a.x+dx*end/len+jitter(),ey=a.y+dy*end/len+jitter();
-                            d+=`M${sx},${sy} C${sx+(ex-sx)*.33+jitter()},${sy+(ey-sy)*.33+jitter()} ${sx+(ex-sx)*.67+jitter()},${sy+(ey-sy)*.67+jitter()} ${ex},${ey} `;
-                            offset=end+(4+(wobble()+1)*1.5)*scale;
-                        }
-                        return d;
-                    }
-                    return `${move ? `M${a.x},${a.y}` : ''} C${a.x+dx*.33+wobble()*rough},${a.y+dy*.33+wobble()*rough} ${a.x+dx*.67+wobble()*rough},${a.y+dy*.67+wobble()*rough} ${b.x},${b.y}`;
-                };
-                const chain=(points: any[],closed=false)=>points.slice(1).reduce((d,p,i)=>d+line(points[i],p,false),`M${points[0].x},${points[0].y}`)+(closed ? line(points.at(-1),points[0],false)+' Z' : '');
+            const line=(a: any,b: any)=>`M${a.x},${a.y} L${b.x},${b.y}`;
+            const polyline=(points: any[])=>points.slice(1).reduce((d,p)=>d+` L${p.x},${p.y}`,`M${points[0].x},${points[0].y}`);
+            const path=()=>{
                 if(mark.kind==='ellipse') {
-                    const cx=w/2,cy=h/2,rx=w/2+5,ry=h/2+5,k=.5522848;
-                    return `M${cx+rx},${cy} C${cx+rx+wobble()},${cy+ry*k} ${cx+rx*k},${cy+ry+wobble()} ${cx},${cy+ry} C${cx-rx*k},${cy+ry+wobble()} ${cx-rx+wobble()},${cy+ry*k} ${cx-rx},${cy} C${cx-rx+wobble()},${cy-ry*k} ${cx-rx*k},${cy-ry+wobble()} ${cx},${cy-ry} C${cx+rx*k},${cy-ry+wobble()} ${cx+rx+wobble()},${cy-ry*k} ${cx+rx},${cy} Z`;
+                    const rx=w/2+5,ry=h/2+5,cy=h/2;
+                    return `M${w/2-rx},${cy} a${rx},${ry} 0 1,0 ${rx*2},0 a${rx},${ry} 0 1,0 ${-rx*2},0 Z`;
                 }
                 if(['rectangle','highlight'].includes(mark.kind)) {
-                    const corner=(x: number,y: number)=>({x:x+wobble(),y:y+wobble()});
-                    return chain([corner(-5,-5),corner(w+5,-5),corner(w+5,h+5),corner(-5,h+5)],true);
+                    const x=-5,y=-5,rw=w+10,rh=h+10,r=Math.min(10,rw/3,rh/3);
+                    return `M${x+r},${y} H${x+rw-r} Q${x+rw},${y} ${x+rw},${y+r} V${y+rh-r} Q${x+rw},${y+rh} ${x+rw-r},${y+rh} H${x+r} Q${x},${y+rh} ${x},${y+rh-r} V${y+r} Q${x},${y} ${x+r},${y} Z`;
                 }
                 if(mark.kind==='bracket') {
                     const corner=Math.min(17,Math.max(10,Math.min(w,h)/3));
@@ -398,30 +389,20 @@ export function pageGuidance(args: any): any {
                         [{x:w-corner,y:-5},{x:w+5,y:-5},{x:w+5,y:corner}],
                         [{x:-5,y:h-corner},{x:-5,y:h+5},{x:corner,y:h+5}],
                         [{x:w+5,y:h-corner},{x:w+5,y:h+5},{x:w-corner,y:h+5}],
-                    ].map(points=>chain(points)).join(' ');
+                    ].map(polyline).join(' ');
                 }
                 if(mark.kind==='arrow') {
                     const a=mark.points?.[0] ? {x:mark.points[0].x-mark.box.x,y:mark.points[0].y-mark.box.y} : {x:Math.max(16-box.x,-65),y:Math.max(16-box.y,-35)};
                     const b=mark.points?.[1] ? {x:mark.points[1].x-mark.box.x,y:mark.points[1].y-mark.box.y} : {x:-8,y:h/2};
                     const angle=Math.atan2(b.y-a.y,b.x-a.x),head=Math.min(12,Math.hypot(b.x-a.x,b.y-a.y)/3);
-                    return line(a,b)+line({x:b.x-head*Math.cos(angle-.5),y:b.y-head*Math.sin(angle-.5)},b)+line(b,{x:b.x-head*Math.cos(angle+.5),y:b.y-head*Math.sin(angle+.5)});
+                    return line(a,b)+' '+polyline([{x:b.x-head*Math.cos(angle-.5),y:b.y-head*Math.sin(angle-.5)},b,{x:b.x-head*Math.cos(angle+.5),y:b.y-head*Math.sin(angle+.5)}]);
                 }
-                if(mark.kind==='freehand') return chain(mark.points.map((p: any)=>({x:p.x-mark.box.x,y:p.y-mark.box.y})));
+                if(mark.kind==='freehand') return polyline(mark.points.map((p: any)=>({x:p.x-mark.box.x,y:p.y-mark.box.y})));
                 return '';
             };
             mark.group.setAttribute('transform',`translate(${box.x},${box.y})`);
-            const d=path(0);mark.shape.setAttribute('d',d);mark.echo.setAttribute('d',path(1));
-            if(mark.hatch) {
-                mark.clipShape.setAttribute('d',path(0,false));
-                const spacing=Math.max(10,(w+h)/150);let hatch='';
-                let seed=mark.seed || 1;
-                const jitter=()=>{seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return ((seed>>>0)/4294967296-.5)*2;};
-                for(let x=-h-5;x<w+10;x+=spacing*(1+jitter()*.12)) {
-                    const endX=x+h+10;
-                    hatch+=`M${x+jitter()},${h+5} C${x+(h+10)/3+jitter()*2},${h*.67} ${x+(h+10)*.67+jitter()*2},${h*.33} ${endX+jitter()},-5 `;
-                }
-                mark.hatch.setAttribute('d',hatch);
-            }
+            const d=path();mark.shape.setAttribute('d',d);mark.echo.setAttribute('d',d);
+            if(mark.fill) mark.fill.setAttribute('d',d);
         };
         state.render = () => {
             const boxes=new Map<any,any>();
@@ -584,18 +565,16 @@ export function pageGuidance(args: any): any {
         }
         // One outline pass: a second perimeter would look like tracing an existing shape.
         echo.setAttribute('opacity','.4');echo.style.display='none';
-        if(args.lineStyle==='dashed' && args.kind==='ellipse') shape.setAttribute('stroke-dasharray','8 5 6 6 10 4');
-        let hatch,clipShape;
+        if(args.lineStyle==='dashed') shape.setAttribute('stroke-dasharray','6 5');
+        let fill;
         if(args.kind==='highlight') {
-            const defs=document.createElementNS(ns,'defs'),clip=document.createElementNS(ns,'clipPath'),clipId=`ts-hatch-${crypto.randomUUID()}`;
-            clip.setAttribute('id',clipId);clipShape=document.createElementNS(ns,'path');clip.append(clipShape);defs.append(clip);group.append(defs);
-            hatch=document.createElementNS(ns,'path');hatch.setAttribute('stroke',color);hatch.setAttribute('stroke-width','1');hatch.setAttribute('opacity','.2');hatch.setAttribute('fill','none');hatch.setAttribute('clip-path',`url(#${clipId})`);group.append(hatch);
+            fill=document.createElementNS(ns,'path');fill.setAttribute('class','wash');fill.setAttribute('fill',color);fill.setAttribute('fill-opacity','.16');fill.setAttribute('stroke','none');group.append(fill);
         }
         group.append(shape,echo); state.svg.append(group);
         let label: HTMLDivElement | undefined;
         if (args.label) {label=document.createElement('div'); label.hidden=true;label.className='label'; label.textContent=state.brief(args.label);label.setAttribute('aria-label',args.label);}
         let seed=2166136261;for(const char of id) seed=Math.imul(seed^char.charCodeAt(0),16777619);
-        const mark={...args,id,seed,box:box ?? {x:args.points[0].x,y:args.points[0].y,width:0,height:0},group,shape,echo,hatch,clipShape,label,actions:new Set(),stepId:state.wait && !state.wait.result ? state.wait.id : undefined,timer:undefined as any};
+        const mark={...args,id,seed,box:box ?? {x:args.points[0].x,y:args.points[0].y,width:0,height:0},group,shape,echo,fill,label,actions:new Set(),stepId:state.wait && !state.wait.result ? state.wait.id : undefined,timer:undefined as any};
         state.marks.set(id,mark);
         if(!state.annotationListening) {
             for(const type of actionTypes) document.addEventListener(type,state.annotationListener,true);

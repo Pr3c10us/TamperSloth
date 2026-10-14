@@ -10,6 +10,7 @@ import {createConversationSaver} from '../lib/conversationSaver';
 import SYSTEM_PROMPT from "../lib/prompt.ts";
 import type {PendingAttachment} from "../components/AttachmentChip.tsx";
 import type {PickedElement} from "../components/PickedElementChip.tsx";
+import type {Quote} from "../lib/panelRequests";
 import {createToolRuntime} from "../lib/toolRuntime";
 import {clip, createStepMessagePreparer, isFailed, serialize, summarizeSelectedElement, sumUsage, usageRecord, type RunMetrics, type UsageRecord} from "../lib/efficiency";
 import {createGuidanceGuard, GUIDANCE_RESUME_NOTE} from "../lib/guidanceGuard";
@@ -67,6 +68,8 @@ export interface ChatMessage {
     /** Attachment ids of the picked elements' screenshots, by index; shown in the chat only. */
     pickedElementShots?: (string | null)[];
     attachments?: StoredAttachment[];
+    /** Page text quoted with "Ask Sloth"; sent ahead of the message's own text. */
+    quotes?: Quote[];
     taskState?: string;
     runMetrics?: RunMetrics;
 }
@@ -338,6 +341,7 @@ async function sendMessage(
     modelId?: string,
     elementContext?: PickedElement[],
     attachments?: PendingAttachment[],
+    quotes?: Quote[],
 ) {
     const started = performance.now();
     const startedAt = Date.now();
@@ -380,6 +384,7 @@ async function sendMessage(
         pickedElements: elementContext?.length ? elementContext.map(p => p.html) : undefined,
         pickedElementShots,
         attachments: storedAttachments,
+        quotes: quotes?.length ? quotes : undefined,
     };
 
     const previous = sessions.get(conversationId)?.messages ?? [];
@@ -389,7 +394,7 @@ async function sendMessage(
 
     // Named alongside the run, whichever chat is on screen when it arrives.
     if (isFirstMessage) {
-        const fallback = requestTitle(text) || storedAttachments?.[0]?.name || "Untitled";
+        const fallback = requestTitle(text) || requestTitle(quotes?.[0]?.text ?? "") || storedAttachments?.[0]?.name || "Untitled";
         void (async () => {
             let named = "";
             try {
@@ -397,6 +402,7 @@ async function sendMessage(
                     text,
                     attachmentNames: storedAttachments?.map(a => a.name),
                     pickedElements: elementContext?.length,
+                    quotes: quotes?.map(q => q.text),
                 });
             } catch (error) {
                 console.warn("[Tampersloth] chat title failed", error);

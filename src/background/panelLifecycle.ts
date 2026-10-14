@@ -1,5 +1,6 @@
 import {runPageGuidance} from './pageGuidance';
 import {runPickerOverlay} from './pickerOverlay';
+import {runDrawOverlay} from './drawOverlay';
 import type {CDPManager} from './cdp';
 
 export async function cleanupBrowserGuidance(cdp: CDPManager, shouldContinue=()=>true) {
@@ -31,9 +32,12 @@ export function installPanelLifecycle(cdp: CDPManager) {
         cdp.setPanelClosed(false);
         port.onDisconnect.addListener(()=>{
             panels.delete(port);
-            // Picked-element marks belong to the panel that made them; the panel's URL names its tab.
+            // Picked-element marks and drawings belong to the panel that made them; the panel's URL names its tab.
             const tabId=panelTab(port);
-            if(tabId && ![...panels].some(other=>panelTab(other)===tabId)) void runPickerOverlay(tabId,{action:'dispose'});
+            if(tabId && ![...panels].some(other=>panelTab(other)===tabId)) {
+                void runPickerOverlay(tabId,{action:'dispose'});
+                void runDrawOverlay(tabId,'dispose');
+            }
             if(panels.size) return;
             cdp.setPanelClosed(true);
             void (async()=>{

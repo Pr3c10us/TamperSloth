@@ -2,8 +2,8 @@
  * Element picker overlay, injected into the page with chrome.scripting.
  * Serialized into Chrome's isolated world: keep every dependency inside this function.
  *
- * Marks are drawn in a closed shadow root in the same hand-drawn style as page
- * guidance: wobbly lime outlines with a hachure fill. The page's own elements are
+ * Marks are drawn in a closed shadow root in the same style as page guidance:
+ * rounded lime outlines with a translucent fill. The page's own elements are
  * never restyled, so the HTML sent to the model is exactly what the page has.
  * A pick also crops a screenshot of the element (overlay hidden) for the panel's
  * chip; the model only ever receives the HTML.
@@ -21,9 +21,11 @@ export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clea
     const INK = '#0f0f0e';
     const PAPER = '#f6f4ef';
     const group = args.group ?? '';
+    // Bump when the overlay's drawing changes. The overlay's state, functions included,
+    // outlives an extension reload on the page, so an older one is replaced, not reused.
+    const VERSION = 2;
     let state = win.__tamperSlothPicker;
-    // An overlay left by a version without groups is replaced, not extended.
-    if (state && !state.groups) {
+    if (state && (!state.groups || state.version !== VERSION)) {
         state.dispose?.();
         state = undefined;
     }
@@ -64,35 +66,16 @@ export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clea
         root.append(style, svg);
         document.documentElement.append(host);
 
-        state = win.__tamperSlothPicker = {host, root, svg, ns, groups: {} as Record<string, any[]>, shown: group, hover: null as any, picking: false};
+        state = win.__tamperSlothPicker = {version: VERSION, host, root, svg, ns, groups: {} as Record<string, any[]>, shown: group, hover: null as any, picking: false};
         state.marks = (name: string) => state.groups[name] ??= [];
         state.count = () => Object.values(state.groups).reduce((n: number, marks: any) => n + marks.length, 0);
 
-        /** Seeded wobble so a mark keeps the same hand-drawn shape while it moves. */
-        const rng = (seed: number) => () => {
-            seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
-            return ((seed >>> 0) / 4294967296 - .5) * 2;
-        };
+        /** A rounded box just outside the element, in the same clean style as page guidance. */
         state.sketch = (mark: any, w: number, h: number) => {
-            const wobble = rng(mark.seed);
-            const line = (a: any, b: any) => {
-                const dx = b.x - a.x, dy = b.y - a.y, rough = Math.min(3.5, Math.hypot(dx, dy) / 8);
-                return ` C${a.x + dx * .33 + wobble() * rough},${a.y + dy * .33 + wobble() * rough} ${a.x + dx * .67 + wobble() * rough},${a.y + dy * .67 + wobble() * rough} ${b.x},${b.y}`;
-            };
-            const corner = (x: number, y: number) => ({x: x + wobble(), y: y + wobble()});
-            const points = [corner(-5, -5), corner(w + 5, -5), corner(w + 5, h + 5), corner(-5, h + 5)];
-            const outline = `M${points[0].x},${points[0].y}` + points.slice(1).map((p, i) => line(points[i], p)).join('') + line(points[3], points[0]) + ' Z';
+            const x = -5, y = -5, rw = w + 10, rh = h + 10, r = Math.min(10, rw / 3, rh / 3);
+            const outline = `M${x + r},${y} H${x + rw - r} Q${x + rw},${y} ${x + rw},${y + r} V${y + rh - r} Q${x + rw},${y + rh} ${x + rw - r},${y + rh} H${x + r} Q${x},${y + rh} ${x},${y + rh - r} V${y + r} Q${x},${y} ${x + r},${y} Z`;
             mark.shape.setAttribute('d', outline);
-            if (mark.hatch) {
-                mark.clipShape.setAttribute('d', outline);
-                const jitter = rng(mark.seed ^ 0x9e3779b9);
-                const spacing = Math.max(10, (w + h) / 150);
-                let hatch = '';
-                for (let x = -h - 5; x < w + 10; x += spacing * (1 + jitter() * .12)) {
-                    hatch += `M${x + jitter()},${h + 5} C${x + (h + 10) / 3 + jitter() * 2},${h * .67} ${x + (h + 10) * .67 + jitter() * 2},${h * .33} ${x + h + 10 + jitter()},-5 `;
-                }
-                mark.hatch.setAttribute('d', hatch);
-            }
+            mark.wash?.setAttribute('d', outline);
         };
         state.makeMark = (filled: boolean) => {
             const group = document.createElementNS(ns, 'g');
@@ -100,20 +83,14 @@ export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clea
             const shape = document.createElementNS(ns, 'path');
             shape.setAttribute('stroke', LIME); shape.setAttribute('stroke-width', '2'); shape.setAttribute('fill', 'none');
             shape.setAttribute('stroke-linecap', 'round'); shape.setAttribute('stroke-linejoin', 'round');
-            const mark: any = {group, shape, seed: (Math.random() * 0xffffffff) >>> 0 || 1, size: ''};
+            const mark: any = {group, shape, size: ''};
             if (filled) {
-                const defs = document.createElementNS(ns, 'defs'), clip = document.createElementNS(ns, 'clipPath');
-                const clipId = `ts-pick-${Math.random().toString(36).slice(2)}`;
-                clip.setAttribute('id', clipId);
-                mark.clipShape = document.createElementNS(ns, 'path');
-                clip.append(mark.clipShape); defs.append(clip);
-                mark.hatch = document.createElementNS(ns, 'path');
-                mark.hatch.setAttribute('stroke', LIME); mark.hatch.setAttribute('stroke-width', '1');
-                mark.hatch.setAttribute('opacity', '.22'); mark.hatch.setAttribute('fill', 'none');
-                mark.hatch.setAttribute('clip-path', `url(#${clipId})`);
-                group.append(defs, mark.hatch);
+                // A picked element gets a translucent wash of lime inside its outline.
+                mark.wash = document.createElementNS(ns, 'path');
+                mark.wash.setAttribute('fill', LIME); mark.wash.setAttribute('fill-opacity', '.16'); mark.wash.setAttribute('stroke', 'none');
+                group.append(mark.wash);
             } else {
-                // The hover preview is a lighter, dashed-feeling pass before the click commits.
+                // The hover preview is a lighter pass before the click commits.
                 shape.setAttribute('opacity', '.75');
             }
             group.append(shape);

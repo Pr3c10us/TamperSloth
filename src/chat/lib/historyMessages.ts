@@ -20,6 +20,7 @@ export interface HistoryMessage {
     content: string;
     pickedElements?: string[];
     attachments?: HistoryAttachment[];
+    quotes?: {text: string; url?: string; title?: string}[];
     taskState?: string;
 }
 
@@ -35,6 +36,17 @@ export function withElementContext(text: string, elements: string[] | undefined,
     return `${text}\n\n${elements.map((html, i) => `[Selected element ${i + 1}]: ${summarize(html)}`).join("\n\n")}`;
 }
 
+/** Puts the page text the user quoted ahead of what they asked about it. */
+export function withQuotes(text: string, quotes: HistoryMessage["quotes"]) {
+    if (!quotes?.length) return text;
+    const blocks = quotes.map(quote => {
+        const source = [quote.title && `"${quote.title}"`, quote.url && `(${quote.url})`].filter(Boolean).join(" ");
+        const body = quote.text.split(/\r?\n/).map(line => `> ${line}`).join("\n");
+        return `[Quoted from the page${source ? ` ${source}` : ""}]:\n${body}`;
+    });
+    return [...blocks, text].filter(Boolean).join("\n\n");
+}
+
 export async function buildModelMessages(messages: HistoryMessage[], options: HistoryOptions): Promise<ModelMessage[]> {
     const {loadAttachment, summarizeElement, maxAttachments = MAX_HISTORY_ATTACHMENTS} = options;
     let budget = maxAttachments;
@@ -48,7 +60,7 @@ export async function buildModelMessages(messages: HistoryMessage[], options: Hi
             built.push({role: "assistant", content: m.content + state});
             continue;
         }
-        const text = withElementContext(m.content, m.pickedElements, summarizeElement);
+        const text = withElementContext(withQuotes(m.content, m.quotes), m.pickedElements, summarizeElement);
         const attachments = m.attachments ?? [];
         if (!attachments.length) {
             built.push({role: "user", content: text});
