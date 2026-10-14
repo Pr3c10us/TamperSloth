@@ -1,6 +1,7 @@
 import {useSyncExternalStore} from "react";
 import type {PickedElement} from "../components/PickedElementChip";
 import type {PendingAttachment} from "../components/AttachmentChip";
+import type {Quote} from "./panelRequests";
 import {clearPickedMarkers} from "../hooks/useElementPicker";
 
 /** What the composer holds for one chat before it is sent. */
@@ -8,9 +9,11 @@ export interface Draft {
     text: string;
     pickedElements: PickedElement[];
     files: PendingAttachment[];
+    /** Page text the user chose to ask about, shown above the input. */
+    quotes: Quote[];
 }
 
-const EMPTY: Draft = {text: "", pickedElements: [], files: []};
+const EMPTY: Draft = {text: "", pickedElements: [], files: [], quotes: []};
 
 // Kept per chat for the panel's lifetime, so unsent work survives switching
 // chats or pages. Keyed by conversation id, so a chat evicted from memory finds
@@ -36,7 +39,7 @@ export function getDraft(id: string): Draft {
 
 export function updateDraft(id: string, updater: (draft: Draft) => Draft) {
     const next = updater(getDraft(id));
-    if (!next.text && !next.pickedElements.length && !next.files.length) drafts.delete(id);
+    if (!next.text && !next.pickedElements.length && !next.files.length && !next.quotes.length) drafts.delete(id);
     else drafts.set(id, next);
     notify();
 }

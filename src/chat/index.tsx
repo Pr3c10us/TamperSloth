@@ -15,6 +15,7 @@ import { MAX_ATTACHMENTS, type PendingAttachment } from "./components/Attachment
 import { showPickedMarkers } from "./hooks/useElementPicker";
 import type { PickedElement } from "./components/PickedElementChip";
 import { clearDraft, updateDraft, useDraft } from "./lib/drafts";
+import type { Quote } from "./lib/panelRequests";
 
 const tabId = Number(new URLSearchParams(window.location.search).get("tabId")) || 0;
 
@@ -33,12 +34,14 @@ function Chat() {
     } = useAgent();
 
     // Unsent text, picks and files belong to the chat, and wait for it while the user is elsewhere.
-    const { text: draft, pickedElements, files: pendingFiles } = useDraft(conversationId);
+    const { text: draft, pickedElements, files: pendingFiles, quotes } = useDraft(conversationId);
     const setDraft = (text: string) => updateDraft(conversationId, (d) => ({ ...d, text }));
     const setPickedElements = (updater: (prev: PickedElement[]) => PickedElement[]) =>
         updateDraft(conversationId, (d) => ({ ...d, pickedElements: updater(d.pickedElements) }));
     const setPendingFiles = (updater: (prev: PendingAttachment[]) => PendingAttachment[]) =>
         updateDraft(conversationId, (d) => ({ ...d, files: updater(d.files) }));
+    const setQuotes = (updater: (prev: Quote[]) => Quote[]) =>
+        updateDraft(conversationId, (d) => ({ ...d, quotes: updater(d.quotes) }));
     const [historyOpen, setHistoryOpen] = useState(false);
     const [selectedModel, setSelectedModel] = useState<SelectedModelEntry | null>(null);
 
@@ -60,6 +63,7 @@ function Chat() {
         const text = draft.trim();
         const elementsForMsg = [...pickedElements];
         const filesForMsg = [...pendingFiles];
+        const quotesForMsg = [...quotes];
 
         clearDraft(conversationId);
 
@@ -70,6 +74,7 @@ function Chat() {
             selectedModel.modelId,
             elementsForMsg.length > 0 ? elementsForMsg : undefined,
             filesForMsg.length > 0 ? filesForMsg : undefined,
+            quotesForMsg.length > 0 ? quotesForMsg : undefined,
         );
     };
 
@@ -123,6 +128,8 @@ function Chat() {
                 pickedElements={pickedElements}
                 setPickedElements={setPickedElements}
                 pendingFiles={pendingFiles}
+                quotes={quotes}
+                setQuotes={setQuotes}
                 addFiles={addFiles}
                 removeFile={removeFile}
                 selectedModel={selectedModel}

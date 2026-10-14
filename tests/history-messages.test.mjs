@@ -46,3 +46,17 @@ test('attachments whose bytes are missing are named instead of dropped silently'
         {...options, loadAttachment: async a => a.id ? 'data:' + a.name : null});
     assert.match(text(message.content), /Attachments not shown: legacy.png/);
 });
+
+test('quoted page text comes before the request, line by line, with its source', async () => {
+    const [message] = await buildModelMessages([
+        {role: 'user', content: 'what does this mean', pickedElements: ['<p>x</p>'],
+            quotes: [{text: 'line one\nline two', url: 'https://example.com/a', title: 'Example'}]},
+    ], options);
+    assert.equal(message.content, '[Quoted from the page "Example" (https://example.com/a)]:\n> line one\n> line two'
+        + '\n\nwhat does this mean\n\n[Selected element 1]: summary of <p>x</p>');
+});
+
+test('a quote can be sent on its own', async () => {
+    const [message] = await buildModelMessages([{role: 'user', content: '', quotes: [{text: 'just this'}]}], options);
+    assert.equal(message.content, '[Quoted from the page]:\n> just this');
+});

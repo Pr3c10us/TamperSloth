@@ -117,7 +117,7 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
         ...(operation === 'perception' ? {toModelOutput: ({output}: {output: any}) => gestureModelOutput(output)} : {}),
     });
     return {
-        annotatePage: tool({description:'Draw/remove/clear non-blocking on-page guidance: arrow, highlight, rectangle, ellipse, bracket, freehand or label. Anchor to a unique CSS selector (tracks layout/scroll), or viewport CSS box/points. The cursor draws the sketch strokes in the app lime accent; label text streams into its bubble. Drawing finishes before this call returns. Solid/dashed lines; lifetimeMs 0 persists. Clear when finished.',
+        annotatePage: tool({description:'Draw/remove/clear non-blocking on-page guidance: arrow, highlight, rectangle, ellipse, bracket, freehand or label. Anchor to a unique CSS selector (tracks layout/scroll), or viewport CSS box/points. The cursor draws the strokes in the app lime accent; label text streams into its bubble. Drawing finishes before this call returns. Solid/dashed lines; lifetimeMs 0 persists. Clear when finished.',
             inputSchema:browserSchemas.guidance.omit({completion:true,annotationIds:true,instruction:true,event:true,expectedSelector:true,expectedState:true,timeoutMs:true,idleTimeoutMs:true,index:true,cue:true}).extend({action:z.enum(['draw','remove','clear'])}),
             execute:async(input,options)=>{
                 const tabId=input.tabId ?? getTabId(),signal=abortSignal ?? options.abortSignal;

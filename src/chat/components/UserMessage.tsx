@@ -4,6 +4,7 @@ import { attachmentUrl } from "../lib/attachmentUrls";
 import { MarkdownContent } from "./Markdown";
 import { PickedElementChip } from "./PickedElementChip";
 import { AttachmentChip } from "./AttachmentChip";
+import { QuoteChip } from "./QuoteChip";
 
 // Stored chats only keep an attachment id; the thumbnail URL is minted from IndexedDB.
 function SentAttachment({ att }: { att: StoredAttachment }) {
@@ -34,6 +35,7 @@ function SentPickedElement({ html, shotId }: { html: string; shotId?: string | n
 export const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage }) {
     const picked = msg.pickedElements ?? [];
     const attachments = msg.attachments ?? [];
+    const quotes = msg.quotes ?? [];
     return (
         <div className="flex flex-col items-end gap-2">
             <div className="font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground">
@@ -43,6 +45,13 @@ export const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage
                 <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
                     {attachments.map((a, i) => (
                         <SentAttachment key={a.id ?? i} att={a} />
+                    ))}
+                </div>
+            )}
+            {quotes.length > 0 && (
+                <div className="flex w-full max-w-[85%] flex-col gap-2">
+                    {quotes.map((quote, i) => (
+                        <QuoteChip key={i} quote={quote} />
                     ))}
                 </div>
             )}

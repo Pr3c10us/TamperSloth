@@ -71,6 +71,13 @@ export async function pageScreenshotState(wait: boolean) {
         metrics: measured, settled, frames, visible: document.visibilityState === 'visible'};
 }
 
+async function blobToDataUrl(blob: Blob) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    return `data:${blob.type};base64,` + btoa(binary);
+}
+
 type Observation = {key: string; settled: boolean; visible: boolean; metrics?: any};
 type Check = () => Promise<void>;
 const windows = new Map<number, Promise<unknown>>();
@@ -160,10 +167,7 @@ export async function captureViewportScreenshot(tabId: number, maxWidth: number 
             if (maxWidth && maxWidth > 0 && bitmap.width > maxWidth) {
                 const canvas = new OffscreenCanvas(maxWidth, Math.max(1, Math.round(bitmap.height * maxWidth / bitmap.width)));
                 canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-                const bytes = new Uint8Array(await (await canvas.convertToBlob({type: 'image/jpeg', quality: 0.8})).arrayBuffer());
-                let binary = '';
-                for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-                dataUrl = 'data:image/jpeg;base64,' + btoa(binary);
+                dataUrl = await blobToDataUrl(await canvas.convertToBlob({type: 'image/jpeg', quality: 0.8}));
                 imagePixels = {width: canvas.width, height: canvas.height};
             }
             const viewport = before.metrics.visualViewport ?? before.metrics.viewport;
@@ -194,9 +198,22 @@ export async function captureRegion(windowId: number, rect: {x: number; y: numbe
         const scale = Math.min(1, PICK_PREVIEW_MAX / Math.max(width, height));
         const canvas = new OffscreenCanvas(Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)));
         canvas.getContext('2d')!.drawImage(bitmap, left, top, width, height, 0, 0, canvas.width, canvas.height);
-        const bytes = new Uint8Array(await (await canvas.convertToBlob({type: 'image/webp', quality: 0.9})).arrayBuffer());
-        let binary = '';
-        for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-        return 'data:image/webp;base64,' + btoa(binary);
+        return blobToDataUrl(await canvas.convertToBlob({type: 'image/webp', quality: 0.9}));
+    } finally { bitmap.close(); }
+}
+
+/** Longest side of a marked-up tab sent to the chat; providers downscale anything larger anyway. */
+const ANNOTATED_MAX = 2048;
+
+/** The visible tab with the user's drawing on it, for the chat as an image attachment. */
+export async function captureAnnotatedViewport(windowId: number) {
+    const dataUrl = await captureVisibleTab(windowId, async () => {});
+    const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
+    try {
+        const scale = ANNOTATED_MAX / Math.max(bitmap.width, bitmap.height);
+        if (scale >= 1) return dataUrl;
+        const canvas = new OffscreenCanvas(Math.round(bitmap.width * scale), Math.round(bitmap.height * scale));
+        canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        return blobToDataUrl(await canvas.convertToBlob({type: 'image/jpeg', quality: 0.85}));
     } finally { bitmap.close(); }
 }

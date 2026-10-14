@@ -6,7 +6,9 @@ import {
     MousePointerClick,
     MousePointerSquareDashed,
     Paperclip,
+    PencilLine,
     Plus,
+    TextQuote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +18,10 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { clearPickedMarkers, useElementPicker } from "../hooks/useElementPicker";
+import { useDrawOverlay } from "../hooks/useDrawOverlay";
+import { usePanelRequests } from "../hooks/usePanelRequests";
+import type { Quote } from "../lib/panelRequests";
+import { QuoteChip } from "./QuoteChip";
 import { ModelSelector, type SelectedModelEntry } from "./ModelSelector";
 import { PickedElementChip, type PickedElement } from "./PickedElementChip";
 import {
@@ -34,6 +40,8 @@ interface ComposerProps {
     pickedElements: PickedElement[];
     setPickedElements: (updater: (prev: PickedElement[]) => PickedElement[]) => void;
     pendingFiles: PendingAttachment[];
+    quotes: Quote[];
+    setQuotes: (updater: (prev: Quote[]) => Quote[]) => void;
     /** Returns how many files were left out because of the attachment limit. */
     addFiles: (files: File[]) => number;
     removeFile: (index: number) => void;
@@ -73,6 +81,8 @@ export function Composer({
     pickedElements,
     setPickedElements,
     pendingFiles,
+    quotes,
+    setQuotes,
     addFiles,
     removeFile,
     selectedModel,
@@ -84,6 +94,10 @@ export function Composer({
     conversationId,
 }: ComposerProps) {
     const [isPicking, setIsPicking] = useState(false);
+    const [isDrawing, setIsDrawing] = useState(false);
+    // A pick or drawing asked for from the page's context menu while Sloth is busy starts once it is done.
+    const [queuedAction, setQueuedAction] = useState<"pick" | "draw" | null>(null);
+    const [pageNotice, setPageNotice] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -96,6 +110,12 @@ export function Composer({
         const timer = setTimeout(() => setSkippedFiles(0), 4000);
         return () => clearTimeout(timer);
     }, [skippedFiles]);
+
+    useEffect(() => {
+        if (!pageNotice) return;
+        const timer = setTimeout(() => setPageNotice(null), 4000);
+        return () => clearTimeout(timer);
+    }, [pageNotice]);
 
     // The composer is fixed over the message list; publish its live height so the
     // list can pad its end and the scroll-to-bottom button can sit just above it.
@@ -111,7 +131,7 @@ export function Composer({
         };
     }, []);
 
-    const { start: startPicker, remove: removePickedFromDom } =
+    const { start: startPicker, cancel: cancelPicker, remove: removePickedFromDom } =
         useElementPicker({
             tabId,
             group: conversationId,
@@ -119,6 +139,44 @@ export function Composer({
             setIsPicking,
             setPickedElements,
         });
+    const { start: startDrawing, cancel: cancelDrawing } = useDrawOverlay({ tabId, isDrawing, setIsDrawing });
+
+    // Picking and drawing both take over the page, so starting one ends the other.
+    const togglePicker = () => {
+        if (isDrawing) void cancelDrawing();
+        void startPicker();
+    };
+    const toggleDrawing = async () => {
+        if (isDrawing) {
+            await cancelDrawing();
+            return;
+        }
+        if (isPicking) await cancelPicker();
+        if (!await startDrawing()) setPageNotice("Can't draw on this page");
+    };
+
+    // Requests from the page: "Ask Sloth" quotes, context-menu picks and drawings, and finished drawings.
+    usePanelRequests((request) => {
+        if (request.kind === "quote") {
+            const { text, url, title } = request;
+            setQuotes((prev) => (prev.some((q) => q.text === text) ? prev : [...prev, { text, url, title }]));
+        } else if (request.kind === "image") {
+            setSkippedFiles(addFiles([dataUrlToFile(request.dataUrl, request.name)]));
+        } else {
+            setQueuedAction(request.kind);
+        }
+    });
+    useEffect(() => {
+        if (!queuedAction || isLoading) return;
+        setQueuedAction(null);
+        if (queuedAction === "pick") {
+            if (!isPicking) togglePicker();
+        } else if (!isDrawing) {
+            void toggleDrawing();
+        }
+        // Runs when a request arrives or the run holding it back ends.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [queuedAction, isLoading]);
 
     const fitTextarea = () => {
         const ta = textareaRef.current;
@@ -151,7 +209,8 @@ export function Composer({
         !!selectedModel &&
         (draft.trim().length > 0 ||
             pendingFiles.length > 0 ||
-            pickedElements.length > 0);
+            pickedElements.length > 0 ||
+            quotes.length > 0);
 
     const handleAttach = () => fileInputRef.current?.click();
 
@@ -184,6 +243,8 @@ export function Composer({
     const clearFiles = () => {
         for (let i = pendingFiles.length - 1; i >= 0; i--) removeFile(i);
     };
+
+    const clearQuotes = () => setQuotes(() => []);
 
     const clearPicked = () => {
         setPickedElements(() => []);
@@ -243,6 +304,32 @@ export function Composer({
                                     Up to {MAX_ATTACHMENTS} files · {skippedFiles} not added
                                 </p>
                             )}
+                        </section>
+                    )}
+
+                    {quotes.length > 0 && (
+                        <section
+                            aria-label="Quotes"
+                            className={cn(
+                                "flex flex-col gap-1.5",
+                                (pickedElements.length > 0 || pendingFiles.length > 0) && "border-t border-dashed border-border pt-2.5",
+                            )}
+                        >
+                            <TrayHeader
+                                icon={<TextQuote className="size-3 text-accent" strokeWidth={1.75} />}
+                                label="Quotes"
+                                count={String(quotes.length)}
+                                onClear={clearQuotes}
+                            />
+                            <div className="flex max-h-[12.5rem] flex-col gap-2 overflow-y-auto [scrollbar-width:thin]">
+                                {quotes.map((quote, i) => (
+                                    <QuoteChip
+                                        key={i}
+                                        quote={quote}
+                                        onRemove={() => setQuotes((prev) => prev.filter((_, j) => j !== i))}
+                                    />
+                                ))}
+                            </div>
                         </section>
                     )}
 
@@ -321,7 +408,7 @@ export function Composer({
                                     type="button"
                                     variant="ghost"
                                     size="icon-xs"
-                                    onClick={startPicker}
+                                    onClick={togglePicker}
                                     disabled={isLoading}
                                     aria-pressed={isPicking}
                                     aria-label="Pick a page element"
@@ -338,14 +425,45 @@ export function Composer({
                                 Pick a page element
                             </TooltipContent>
                         </Tooltip>
-                        {isPicking && (
-                            <span className="ml-1.5 flex min-w-0 items-center gap-1.5 font-mono text-[11px] text-accent">
-                                <span
-                                    className="size-1.5 shrink-0 rounded-full bg-accent"
-                                    style={{ animation: "slothPulse 1.4s infinite" }}
-                                />
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    onClick={() => void toggleDrawing()}
+                                    disabled={isLoading}
+                                    aria-pressed={isDrawing}
+                                    aria-label="Draw on the page"
+                                    className={cn(
+                                        "text-muted-foreground hover:text-foreground",
+                                        isDrawing &&
+                                            "bg-foreground text-background hover:bg-foreground hover:text-background",
+                                    )}
+                                >
+                                    <PencilLine strokeWidth={1.5} />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                                Draw on the page
+                            </TooltipContent>
+                        </Tooltip>
+                        {(isPicking || isDrawing || queuedAction || pageNotice) && (
+                            <span role="status" className="ml-1.5 flex min-w-0 items-center gap-1.5 font-mono text-[11px] text-accent">
+                                {(isPicking || isDrawing) && (
+                                    <span
+                                        className="size-1.5 shrink-0 rounded-full bg-accent"
+                                        style={{ animation: "slothPulse 1.4s infinite" }}
+                                    />
+                                )}
                                 <span className="truncate">
-                                    Click elements · Esc when done
+                                    {isPicking
+                                        ? "Click elements · Esc when done"
+                                        : isDrawing
+                                          ? "Drawing · Add to chat when done"
+                                          : queuedAction
+                                            ? `${queuedAction === "pick" ? "Picking" : "Drawing"} starts when Sloth is done`
+                                            : pageNotice}
                                 </span>
                             </span>
                         )}
@@ -376,6 +494,16 @@ export function Composer({
             </div>
         </div>
     );
+}
+
+/** A captured drawing arrives as a data URL; decoded in place so it joins the files at once. */
+function dataUrlToFile(dataUrl: string, name: string) {
+    const [head, body = ""] = dataUrl.split(",");
+    const type = head.match(/^data:([^;,]+)/)?.[1] ?? "image/jpeg";
+    const binary = atob(body);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new File([bytes], name, { type });
 }
 
 export function makeAttachmentFromFile(f: File): PendingAttachment {

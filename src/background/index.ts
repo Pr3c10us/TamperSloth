@@ -1,7 +1,9 @@
 import type {BackgroundScript, ScriptExecutionLog} from "@/src/chat/lib/types.ts";
 import {handleBrowserMessage, cdp} from './browserService';
-import {captureRegion, captureViewportScreenshot} from './screenshotCapture';
+import {captureAnnotatedViewport, captureRegion, captureViewportScreenshot} from './screenshotCapture';
 import {installPanelLifecycle, cleanupBrowserGuidance} from './panelLifecycle';
+import {installContextMenu} from './contextMenu';
+import {queuePanelRequest} from '../chat/lib/panelRequests';
 import {
     deleteScriptValue,
     getScriptValue,
@@ -24,14 +26,18 @@ void Promise.all([
     chrome.action.setTitle({title: 'TamperSloth'}),
 ]).catch(error => console.warn('[Tampersloth] Could not clear legacy browser control state:', error));
 
-chrome.action.onClicked.addListener(async (tab) => {
+/** Opens the tab's panel; call it straight from the user's click, before awaiting anything. */
+async function openPanel(tab: chrome.tabs.Tab) {
     chrome.sidePanel.setOptions({
         tabId: tab.id,
         path: `index.html?tabId=${tab.id}`,
         enabled: true
     });
     await chrome.sidePanel.open({tabId: tab.id, windowId: tab.windowId});
-});
+}
+
+chrome.action.onClicked.addListener(openPanel);
+installContextMenu(openPanel);
 
 chrome.alarms.create('keepalive', {periodInMinutes: 0.5});
 chrome.alarms.onAlarm.addListener(() => { /* just waking up is enough */ });
@@ -326,6 +332,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             .then(dataUrl => sendResponse({dataUrl}), () => sendResponse({dataUrl: null}));
         return true;
     }
+    // The drawing overlay's "Add to chat", once its toolbar is hidden. Same sender
+    // rules as above; the capture goes to the sender tab's panel, never back to the page.
+    if (message.type === 'DRAW_CAPTURE') {
+        const tabId = sender.tab?.id, windowId = sender.tab?.windowId;
+        if (sender.id !== chrome.runtime.id || tabId === undefined || windowId === undefined || sender.frameId !== 0) return false;
+        const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
+        captureAnnotatedViewport(windowId)
+            .then(dataUrl => queuePanelRequest(tabId, {kind: 'image', dataUrl, name: `marked-up-${stamp}.jpg`}))
+            .then(() => sendResponse({ok: true}), error => sendResponse({error: error instanceof Error ? error.message : String(error)}));
+        return true;
+    }
+    // Overlay notices for the panel.
+    if (message.type === 'DRAW_ENDED') return false;
     // Only the extension's own UI may control tabs or evaluate code.
     if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL('')) || sender.tab) {
         sendResponse({error: 'Browser control is restricted to the extension UI'});
