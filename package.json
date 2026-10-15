@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/agent-efficiency.test.mjs tests/provider-compatibility.test.mjs tests/pricing.test.mjs tests/browser-capabilities.test.mjs tests/visual-targeting.test.mjs tests/tab-context.test.mjs tests/screenshot-freshness.test.mjs tests/conversation-storage.test.mjs tests/page-guidance.test.mjs tests/reasoning.test.mjs tests/living-dots.test.mjs tests/history-messages.test.mjs tests/chat-title.test.mjs tests/tab-lease.test.mjs tests/rate-limit.test.mjs tests/error-summary.test.mjs tests/panel-requests.test.mjs tests/dictation.test.mjs",
+    "test": "node --test tests/agent-efficiency.test.mjs tests/provider-compatibility.test.mjs tests/pricing.test.mjs tests/browser-capabilities.test.mjs tests/visual-targeting.test.mjs tests/tab-context.test.mjs tests/screenshot-freshness.test.mjs tests/conversation-storage.test.mjs tests/page-guidance.test.mjs tests/reasoning.test.mjs tests/living-dots.test.mjs tests/history-messages.test.mjs tests/chat-title.test.mjs tests/tab-lease.test.mjs tests/rate-limit.test.mjs tests/error-summary.test.mjs tests/panel-requests.test.mjs tests/dictation.test.mjs tests/top-layer-overlays.test.mjs",
     "benchmark:context": "node tests/benchmark.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -14,6 +14,7 @@
     "@ai-sdk/anthropic": "^4.0.78",
     "@ai-sdk/deepseek": "^3.0.63",
     "@ai-sdk/google": "^4.0.93",
+    "@ai-sdk/google-vertex": "^5.0.112",
     "@ai-sdk/openai": "^4.0.91",
     "@ai-sdk/xai": "^5.0.20",
     "@fontsource-variable/geist": "^5.2.8",

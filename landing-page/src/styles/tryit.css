@@ -1,0 +1,365 @@
+/* ── Paper section: the extension's light theme ── */
+.try {
+  position: relative;
+  margin: 0 clamp(8px, 1.2vw, 18px);
+  padding: clamp(84px, 13vh, 150px) 0 clamp(70px, 11vh, 130px);
+  border-radius: clamp(24px, 3vw, 40px);
+  background: var(--paper);
+  color: var(--paper-ink);
+  overflow: hidden;
+}
+/* Faint dot grid, like a canvas waiting to be drawn on. */
+.try::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle at 1px 1px, rgb(20 21 19 / 0.09) 1px, transparent 0);
+  background-size: 26px 26px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 75%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 75%);
+  pointer-events: none;
+}
+.try-inner {
+  position: relative;
+}
+.try-head {
+  max-width: 820px;
+  margin: 0 auto;
+  text-align: center;
+}
+.on-paper .eyebrow {
+  color: var(--paper-ink-2);
+}
+.eyebrow.tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.eyebrow.tick::before {
+  content: "";
+  width: 18px;
+  height: 1.5px;
+  background: var(--sage);
+}
+.on-paper .eyebrow.tick::before {
+  background: var(--paper-accent);
+}
+.try-head h2 {
+  margin-top: 20px;
+  font-size: var(--fs-h2);
+  color: var(--paper-ink);
+}
+.try-lead {
+  max-width: 520px;
+  margin: 22px auto 0;
+  font-size: var(--fs-lead);
+  line-height: 1.6;
+  color: var(--paper-ink-2);
+}
+
+.try-stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(300px, 0.8fr);
+  gap: 22px;
+  max-width: 1120px;
+  margin: clamp(48px, 7vh, 72px) auto 0;
+}
+.try-stage .ink-layer {
+  z-index: 10;
+}
+.try-stage .guide-cursor {
+  z-index: 11;
+}
+
+/* ── The fictional app ── */
+.app {
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px;
+  background: var(--paper-card);
+  border: 1px solid var(--paper-line);
+  box-shadow: 0 1px 0 #fff inset, 0 30px 60px -36px rgb(20 21 19 / 0.35);
+  font-family: var(--font-sans);
+  color: var(--paper-ink);
+}
+.app-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--paper-line);
+}
+.app-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.app-logo-mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: #e2643c;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.app-crumbs {
+  font-size: 13px;
+  color: var(--paper-ink-2);
+}
+.app-crumbs span {
+  margin: 0 6px;
+  opacity: 0.5;
+}
+.app-body {
+  flex: 1;
+  padding: 6px 24px;
+}
+.app-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--paper-muted);
+  transition: opacity 0.4s;
+}
+.app-row:last-child {
+  border-bottom: 0;
+}
+.app-row.is-dim {
+  opacity: 0.55;
+}
+.app-row b {
+  font-weight: 500;
+  font-size: 16px;
+}
+.app-row p {
+  margin-top: 3px;
+  font-size: 14px;
+  color: var(--paper-ink-2);
+}
+.app-toggle {
+  position: relative;
+  flex: none;
+  width: 48px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--paper-muted);
+  border: 1px solid var(--paper-line);
+  transition: background 0.3s;
+}
+.app-toggle i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(20 21 19 / 0.25);
+  transition: transform 0.45s var(--ease-expo);
+}
+.app-toggle.is-on {
+  background: var(--paper-ink);
+  border-color: var(--paper-ink);
+}
+.app-toggle.is-on i {
+  transform: translateX(20px);
+}
+.app-seg {
+  display: flex;
+  flex: none;
+  padding: 3px;
+  border-radius: 11px;
+  background: var(--paper);
+  border: 1px solid var(--paper-line);
+}
+.app-seg button {
+  min-width: 46px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  color: var(--paper-ink-2);
+  transition: background 0.25s, color 0.25s, box-shadow 0.25s;
+}
+.app-seg button:hover {
+  color: var(--paper-ink);
+}
+.app-seg button.is-on {
+  background: #fff;
+  color: var(--paper-ink);
+  box-shadow: 0 1px 3px rgb(20 21 19 / 0.14);
+  font-weight: 500;
+}
+.app-input {
+  flex: none;
+  min-width: 210px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--paper-line);
+  font-size: 14px;
+  line-height: 34px;
+  color: var(--paper-ink);
+}
+.app-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--paper-line);
+  font-size: 14px;
+}
+.app-select svg {
+  width: 14px;
+  height: 14px;
+}
+.app-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--paper-line);
+  background: #fafbf9;
+  border-radius: 0 0 20px 20px;
+}
+.app-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  font-size: 13.5px;
+  color: var(--paper-accent);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.3s, transform 0.5s var(--ease-expo);
+}
+.app-saved svg {
+  width: 15px;
+  height: 15px;
+}
+.app-saved.is-on {
+  opacity: 1;
+  transform: none;
+}
+.app-btn {
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 10px;
+  background: var(--paper-ink);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  transition: transform 0.15s, background 0.2s;
+}
+.app-btn:active {
+  transform: scale(0.96);
+}
+.app-btn.ghost {
+  background: transparent;
+  color: var(--paper-ink);
+  border: 1px solid var(--paper-line);
+}
+
+/* ── The extension's side panel, light theme ── */
+.try-panel {
+  display: flex;
+  min-height: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--paper-line);
+  box-shadow: 0 30px 60px -36px rgb(20 21 19 / 0.35);
+  /* Sized by the app card beside it, not by its own messages. */
+  contain: size;
+}
+.try-panel > .sp-chrome {
+  flex: 1;
+}
+.app {
+  position: relative;
+}
+.app-guard {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  cursor: progress;
+}
+.try-again {
+  display: flex;
+  justify-content: center;
+  margin-top: 26px;
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition: opacity 0.4s, transform 0.6s var(--ease-expo);
+}
+.try-again.is-on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.try-again button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--paper-line);
+  background: #fff;
+  color: var(--paper-ink);
+  font-size: 14px;
+}
+.try-again svg {
+  width: 15px;
+  height: 15px;
+}
+
+@media (max-width: 860px) {
+  .try-stage {
+    grid-template-columns: 1fr;
+  }
+  .try-panel {
+    contain: none;
+    height: 520px;
+  }
+}
+@media (max-width: 560px) {
+  .app-head {
+    padding: 14px 16px;
+  }
+  .app-crumbs {
+    display: none;
+  }
+  .app-body {
+    padding: 0 16px;
+  }
+  .app-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 18px 0;
+  }
+  .app-input {
+    min-width: 0;
+    width: 100%;
+  }
+  .app-seg button {
+    min-width: 0;
+    flex: 1;
+    padding: 0 8px;
+  }
+  .app-foot {
+    padding: 14px 16px;
+  }
+}

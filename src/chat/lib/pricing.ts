@@ -15,6 +15,19 @@ interface Rates {
 // https://api-docs.deepseek.com/quick_start/pricing/
 // Estimates exclude taxes, account discounts/free tiers, cache storage and
 // non-token charges. Anthropic uses the app's default five-minute cache writes.
+// Vertex AI lists the same per-token rates as the Gemini API.
+const GEMINI_RATES: Record<string, Rates> = {
+    // Introductory rates; they double on 2026-12-01 (see estimateUsageCost).
+    "gemini-4-argon": {input: 2, output: 10, cacheRead: .1},
+    "gemini-3.8-flash": {input: .75, output: 3.75, cacheRead: .075},
+    "gemini-3.6-flash": {input: .75, output: 3.75, cacheRead: .075},
+    "gemini-3.5-flash-lite": {input: .3, output: 2.5, cacheRead: .03},
+    "gemini-3.1-flash-lite": {input: .25, output: 1.5, cacheRead: .025},
+    "gemini-3.1-pro-preview": {input: 2, output: 12, cacheRead: .2,
+        longContext: {above: 200000, input: 4, output: 18, cacheRead: .4}},
+    "gemini-3-flash-preview": {input: .5, output: 3, cacheRead: .05},
+};
+
 const MODEL_RATES: Record<string, Record<string, Rates>> = {
     openai: {
         "gpt-6.1-sol": {input: 2, output: 10, cacheRead: .1, cacheWrite: 2.5,
@@ -31,15 +44,8 @@ const MODEL_RATES: Record<string, Record<string, Rates>> = {
             longContext: {above: 100000, input: .5, output: 2.5, cacheRead: .05, cacheWrite: .625}},
         "claude-fable-5-1": {input: 10, output: 50, cacheRead: .25, cacheWrite: 12.5},
     },
-    google: {
-        "gemini-3.8-flash": {input: .75, output: 3.75, cacheRead: .075},
-        "gemini-3.6-flash": {input: .75, output: 3.75, cacheRead: .075},
-        "gemini-3.5-flash-lite": {input: .3, output: 2.5, cacheRead: .03},
-        "gemini-3.1-flash-lite": {input: .25, output: 1.5, cacheRead: .025},
-        "gemini-3.1-pro-preview": {input: 2, output: 12, cacheRead: .2,
-            longContext: {above: 200000, input: 4, output: 18, cacheRead: .4}},
-        "gemini-3-flash-preview": {input: .5, output: 3, cacheRead: .05},
-    },
+    google: GEMINI_RATES,
+    vertex: GEMINI_RATES,
     deepseek: {
         "deepseek-flash": {input: .3, output: 1.2, cacheRead: .006},
         "deepseek-v4-pro": {input: 1.32, output: 3.96, cacheRead: .044},
@@ -60,8 +66,11 @@ export function estimateUsageCost(providerId: string, modelId: string, usage: Us
     if (!rates || !Number.isFinite(timestamp)) return undefined;
     if (rates.longContext && (usage.input ?? 0) > rates.longContext.above) rates = rates.longContext;
     let multiplier = 1;
-    if (providerId === "google" && ["gemini-3.8-flash", "gemini-3.6-flash"].includes(modelId)
-        && timestamp >= Date.UTC(2027, 0, 1)) multiplier = 2;
+    if (providerId === "google" || providerId === "vertex") {
+        const doublesFrom = modelId === "gemini-4-argon" ? Date.UTC(2026, 11, 1)
+            : ["gemini-3.8-flash", "gemini-3.6-flash"].includes(modelId) ? Date.UTC(2027, 0, 1) : undefined;
+        if (doublesFrom !== undefined && timestamp >= doublesFrom) multiplier = 2;
+    }
     if (providerId === "deepseek") {
         const date = new Date(timestamp);
         const weekday = date.getUTCDay();

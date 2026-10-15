@@ -17,5 +17,8 @@ export function agentProviderOptions(providerId: ProviderId, reasoning: "balance
             return {deepseek: {thinking: {type: "enabled"}, reasoningEffort: reasoning === "thorough" ? "max" : "high"}};
         case "google":
             return {google: {thinkingConfig: {includeThoughts: true}}};
+        case "vertex":
+            // The Vertex model reads options under "vertex"/"googleVertex", not "google".
+            return {vertex: {thinkingConfig: {includeThoughts: true}}};
     }
 }

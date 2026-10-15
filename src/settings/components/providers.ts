@@ -23,6 +23,11 @@ export const PROVIDERS_PRIMARY: Provider[] = [
     link: "aistudio.google.com",
   },
   {
+    id: "vertex",
+    name: "Google Vertex AI",
+    link: "cloud.google.com/vertex-ai",
+  },
+  {
     id: "deepseek",
     name: "DeepSeek",
     link: "platform.deepseek.com",

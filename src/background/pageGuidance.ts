@@ -4,7 +4,7 @@ export function pageGuidance(args: any): any {
     const actionTypes=['click','input','change','submit','focusin','pointerup','pointerdown'];
     // Bump when the overlay's drawing changes. Its state, functions included, outlives an
     // extension reload on the page; an older overlay is disposed and built afresh.
-    const VERSION=2;
+    const VERSION=3;
     let state = win.__tamperSlothGuidance;
     if (state && state.version!==VERSION) {
         state.version=VERSION;
@@ -101,6 +101,16 @@ export function pageGuidance(args: any): any {
             try{const sent=(globalThis as any).chrome?.runtime?.sendMessage({type:'AGENT_STOP_REQUESTED'});sent?.catch?.(()=>{});}catch{}
         };
         lockPill.addEventListener('click',()=>{if(!state.inputLocked) state.requestStop();});
+        // Modal dialogs, popovers and fullscreen paint in the top layer, above any z-index.
+        // Join it as a manual popover, and rejoin last whenever the page opens one there.
+        host.setAttribute('popover','manual');
+        state.raise=()=>{try{if(host.matches(':popover-open')) host.hidePopover();host.showPopover();}catch{}};
+        state.onTopLayer=(event: Event)=>{if(event.target!==host && (event.type!=='toggle' || (event as any).newState==='open')) state.raise();};
+        window.addEventListener('toggle',state.onTopLayer,true);document.addEventListener('fullscreenchange',state.onTopLayer);
+        // showModal sets the open attribute; older browsers fire no toggle event for dialogs.
+        state.dialogs=new MutationObserver(records=>{if(records.some(r=>(r.target as Element).localName==='dialog' && (r.target as Element).hasAttribute('open'))) state.raise();});
+        state.dialogs.observe(document.documentElement,{subtree:true,attributes:true,attributeFilter:['open']});
+        state.raise();
         // Gestures arrive through CDP as trusted events, so a guard overlay would swallow
         // them too. Instead, only input matching what the agent announced gets through.
         // Batched actions unlock and relock back to back. Linger briefly so the gap
@@ -481,6 +491,7 @@ export function pageGuidance(args: any): any {
         window.removeEventListener('scroll',state.schedule,true);window.removeEventListener('resize',state.schedule);
         for(const type of state.lockEvents) window.removeEventListener(type,state.blockInput,true);
         for(const type of state.recordEvents) window.removeEventListener(type,state.recordAction,true);
+        window.removeEventListener('toggle',state.onTopLayer,true);document.removeEventListener('fullscreenchange',state.onTopLayer);state.dialogs?.disconnect();
         state.host.remove();delete win.__tamperSlothGuidance;
         return {ok:true};
     }

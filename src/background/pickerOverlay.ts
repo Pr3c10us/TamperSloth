@@ -23,7 +23,7 @@ export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clea
     const group = args.group ?? '';
     // Bump when the overlay's drawing changes. The overlay's state, functions included,
     // outlives an extension reload on the page, so an older one is replaced, not reused.
-    const VERSION = 2;
+    const VERSION = 3;
     let state = win.__tamperSlothPicker;
     if (state && (!state.groups || state.version !== VERSION)) {
         state.dispose?.();
@@ -67,6 +67,70 @@ export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clea
         document.documentElement.append(host);
 
         state = win.__tamperSlothPicker = {version: VERSION, host, root, svg, ns, groups: {} as Record<string, any[]>, shown: group, hover: null as any, picking: false};
+        // Modal dialogs, popovers and fullscreen paint in the top layer, above any z-index.
+        // Join it as a manual popover, and rejoin last whenever the page opens one there.
+        // A modal dialog makes the rest of the page inert and a click outside an open popover
+        // closes it, so while one is open the host lives inside the topmost one.
+        host.setAttribute('popover', 'manual');
+        const openedAt = new WeakMap<Element, number>();
+        let opens = 0;
+        const track = (el: Element, open: boolean) => {
+            if (!open) openedAt.delete(el);
+            else if (!openedAt.has(el)) openedAt.set(el, ++opens);
+        };
+        state.topLayer = () => {
+            const rank = (el: Element) => openedAt.get(el) ?? 0;
+            const open = [...document.querySelectorAll('dialog:modal, [popover]:popover-open')];
+            let modal: Element | null = null;
+            for (const el of open) if (el.localName === 'dialog' && el.matches(':modal') && (!modal || rank(el) >= rank(modal))) modal = el;
+            // Popovers outside the modal are inert too, so only ones inside it count.
+            let top = modal;
+            for (const el of open) {
+                if (el === host || el.localName === 'dialog' || (el as HTMLElement).popover === 'manual' || (modal && !modal.contains(el))) continue;
+                if (!top || rank(el) >= rank(top)) top = el;
+            }
+            return top;
+        };
+        state.raise = (reorder = true) => {
+            const parent = state.topLayer() ?? document.documentElement;
+            try {
+                if (host.parentNode !== parent) parent.append(host);
+                else if (!reorder && host.matches(':popover-open')) return;
+                if (host.matches(':popover-open')) host.hidePopover();
+                host.showPopover();
+            } catch { /* Without popover support the z-index still applies. */ }
+        };
+        state.onTopLayer = (event: Event) => {
+            const el = event.target as Element;
+            if (el === host) return;
+            if (event.type !== 'toggle') { state.raise(); return; }
+            // Toggles also come from <details>, which never reaches the top layer.
+            if (el.localName !== 'dialog' && !el.hasAttribute?.('popover')) return;
+            const open = (event as ToggleEvent).newState === 'open';
+            track(el, open);
+            state.raise(open);
+        };
+        window.addEventListener('toggle', state.onTopLayer, true);
+        document.addEventListener('fullscreenchange', state.onTopLayer);
+        // showModal and close flip the open attribute; older browsers fire no toggle for dialogs.
+        // The host also leaves with a dialog or popover the page removes while it is inside.
+        state.layers = new MutationObserver(records => {
+            let changed = !host.isConnected, opened = false;
+            for (const record of records) {
+                const el = record.target as Element;
+                if (record.type !== 'attributes' || el.localName !== 'dialog') continue;
+                const open = el.hasAttribute('open');
+                track(el, open);
+                changed = true; opened ||= open;
+            }
+            if (changed) state.raise(opened);
+        });
+        state.layers.observe(document.documentElement, {subtree: true, childList: true, attributes: true, attributeFilter: ['open']});
+        state.raise();
+        // Inside a dialog, presses on the overlay would bubble into the page's own handlers,
+        // and one that closes on a click outside its box would close mid-pick.
+        for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu']) root.addEventListener(type, event => event.stopPropagation());
+
         state.marks = (name: string) => state.groups[name] ??= [];
         state.count = () => Object.values(state.groups).reduce((n: number, marks: any) => n + marks.length, 0);
 
@@ -166,6 +230,9 @@ export function pickerOverlay(args: {action: 'start' | 'stop' | 'remove' | 'clea
             window.removeEventListener('scroll', state.schedule, true);
             window.removeEventListener('resize', state.schedule);
             state.observer.disconnect();
+            window.removeEventListener('toggle', state.onTopLayer, true);
+            document.removeEventListener('fullscreenchange', state.onTopLayer);
+            state.layers.disconnect();
             host.remove();
             delete win.__tamperSlothPicker;
         };

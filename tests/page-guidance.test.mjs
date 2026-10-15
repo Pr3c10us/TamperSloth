@@ -758,3 +758,26 @@ test('an overlay left by an older build is replaced, not reused',()=>{
     assert.equal(stale.host.removed,true);
     assert.deepEqual([...state.marks.keys()],['new']);
 });
+
+test('guidance joins the top layer and rises above modals and popovers the page opens later',()=>{
+    const f=fixture();
+    f.run({action:'draw',id:'a',kind:'rectangle',selector:'#target'});
+    const state=f.window.__tamperSlothGuidance,host=state.host;
+    assert.equal(host.attrs.popover,'manual');
+    let open=false;const shown=[];
+    host.matches=selector=>selector===':popover-open' && open;
+    host.showPopover=()=>{open=true;shown.push('show');};host.hidePopover=()=>{open=false;shown.push('hide');};
+    const dialog=new (host.constructor)('dialog');
+    f.fire('toggle',dialog,true,{target:dialog,newState:'open'});
+    assert.deepEqual(shown,['show']);
+    // Re-showing moves an already open overlay to the top of the top layer.
+    f.fire('toggle',dialog,true,{target:dialog,newState:'open'});
+    assert.deepEqual(shown,['show','hide','show']);
+    // Closing page popovers, and the overlay's own toggles, leave it alone.
+    f.fire('toggle',dialog,true,{target:dialog,newState:'closed'});
+    f.fire('toggle',host,true,{target:host,newState:'open'});
+    assert.deepEqual(shown,['show','hide','show']);
+    f.run({action:'dispose'});
+    f.fire('toggle',dialog,true,{target:dialog,newState:'open'});
+    assert.deepEqual(shown,['show','hide','show']);
+});

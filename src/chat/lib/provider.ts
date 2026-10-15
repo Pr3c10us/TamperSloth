@@ -2,9 +2,11 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogle } from "@ai-sdk/google";
 import { createDeepSeek } from '@ai-sdk/deepseek';
+// The edge entry has no Node dependencies, so it bundles for the extension.
+import { createVertex } from "@ai-sdk/google-vertex/edge";
 import type { LanguageModel } from "ai";
 
-export type ProviderId = "openai" | "anthropic" | "google" | "deepseek" ;
+export type ProviderId = "openai" | "anthropic" | "google" | "vertex" | "deepseek" ;
 
 export interface ProviderConfig {
     id: ProviderId;
@@ -14,7 +16,18 @@ export interface ProviderConfig {
     icon: string;
 }
 
-// Chat/tool-use model IDs verified 2026-10-11 against the official catalogs below.
+// Gemini API and Vertex AI serve the same model IDs.
+const GEMINI_MODELS = [
+    "gemini-4-argon",
+    "gemini-3.8-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-3.1-pro-preview",
+    "gemini-3-flash-preview",
+];
+
+// Chat/tool-use model IDs verified 2026-10-15 against the official catalogs below.
 // Superseded entries are dropped — a saved selection that no longer appears
 // here falls back to the provider's defaultModel (see ModelSelector).
 export const MODELPROVIDERS: ProviderConfig[] = [
@@ -44,14 +57,15 @@ export const MODELPROVIDERS: ProviderConfig[] = [
         name: "Google Gemini",
         // https://ai.google.dev/gemini-api/docs/models
         defaultModel: "gemini-3.8-flash",
-        models: [
-            "gemini-3.8-flash",
-            "gemini-3.6-flash",
-            "gemini-3.5-flash-lite",
-            "gemini-3.1-flash-lite",
-            "gemini-3.1-pro-preview",
-            "gemini-3-flash-preview",
-        ],
+        models: GEMINI_MODELS,
+        icon: "/googlegemini.svg",
+    },
+    {
+        id: "vertex",
+        name: "Google Vertex AI",
+        // https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/model-versions
+        defaultModel: "gemini-3.8-flash",
+        models: GEMINI_MODELS,
         icon: "/googlegemini.svg",
     },
     {
@@ -89,7 +103,17 @@ export function isKnownModel(providerId: ProviderId, modelId: string): boolean {
     return !!config?.models.includes(modelId);
 }
 
-export function getModel(providerId: ProviderId, apiKey: string, modelId?: string, transport?: typeof fetch): LanguageModel {
+// The bare express endpoint serves from the key's regional default (europe-west1
+// for some accounts), where these models don't exist. They need the project-scoped
+// `global` location instead.
+const VERTEX_GLOBAL_ONLY = new Set(["gemini-4-argon"]);
+
+export interface ModelOptions {
+    /** Vertex project ID or number; required for models in VERTEX_GLOBAL_ONLY. */
+    vertexProject?: string;
+}
+
+export function getModel(providerId: ProviderId, apiKey: string, modelId?: string, transport?: typeof fetch, options: ModelOptions = {}): LanguageModel {
     const config = MODELPROVIDERS.find((p) => p.id === providerId)!;
     const model = modelId ?? config.defaultModel;
 
@@ -109,6 +133,19 @@ export function getModel(providerId: ProviderId, apiKey: string, modelId?: strin
         case "google": {
             const google = createGoogle({ apiKey, fetch: transport });
             return google(model);
+        }
+        case "vertex": {
+            // Express mode: a Vertex API key needs no project, location or OAuth.
+            let baseURL: string | undefined;
+            if (VERTEX_GLOBAL_ONLY.has(model)) {
+                const project = options.vertexProject?.trim();
+                if (!project) {
+                    throw new Error(`${formatModelName(model)} on Vertex AI needs a Project ID.`);
+                }
+                baseURL = `https://aiplatform.googleapis.com/v1beta1/projects/${encodeURIComponent(project)}/locations/global/publishers/google`;
+            }
+            const vertex = createVertex({ apiKey, fetch: transport, baseURL });
+            return vertex(model);
         }
         case "deepseek": {
             const deepseek =createDeepSeek({apiKey, fetch: transport})

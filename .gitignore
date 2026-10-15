@@ -25,3 +25,7 @@ dist-ssr
 .claude
 extension
 /extension.zip
+/.agents/
+/claude-launce-video/
+/claude-sonnet-launce-video/
+/sol-launce-video/

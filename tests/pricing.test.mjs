@@ -56,6 +56,14 @@ test('DeepSeek uses UTC request times and Gemini promo rates use the run date', 
     const regular = estimateUsageCost('google', 'gemini-3.8-flash', usage, Date.UTC(2027, 0, 1));
     close(regular.input, promo.input * 2);
     close(regular.output, promo.output * 2);
+    for (const providerId of ['google', 'vertex']) {
+        const intro = estimateUsageCost(providerId, 'gemini-4-argon', usage, Date.UTC(2026, 10, 30));
+        const standard = estimateUsageCost(providerId, 'gemini-4-argon', usage, Date.UTC(2026, 11, 1));
+        close(intro.input, 1.05);
+        close(intro.output, 10);
+        close(standard.input, intro.input * 2);
+        close(standard.output, intro.output * 2);
+    }
     const cost = estimateRunCost({providerId: 'deepseek', modelId: 'deepseek-flash', startedAt: sunday,
         steps: [{...usage, recordedAt: sunday}, {...usage, recordedAt: mondayPeak}]});
     close(cost.output, 1.8);

@@ -5,6 +5,8 @@ import {z} from 'zod';
 import {createLoader} from './load-ts.mjs';
 
 const load = createLoader();
+// Gemini API and Vertex AI share one wire protocol.
+const isGemini = provider => provider === 'google' || provider === 'vertex';
 const {getModel, MODELPROVIDERS} = load('src/chat/lib/provider.ts');
 const {agentProviderOptions} = load('src/chat/lib/providerCompatibility.ts');
 const {createStepMessagePreparer} = load('src/chat/lib/efficiency.ts');
@@ -48,7 +50,36 @@ test('Gemini: production tools expose nonrecursive store values and decode JSON 
     assert.throws(() => storeSchema.parse({action: 'set', namespace: 'test', value: '1e999'}));
 });
 
-for (const provider of ['openai', 'anthropic', 'google', 'deepseek']) {
+test('vertex: express-mode key goes in x-goog-api-key and thoughts are requested under the vertex options key', async () => {
+    let seen;
+    const transport = async (url, init) => {
+        seen = {url: String(url), headers: new Headers(init.headers), body: JSON.parse(init.body)};
+        return new Response(JSON.stringify(response('vertex', 'gemini-4-argon', 0, [])),
+            {headers: {'content-type': 'application/json'}});
+    };
+    const result = await generateText({model: getModel('vertex', 'vertex-key', 'gemini-3.8-flash', transport),
+        prompt: 'Hello', providerOptions: agentProviderOptions('vertex', 'balanced')});
+    assert.equal(result.text, 'Done');
+    assert.ok(seen.url.startsWith('https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.8-flash'), seen.url);
+    assert.equal(seen.headers.get('x-goog-api-key'), 'vertex-key');
+    assert.equal(seen.body.generationConfig.thinkingConfig.includeThoughts, true);
+});
+
+test('vertex: gemini-4-argon is sent to the project-scoped global location, and needs a project', async () => {
+    let url;
+    const transport = async (requestUrl, init) => {
+        url = String(requestUrl);
+        return new Response(JSON.stringify(response('vertex', 'gemini-4-argon', 0, [])),
+            {headers: {'content-type': 'application/json'}});
+    };
+    assert.throws(() => getModel('vertex', 'vertex-key', 'gemini-4-argon', transport), /Project ID/);
+    const result = await generateText({prompt: 'Hello',
+        model: getModel('vertex', 'vertex-key', 'gemini-4-argon', transport, {vertexProject: ' my-project '})});
+    assert.equal(result.text, 'Done');
+    assert.ok(url.startsWith('https://aiplatform.googleapis.com/v1beta1/projects/my-project/locations/global/publishers/google/models/gemini-4-argon'), url);
+});
+
+for (const provider of ['openai', 'anthropic', 'google', 'vertex', 'deepseek']) {
     test(`${provider}: canonical image files reach the provider without losing media data`, async () => {
         let request;
         const modelId = MODELPROVIDERS.find(p => p.id === provider).defaultModel;
@@ -72,7 +103,7 @@ for (const provider of ['openai', 'anthropic', 'google', 'deepseek']) {
 }
 
 function response(provider, model, step, calls) {
-    if (provider === 'google') {
+    if (isGemini(provider)) {
         return {candidates: [{content: {role: 'model', parts: [
             {text: 'Plan ' + step, thought: true, thoughtSignature: 'reasoning-' + step},
             ...(calls.length ? calls.map((call, i) => ({functionCall: {name: call.name, args: call.input},
@@ -99,7 +130,7 @@ function response(provider, model, step, calls) {
 }
 
 function toolHistory(provider, body) {
-    if (provider === 'google') {
+    if (isGemini(provider)) {
         return {calls: body.contents.flatMap(m => m.parts.filter(p => p.functionCall).map(p => p.functionCall.name)),
             results: body.contents.flatMap(m => m.parts.filter(p => p.functionResponse).map(p => p.functionResponse.name))};
     }
@@ -141,7 +172,7 @@ for (const config of MODELPROVIDERS.filter(p => p.id !== 'anthropic')) {
                             assert.equal(message.reasoning_content, originalStep === 3 ? '' : 'Plan ' + originalStep);
                         }
                     }
-                } else if (provider === 'google') {
+                } else if (isGemini(provider)) {
                     const turns = body.contents.filter(m => m.role === 'model');
                     const signatures = turns.flatMap(m => m.parts.filter(p => p.functionCall && p.thoughtSignature).map(p => p.thoughtSignature));
                     assert.deepEqual(signatures, Array.from({length: step}, (_, i) => 'call-' + i));
@@ -162,7 +193,7 @@ for (const config of MODELPROVIDERS.filter(p => p.id !== 'anthropic')) {
                             ...(step === 2 ? [{id: 'parallel-2', name: 'getPageText', input: {page: 99}}] : [])] : [];
                 return new Response(JSON.stringify(response(provider, modelId, step, calls)), {headers: {'content-type': 'application/json'}});
             };
-            const result = await generateText({model: getModel(provider, 'test-key', modelId, transport),
+            const result = await generateText({model: getModel(provider, 'test-key', modelId, transport, {vertexProject: 'test-project'}),
                 messages: [{role: 'user', content: 'Earlier request'}, {role: 'assistant', content: 'Earlier answer'},
                     {role: 'user', content: 'Inspect the approved draft'}],
                 tools: runtime.tools, providerOptions: agentProviderOptions(provider, 'balanced'),
@@ -184,7 +215,7 @@ for (const config of MODELPROVIDERS.filter(p => p.id !== 'anthropic')) {
 
 function streamingResponse(provider, model, step, calls) {
     let events;
-    if (provider === 'google') {
+    if (isGemini(provider)) {
         events = [response(provider, model, step, calls)];
     } else if (provider === 'deepseek') {
         events = [{id: 'chunk-' + step, object: 'chat.completion.chunk', created: 0, model, choices: [{index: 0, delta: {
@@ -218,7 +249,7 @@ function streamingResponse(provider, model, step, calls) {
         {headers: {'content-type': 'text/event-stream'}});
 }
 
-for (const provider of ['openai', 'google', 'deepseek']) {
+for (const provider of ['openai', 'google', 'vertex', 'deepseek']) {
     test(`${provider}: streaming completes reasoning metadata before the next tool step`, async () => {
         const modelId = MODELPROVIDERS.find(p => p.id === provider).defaultModel;
         const requests = [];
@@ -234,7 +265,7 @@ for (const provider of ['openai', 'google', 'deepseek']) {
             assert.equal(body.stream ?? true, true);
             const history = toolHistory(provider, body);
             assert.deepEqual(history.results, history.calls);
-            if (provider === 'google') {
+            if (isGemini(provider)) {
                 assert.deepEqual(body.contents.flatMap(m => m.parts.filter(p => p.functionCall && p.thoughtSignature).map(p => p.thoughtSignature)),
                     Array.from({length: step}, (_, i) => 'call-' + i));
             } else if (provider === 'openai') {

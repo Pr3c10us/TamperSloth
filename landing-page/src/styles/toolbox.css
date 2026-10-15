@@ -1,0 +1,513 @@
+.section-head {
+  max-width: 760px;
+}
+.section-head h2 {
+  margin-top: 20px;
+  font-size: var(--fs-h2);
+}
+.section-head .lead {
+  margin-top: 20px;
+  max-width: 560px;
+}
+
+.toolbox {
+  padding-top: clamp(110px, 16vh, 190px);
+}
+.tb-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 16px;
+  margin-top: clamp(44px, 6vh, 72px);
+}
+.span-4 { grid-column: span 4; }
+.span-5 { grid-column: span 5; }
+.span-7 { grid-column: span 7; }
+.span-8 { grid-column: span 8; }
+
+.tb-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 380px;
+  padding: 10px;
+  border-radius: 24px;
+  background: #121311;
+  border: 1px solid var(--line);
+  overflow: hidden;
+  transition: border-color 0.4s;
+}
+.tb-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 0%), rgb(168 189 133 / 0.09), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.5s;
+  pointer-events: none;
+}
+.tb-card:hover {
+  border-color: var(--line-strong);
+}
+.tb-card:hover::before {
+  opacity: 1;
+}
+.tb-visual {
+  position: relative;
+  flex: 1;
+  min-height: 210px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.tb-copy {
+  padding: 22px 18px 14px;
+}
+.tb-copy h3 {
+  font-size: 30px;
+  line-height: 1;
+}
+.tb-copy p {
+  margin-top: 10px;
+  max-width: 460px;
+  color: var(--fg-2);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+/* Picker: pickerOverlay.ts draws a rounded box just outside the element, a sage
+   wash, an ink tag (tag name in lime, then #id or .class) and a hint pill. */
+.pick {
+  position: absolute;
+  inset: 0;
+}
+.pick-page {
+  position: absolute;
+  inset: 18px 18px 0;
+  border-radius: 10px 10px 0 0;
+  background: #181a16;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  overflow: hidden;
+  cursor: crosshair;
+}
+.pick-page i {
+  display: block;
+  border-radius: 4px;
+  background: var(--muted);
+}
+.pk-nav {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  top: 4%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.pk-logo {
+  width: 40px;
+  height: 12px;
+}
+.pk-nav span {
+  display: flex;
+  gap: 14px;
+}
+.pk-nav span i {
+  width: 34px;
+  height: 7px;
+}
+.pk-h1 {
+  position: absolute;
+  left: 8%;
+  top: 25%;
+  width: 60%;
+  display: grid;
+  gap: 10px;
+}
+.pk-h1 i {
+  height: 22px;
+  background: #34382e;
+}
+.pk-h1 i:last-child {
+  width: 70%;
+}
+.pk-btn {
+  position: absolute;
+  left: 30%;
+  top: 63%;
+  width: 33%;
+  height: 12%;
+  border-radius: 999px;
+  background: var(--fg);
+  opacity: 0.85;
+}
+.pk-img {
+  position: absolute;
+  left: 73%;
+  top: 25%;
+  width: 20%;
+  height: 50%;
+  border-radius: 10px;
+  background: linear-gradient(160deg, #3f4a2a, #1d2316);
+}
+.pk-cards {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 81%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.pk-cards i {
+  height: 80px;
+}
+.pick-box {
+  position: absolute;
+  z-index: 2;
+  margin: -5px 0 0 -5px;
+  padding: 5px;
+  box-sizing: content-box;
+  border: 2px solid var(--sage);
+  border-radius: 10px;
+  background: rgb(168 189 133 / 0.16);
+  filter: drop-shadow(0 0 1px rgb(15 15 14 / 0.4));
+  transform: translate(-2px, -2px);
+  transition: left 0.6s var(--ease-expo), top 0.6s var(--ease-expo), width 0.6s var(--ease-expo), height 0.6s var(--ease-expo);
+}
+.pick-tag {
+  position: absolute;
+  left: -2px;
+  bottom: calc(100% + 6px);
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #0f0f0e;
+  color: #f6f4ef;
+  outline: 1px solid rgb(246 244 239 / 0.2);
+  box-shadow: 0 2px 8px rgb(15 15 14 / 0.08);
+  font: 400 11px/1.4 var(--font-sans);
+  white-space: nowrap;
+}
+.pick-tag b {
+  font-weight: 500;
+  color: var(--sage);
+}
+.pick-box.is-low .pick-tag {
+  bottom: auto;
+  top: calc(100% + 6px);
+}
+/* The capture layer's crosshair cursor. */
+.pick-cross {
+  position: absolute;
+  z-index: 3;
+  width: 17px;
+  height: 17px;
+  margin: -8px 0 0 -8px;
+  background:
+    linear-gradient(#fff, #fff) center / 1.5px 100% no-repeat,
+    linear-gradient(#fff, #fff) center / 100% 1.5px no-repeat;
+  filter: drop-shadow(0 0 1px #000);
+  transition: left 0.7s var(--ease-expo) 0.05s, top 0.7s var(--ease-expo) 0.05s;
+}
+.pick-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  z-index: 3;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: rgb(15 15 14 / 0.75);
+  color: rgb(246 244 239 / 0.85);
+  font: 400 11px/1.3 var(--font-sans);
+  white-space: nowrap;
+  transform: translateX(-50%);
+  backdrop-filter: blur(6px);
+}
+
+/* Dictation: the composer while the mic is on. */
+.dict {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 10px;
+  background: var(--background);
+}
+.dict .sp-composer {
+  background: transparent;
+}
+.dict-ph,
+.dict-interim {
+  color: var(--muted-foreground);
+}
+.dict-interim {
+  font-style: italic;
+}
+.dict-wave {
+  display: flex;
+  align-self: center;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  margin-bottom: 2px;
+}
+.dict-wave i {
+  width: 2px;
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--foreground) 70%, transparent);
+  transition: height 75ms ease-out;
+}
+.dict-mic {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+.dict-mic.is-on {
+  background: color-mix(in oklab, var(--accent) 15%, transparent);
+}
+.dict-mic.is-on .sp-icon-xs:first-child {
+  background: var(--accent);
+  color: #0f0f0e;
+}
+.dict-status {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.dict-status i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: calm 1.4s ease-in-out infinite;
+}
+
+/* Draw */
+.draw {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.draw-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  text-align: center;
+  color: var(--fg-3);
+}
+.draw-text b {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 46px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+}
+
+/* Tabs */
+.tabs {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 20px;
+}
+.tabs-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #181a16;
+  border: 1px solid var(--line);
+  transform: translateX(calc(var(--i) * 10px));
+}
+.tabs-favicon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.tabs-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.tabs-meta b {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tabs-meta small {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-3);
+}
+.tabs-check {
+  flex: none;
+  margin: 0 6px;
+  color: var(--accent);
+}
+
+/* Cost: a finished reply and its footer chips (AssistantMessage MetricChip). */
+.cost {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  background: var(--background);
+}
+.cost-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cost-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin-left: -4px;
+}
+.cost-swap {
+  display: contents;
+}
+.cost-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+  animation: ts-enter 240ms var(--ease-out) both;
+}
+.cost-chip.is-btn {
+  width: 24px;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--muted-foreground);
+}
+
+/* Power tools */
+.tools {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  gap: 10px;
+  padding: 24px;
+}
+.tools-chip {
+  padding: 9px 14px;
+  border-radius: 10px;
+  background: #181a16;
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--fg-2);
+  transition: color 0.3s, border-color 0.3s, transform 0.5s var(--ease-expo);
+}
+.tools-chip .paren {
+  color: var(--fg-3);
+}
+.tools-chip:hover {
+  color: var(--sage);
+  border-color: rgb(168 189 133 / 0.45);
+  transform: translateY(-2px);
+}
+.tb-card.is-in .tools-chip {
+  animation: chip-in 0.8s var(--ease-expo) both;
+  animation-delay: calc(var(--i) * 45ms + 300ms);
+}
+@keyframes chip-in {
+  from { opacity: 0; transform: translateY(10px); }
+}
+
+/* Light / dark: the real empty panel in both themes, fanned like cards and scaled down. */
+.theme {
+  position: absolute;
+  inset: 0;
+}
+.theme-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 360px;
+  height: 330px;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 30px 50px -24px rgb(0 0 0 / 0.8);
+  transition: transform 0.8s var(--ease-expo);
+}
+.theme-card > .sp-chrome {
+  height: 100%;
+}
+.theme-card.is-dark {
+  border: 1px solid var(--line-strong);
+  transform: translate(-78%, -50%) rotate(-6deg) scale(0.56);
+}
+.theme-card.is-light {
+  border: 1px solid #d9ddd5;
+  transform: translate(-22%, -46%) rotate(5deg) scale(0.56);
+}
+.tb-card:hover .theme-card.is-dark {
+  transform: translate(-86%, -52%) rotate(-9deg) scale(0.56);
+}
+.tb-card:hover .theme-card.is-light {
+  transform: translate(-14%, -44%) rotate(8deg) scale(0.56);
+}
+
+@media (max-width: 1000px) {
+  .span-4,
+  .span-5,
+  .span-7,
+  .span-8 {
+    grid-column: span 6;
+  }
+  .span-8 {
+    grid-column: span 12;
+  }
+}
+@media (max-width: 680px) {
+  .tb-grid > * {
+    grid-column: span 12;
+  }
+  .tb-card {
+    min-height: 340px;
+  }
+  .tb-copy h3 {
+    font-size: 26px;
+  }
+}

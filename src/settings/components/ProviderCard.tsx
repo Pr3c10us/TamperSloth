@@ -15,6 +15,8 @@ type Props = {
     onEdit: () => void;
     onDelete: () => void;
     onCancel: () => void;
+    /** An optional second field saved with the key (e.g. Vertex project ID). */
+    extra?: { label: string; placeholder: string; hint: string; value: string; onChange: (v: string) => void };
 };
 
 function maskKey(key: string): string {
@@ -34,6 +36,7 @@ export function ProviderCard({
     onEdit,
     onDelete,
     onCancel,
+    extra,
 }: Props) {
     return (
         <div className={cn("px-3.5 py-3 transition-colors duration-[160ms]", editing && "bg-background")}>
@@ -61,10 +64,10 @@ export function ProviderCard({
                             href={`https://${p.link}`}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center gap-0.5 font-mono text-[11px] text-muted-foreground no-underline hover:text-foreground"
+                            className="inline-flex max-w-full items-center gap-0.5 font-mono text-[11px] text-muted-foreground no-underline hover:text-foreground"
                         >
-                            {p.link}
-                            <ArrowUpRight strokeWidth={1.5} className="size-3" />
+                            <span className="truncate">{p.link}</span>
+                            <ArrowUpRight strokeWidth={1.5} className="size-3 shrink-0" />
                         </a>
                     )}
                 </div>
@@ -105,6 +108,20 @@ export function ProviderCard({
                         className="h-9 bg-card font-mono text-[12.5px]"
                         autoFocus
                     />
+                    {extra && (
+                        <>
+                            <Input
+                                value={extra.value}
+                                onChange={(e) => extra.onChange(e.target.value)}
+                                placeholder={extra.placeholder}
+                                aria-label={extra.label}
+                                autoComplete="off"
+                                spellCheck={false}
+                                className="h-9 bg-card font-mono text-[12.5px]"
+                            />
+                            <p className="px-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{extra.hint}</p>
+                        </>
+                    )}
                     <div className="flex items-center gap-1.5">
                         {connected && (
                             <Button

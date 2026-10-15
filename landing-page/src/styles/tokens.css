@@ -1,0 +1,61 @@
+/*
+ * Tampersloth landing tokens. Surface and accent values are taken from the
+ * extension (src/index.css): the dark panel surfaces, the sage guide accent
+ * and the light theme's cool neutrals for the paper sections.
+ */
+:root {
+  /* Night: the page itself sits one step deeper than the extension panel. */
+  --night: #0d0e0c;
+  --surface: #141513;
+  --card: #1d1f1b;
+  --popover: #22251f;
+  --muted: #272a23;
+  --line: rgb(246 244 239 / 0.08);
+  --line-strong: rgb(246 244 239 / 0.14);
+
+  --fg: #f6f4ef;
+  --fg-2: #aaa99f;
+  --fg-3: #74766d;
+
+  --sage: #a8bd85;
+  --sage-hi: #c4d5a7;
+  --sage-glow: rgb(168 189 133 / 0.42);
+  --moss: #3f4a2a;
+  --moss-deep: #4e6a32;
+
+  /* Paper: the extension's light theme. */
+  --paper: #f3f4f2;
+  --paper-card: #ffffff;
+  --paper-ink: #141513;
+  --paper-ink-2: #5d6359;
+  --paper-line: #d9ddd5;
+  --paper-muted: #e8eae6;
+  --paper-accent: #4e6a32;
+
+  --font-serif: "Instrument Serif", "Times New Roman", serif;
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+  --fs-display: clamp(64px, 11.2vw, 184px);
+  --fs-h1: clamp(46px, 6.6vw, 104px);
+  --fs-h2: clamp(38px, 4.8vw, 72px);
+  --fs-h3: clamp(26px, 2.4vw, 34px);
+  --fs-lead: clamp(17px, 1.35vw, 20px);
+  --fs-body: 16px;
+  --fs-small: 14px;
+  --fs-eyebrow: 12px;
+
+  --tracking-tight: -0.025em;
+  --tracking-wide: 0.14em;
+
+  --radius: 0.5rem;
+  --radius-lg: 18px;
+  --radius-xl: 28px;
+
+  --gutter: clamp(16px, 4vw, 56px);
+  --max: 1320px;
+
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-sloth: cubic-bezier(0.65, 0, 0.35, 1);
+}

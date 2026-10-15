@@ -29,7 +29,7 @@ export function drawOverlay(args: {action: 'start' | 'dispose'; assets?: {sans: 
 
     // Bump when the overlay changes. Its state outlives an extension reload on the page,
     // so an overlay from an older build is removed rather than kept.
-    const VERSION = 3;
+    const VERSION = 4;
     if (args.action === 'dispose' || (win.__tamperSlothDraw && win.__tamperSlothDraw.version !== VERSION)) win.__tamperSlothDraw?.dispose();
     if (args.action === 'dispose') return {ok: true};
     if (win.__tamperSlothDraw) return {ok: true};
@@ -188,6 +188,70 @@ export function drawOverlay(args: {action: 'start' | 'dispose'; assets?: {sans: 
     hint.setAttribute('role', 'status');
     root.append(style, stage, hint, palette, bar);
     document.documentElement.append(host);
+
+    // Modal dialogs, popovers and fullscreen paint in the top layer, above any z-index.
+    // Join it as a manual popover, and rejoin last whenever the page opens one there.
+    // A modal dialog makes the rest of the page inert and a click outside an open popover
+    // closes it, so while one is open the host lives inside the topmost one.
+    host.setAttribute('popover', 'manual');
+    const openedAt = new WeakMap<Element, number>();
+    let opens = 0;
+    const track = (el: Element, open: boolean) => {
+        if (!open) openedAt.delete(el);
+        else if (!openedAt.has(el)) openedAt.set(el, ++opens);
+    };
+    const topLayer = () => {
+        const rank = (el: Element) => openedAt.get(el) ?? 0;
+        const open = [...document.querySelectorAll('dialog:modal, [popover]:popover-open')];
+        let modal: Element | null = null;
+        for (const el of open) if (el.localName === 'dialog' && el.matches(':modal') && (!modal || rank(el) >= rank(modal))) modal = el;
+        // Popovers outside the modal are inert too, so only ones inside it count.
+        let top = modal;
+        for (const el of open) {
+            if (el === host || el.localName === 'dialog' || (el as HTMLElement).popover === 'manual' || (modal && !modal.contains(el))) continue;
+            if (!top || rank(el) >= rank(top)) top = el;
+        }
+        return top;
+    };
+    const raise = (reorder = true) => {
+        const parent = topLayer() ?? document.documentElement;
+        try {
+            if (host.parentNode !== parent) parent.append(host);
+            else if (!reorder && host.matches(':popover-open')) return;
+            if (host.matches(':popover-open')) host.hidePopover();
+            host.showPopover();
+        } catch { /* Without popover support the z-index still applies. */ }
+    };
+    const onTopLayer = (event: Event) => {
+        const el = event.target as Element;
+        if (el === host) return;
+        if (event.type !== 'toggle') { raise(); return; }
+        // Toggles also come from <details>, which never reaches the top layer.
+        if (el.localName !== 'dialog' && !el.hasAttribute?.('popover')) return;
+        const open = (event as ToggleEvent).newState === 'open';
+        track(el, open);
+        raise(open);
+    };
+    window.addEventListener('toggle', onTopLayer, true);
+    document.addEventListener('fullscreenchange', onTopLayer);
+    // showModal and close flip the open attribute; older browsers fire no toggle for dialogs.
+    // The host also leaves with a dialog or popover the page removes while it is inside.
+    const layers = new MutationObserver(records => {
+        let changed = !host.isConnected, opened = false;
+        for (const record of records) {
+            const el = record.target as Element;
+            if (record.type !== 'attributes' || el.localName !== 'dialog') continue;
+            const open = el.hasAttribute('open');
+            track(el, open);
+            changed = true; opened ||= open;
+        }
+        if (changed) raise(opened);
+    });
+    layers.observe(document.documentElement, {subtree: true, childList: true, attributes: true, attributeFilter: ['open']});
+    raise();
+    // Inside a dialog, presses on the overlay would bubble into the page's own handlers,
+    // and one that closes on a click outside its box would close under the toolbar.
+    for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu']) root.addEventListener(type, event => event.stopPropagation());
 
     type Point = {x: number; y: number};
     type Saved = {tool: string; points: Point[]; color: string; text?: string};
@@ -652,6 +716,9 @@ export function drawOverlay(args: {action: 'start' | 'dispose'; assets?: {sans: 
     function dispose() {
         document.removeEventListener('keydown', onKey, true);
         window.removeEventListener('scroll', onScroll);
+        window.removeEventListener('toggle', onTopLayer, true);
+        document.removeEventListener('fullscreenchange', onTopLayer);
+        layers.disconnect();
         host.remove();
         delete win.__tamperSlothDraw;
         void send({type: 'DRAW_ENDED'})?.catch?.(() => {});
