@@ -148,7 +148,7 @@ export function Hero() {
       </div>
       <div className="hero-annot">
         <svg ref={ink} className="ink-layer" aria-hidden />
-        <GuideCursor ref={cursor} label={tip ? <TypedTip text="Start here." /> : null} />
+        <GuideCursor ref={cursor} className="is-guiding" label={tip ? <TypedTip text="Start here." /> : null} />
       </div>
     </section>
   );

@@ -7,6 +7,7 @@ import { Check, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { ZoomableImage } from "./ImageLightbox";
 import {
     TableBody,
     TableCell,
@@ -126,6 +127,11 @@ export const MarkdownContent = memo(function MarkdownContent({ content, classNam
                     {children}
                 </a>
             ),
+            img: ({ src, alt }: any) => typeof src === "string" && src ? (
+                <ZoomableImage src={src} alt={alt ?? ""} className="my-2 inline-block max-w-full rounded-sm">
+                    <img src={src} alt={alt ?? ""} loading="lazy" className="max-h-72 max-w-full rounded-sm border border-border object-contain" />
+                </ZoomableImage>
+            ) : null,
             blockquote: ({ children }: any) => (
                 <blockquote className="border-l-2 border-accent pl-4 my-3 italic text-muted-foreground">
                     {children}

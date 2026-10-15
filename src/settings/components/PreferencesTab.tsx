@@ -21,6 +21,13 @@ const REASONING_OPTIONS: {value: AgentSettings["reasoning"]; label: string; hint
     {value: "thorough", label: "Thorough", hint: "Maximum effort on every step."},
 ];
 
+const APPROVAL_OPTIONS: {value: AgentSettings["actionApproval"]; label: string; hint: string}[] = [
+    {value: "auto", label: "Automatically approve",
+        hint: "Sloth checks each action for risk and for hidden instructions from web pages before running it. Lower-risk actions run; anything that looks unsafe is blocked or waits for you."},
+    {value: "ask", label: "Ask before acting",
+        hint: "Every action that clicks, types, navigates or runs code waits for your approval. You can allow the rest of a task at once."},
+];
+
 const THEME_OPTIONS: {value: ThemePreference; label: string; icon: LucideIcon}[] = [
     {value: "dark", label: "Dark", icon: Moon},
     {value: "light", label: "Light", icon: Sun},
@@ -145,6 +152,23 @@ export function PreferencesTab() {
                                     </Choice>
                                 ))}
                             </div>
+                        </div>
+                    </SettingRow>
+                </SettingsGroup>
+            </SettingsSection>
+
+            <SettingsSection title="Safety"
+                description="Downloads, entering passwords or payment details, payments and deletions always ask first, in either mode. Page text that looks like instructions to an AI is flagged and never followed.">
+                <SettingsGroup>
+                    <SettingRow stacked label="Action approval"
+                        description={APPROVAL_OPTIONS.find(o => o.value === settings.actionApproval)!.hint}>
+                        <div role="radiogroup" aria-label="Action approval" className="grid grid-cols-2 gap-0.5 rounded-lg bg-muted p-[3px]">
+                            {APPROVAL_OPTIONS.map(option => (
+                                <Choice key={option.value} disabled={!ready} selected={settings.actionApproval === option.value}
+                                    onSelect={() => update({actionApproval: option.value})}>
+                                    {option.label}
+                                </Choice>
+                            ))}
                         </div>
                     </SettingRow>
                 </SettingsGroup>

@@ -1,10 +1,10 @@
 import {useCallback, useSyncExternalStore} from "react";
-import {type ModelMessage, isStepCount, streamText} from "ai";
+import {type ModelMessage, generateText, isStepCount, streamText} from "ai";
 import {formatModelName, getModel, MODELPROVIDERS, type ModelOptions, type ProviderId} from "../lib/provider.ts";
 import {getApiKeys, VERTEX_PROJECT_KEY} from "../../settings/lib/storage";
 import {withRateLimits} from "../lib/rateLimit";
 import {createAgentTools} from "../lib/tools.ts";
-import {loadAttachment, loadStoredConversation, saveAttachments, saveConversation, type StoredConversation} from "../lib/storage.ts";
+import {loadAttachment, loadStoredConversation, readFile, saveAttachments, saveConversation, type StoredConversation} from "../lib/storage.ts";
 import {seedAttachmentUrl} from "../lib/attachmentUrls";
 import {buildModelMessages} from "../lib/historyMessages";
 import {createConversationSaver} from '../lib/conversationSaver';
@@ -19,7 +19,8 @@ import {loadAgentSettings, runStopReason} from "../lib/agentSettings";
 import {agentProviderOptions} from "../lib/providerCompatibility";
 import {createReasoningNormalizer, type NormalizedEvent, type ThinkingContent} from "../lib/reasoning";
 import {partialReason} from "../lib/toolReason";
-import {generateChatTitle, requestTitle} from "../lib/chatTitle";
+import {generateChatTitle, requestTitle, titleProviderOptions} from "../lib/chatTitle";
+import type {ToolSafety} from "../lib/safetyGate";
 import {clearDraft} from "../lib/drafts";
 import {holdsTab, othersHoldTabs, releaseTabs, tabHolder} from "../lib/tabLease";
 
@@ -51,6 +52,8 @@ export interface ToolCall {
     status: "calling" | "done" | "error";
     startedAt?: number;
     endedAt?: number;
+    /** Safety screening around this call: flagged content, approvals and blocks. */
+    safety?: ToolSafety;
 }
 
 export type ContentBlock =
@@ -78,8 +81,8 @@ export interface ChatMessage {
 const SAVE_THROTTLE_MS = 700;
 
 // Anthropic is the only provider here that needs explicit cache breakpoints —
-// OpenAI, DeepSeek and Gemini cache automatically server-side. providerOptions
-// are namespaced per provider, so this is inert for the other three.
+// OpenAI, DeepSeek, Kimi, Grok and Gemini cache automatically server-side.
+// providerOptions are namespaced per provider, so this is inert for the others.
 const ANTHROPIC_CACHE_BREAKPOINT = {
     anthropic: {cacheControl: {type: "ephemeral" as const}},
 } as const;
@@ -445,8 +448,36 @@ async function sendMessage(
         let stepContext = {activeTools: 0, contextChars: 0, recordedAt: startedAt};
         const metrics: RunMetrics = {providerId, modelId: resolvedModelId, startedAt,
             steps: [], tools: [], compactedResults: 0, elapsedMs: 0};
+        // Screening reports can arrive before the call's own stream part; they wait here until it does.
+        const safetyById = new Map<string, ToolSafety>();
+        const withSafety = (tc: ToolCall): ToolCall => {
+            const safety = safetyById.get(tc.id);
+            return safety ? {...tc, safety: {...tc.safety, ...safety}} : tc;
+        };
+        const reportSafety = (id: string, safety: ToolSafety) => {
+            safetyById.set(id, {...safetyById.get(id), ...safety});
+            updateAssistant(m => m.toolCalls.some(tc => tc.id === id) ? {
+                ...m,
+                toolCalls: m.toolCalls.map(tc => tc.id === id ? withSafety(tc) : tc),
+                blocks: m.blocks.map(b => b.type === "tool_call" && b.toolCall.id === id ? {type: "tool_call" as const, toolCall: withSafety(b.toolCall)} : b),
+            } : m);
+        };
+        // The screener judges actions against what the user asked for, including a request's earlier turns.
+        const userRequest = [...updatedMessages.filter(m => m.role === "user").slice(-3, -1).map(m => `Earlier: ${clip(m.content, 600)}`),
+            ...(quotes ?? []).map(q => `Quoted from the page: ${clip(q.text, 400)}`), text].filter(Boolean).join("\n");
         const runtime = createToolRuntime(createAgentTools({conversationId, abortSignal: abortController.signal}), {
             request: text,
+            safety: {
+                conversationId,
+                request: userRequest,
+                mode: settings.actionApproval,
+                screen: async (instructions, prompt, signal) => (await generateText({
+                    model, instructions, prompt, abortSignal: signal, maxRetries: 1,
+                    providerOptions: titleProviderOptions(providerId),
+                })).text,
+                onSafety: reportSafety,
+                readScript: (path) => readFile(conversationId, path),
+            },
             findPrevious: (id) => {
                 for (const message of updatedMessages) {
                     const call = message.toolCalls?.find(call => call.id === id);
@@ -585,8 +616,8 @@ async function sendMessage(
                         const updatedTc = (tc: ToolCall): ToolCall =>
                             tc.id === part.toolCallId ? {...tc, args: input} : tc;
                         if (!known) {
-                            const tc: ToolCall = {id: part.toolCallId, name: part.toolName, args: input,
-                                result: null, status: "calling", startedAt: Date.now()};
+                            const tc: ToolCall = withSafety({id: part.toolCallId, name: part.toolName, args: input,
+                                result: null, status: "calling", startedAt: Date.now()});
                             return {...m, toolCalls: [...m.toolCalls, tc], blocks: [...m.blocks, {type: "tool_call", toolCall: tc}]};
                         }
                         return {

@@ -396,6 +396,17 @@ test('guide tips are text only, with no logo next to the lime-glowing pointer',(
     f.run({action:'remove',id:'compact'});assert.equal(state.cursorBody.hidden,true);assert.equal(state.cursorTag.hidden,true);
 });
 
+test('the sloth mark rides under the cursor while acting or idle, never while guiding',()=>{
+    const f=fixture();f.run({action:'cursor',method:'Input.dispatchMouseEvent',params:{x:40,y:40,type:'mouseMoved'}});
+    const state=f.window.__tamperSlothGuidance;
+    assert.equal(state.cursorBadge.hidden,false);
+    f.run({action:'draw',id:'guide',kind:'bracket',selector:'#target',label:'Click Black'});
+    assert.equal(state.cursorBadge.hidden,true);
+    f.run({action:'remove',id:'guide'});assert.equal(state.cursorBadge.hidden,false);
+    f.run({action:'draw',id:'__focus',kind:'bracket',box:{x:0,y:0,width:10,height:10},animate:false});
+    assert.equal(state.cursorBadge.hidden,false);
+});
+
 test('a zero-progress first frame preserves the move command so later strokes paint live',()=>{
     const f=fixture({animate:true});
     f.run({action:'draw',id:'zero-frame',kind:'rectangle',selector:'#target'});

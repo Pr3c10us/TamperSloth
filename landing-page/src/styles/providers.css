@@ -11,7 +11,7 @@
 }
 .providers-band {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   border-radius: var(--radius-lg);
   background: #121311;
   border: 1px solid var(--line);
@@ -32,8 +32,11 @@
   background-position: 0 50%;
   background-repeat: no-repeat;
 }
-.prov:first-child {
+.prov:nth-child(3n + 1) {
   background-image: none;
+}
+.prov:nth-child(-n + 3) {
+  border-bottom: 1px dashed var(--line-strong);
 }
 .prov-mark {
   width: 30px;
@@ -89,41 +92,6 @@
   transform: none;
 }
 
-.prov-tip {
-  position: absolute;
-  bottom: calc(100% - 6px);
-  left: 50%;
-  z-index: 3;
-  width: max-content;
-  max-width: 220px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: var(--fg);
-  color: var(--surface);
-  font-size: 12.5px;
-  line-height: 1.35;
-  text-align: center;
-  box-shadow: 0 14px 30px -12px rgb(0 0 0 / 0.6);
-  opacity: 0;
-  transform: translate(-50%, 6px);
-  transition: opacity 0.25s, transform 0.4s var(--ease-expo);
-  pointer-events: none;
-}
-.prov-tip::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 100%;
-  border: 6px solid transparent;
-  border-top-color: var(--fg);
-  transform: translateX(-50%);
-}
-.prov:hover .prov-tip,
-.prov:focus-visible .prov-tip {
-  opacity: 1;
-  transform: translate(-50%, 0);
-}
-
 @media (max-width: 760px) {
   .providers-band {
     grid-template-columns: repeat(2, 1fr);
@@ -136,8 +104,11 @@
   .prov:nth-child(odd) {
     border-right: 1px dashed var(--line-strong);
   }
-  .prov:nth-child(-n + 2) {
+  .prov:nth-child(-n + 4) {
     border-bottom: 1px dashed var(--line-strong);
+  }
+  .prov:nth-child(n + 5) {
+    border-bottom: 0;
   }
   .prov-name {
     font-size: 18px;

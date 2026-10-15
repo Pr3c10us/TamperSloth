@@ -4,6 +4,7 @@ import {compactToolOutput, estimateImageTokens, estimateTextTokens, isFailed, re
 import {skills} from "./skills";
 import {browserImageOutput} from './browserTools';
 import {stripReason, withReason} from "./toolReason";
+import {createSafetyGate, type SafetyGateOptions} from "./safetyGate";
 
 export const TOOL_GROUPS = {
     browsing: ["clickElement", "typeText", "selectOption", "scrollPage", "submitForm", "waitForElement", "navigateHistory", "reloadPage"],
@@ -48,6 +49,16 @@ export function initialToolGroups(request: string): Group[] {
     return groups;
 }
 
+type Projection = Awaited<ReturnType<NonNullable<ToolSet[string]["toModelOutput"]>>>;
+
+/** Puts the safety notice ahead of a flagged result, whatever shape the projection has. */
+function withNotice(projection: Projection, notice: string): Projection {
+    if (projection.type === "text" || projection.type === "error-text") return {...projection, value: `${notice}\n\n${projection.value}`};
+    if (projection.type === "content") return {...projection, value: [{type: "text" as const, text: notice}, ...projection.value]};
+    if (projection.type === "json" || projection.type === "error-json") return {type: "text" as const, value: `${notice}\n\n${serialize(projection.value)}`};
+    return projection;
+}
+
 function groupGuidance(group: Group): string {
     if (group === "scripting") return skills.script_creation_workflow.content + "\n" + skills.script_format.content;
     if (group === "debugging") return skills.debugging_workflow.content;
@@ -59,6 +70,8 @@ export function createToolRuntime(rawTools: ToolSet, options: {
     request: string;
     findPrevious: (id: string) => ArchivedResult | undefined;
     onResult?: (id: string, result: ArchivedResult) => void;
+    /** Screens actions before they run and results before the model reads them. */
+    safety?: Omit<SafetyGateOptions, "lookupMark">;
 }) {
     let pageChain: Promise<void> = Promise.resolve();
     const enabled = new Set<string>(CORE);
@@ -72,6 +85,17 @@ export function createToolRuntime(rawTools: ToolSet, options: {
     const loadedSkills = new Set<string>();
     let repeatedFailure = "";
     const tools: ToolSet = {...rawTools};
+    const safety = options.safety && createSafetyGate({...options.safety,
+        // A mark target names an element from an earlier marked screenshot's legend.
+        lookupMark: (snapshotId, mark) => {
+            for (const entry of [...archive.values()].reverse()) {
+                const output = entry.output as {snapshotId?: string; legend?: {id: number; selector?: string; name?: string; role?: string; tag?: string}[]} | null;
+                if (output?.snapshotId !== snapshotId || !Array.isArray(output.legend)) continue;
+                const item = output.legend.find(legend => legend.id === mark);
+                return item ? {selector: item.selector, info: {label: item.name, role: item.role, tag: item.tag}} : undefined;
+            }
+            return undefined;
+        }});
 
     tools.enableTools = tool({
         description: "Enable groups: browsing (DOM input), scripting (files/scripts), debugging, visual, browser (tabs/raw JS/AX/store/recipes), input (trusted CDP events/deep DOM/frames), network (CDP capture/WebSocket/replay), system (clipboard/downloads/notifications), guidance (page drawing and waiting for real user actions).",
@@ -122,7 +146,11 @@ export function createToolRuntime(rawTools: ToolSet, options: {
                 let output: unknown;
                 try {
                     if (callOptions.abortSignal?.aborted) throw new DOMException('Aborted', 'AbortError');
-                    if (name === "getSkill" && loadedSkills.has(input.skill_id)) {
+                    const held = safety && await safety.check(name, input, {toolCallId: callOptions.toolCallId,
+                        reason: (rawInput as {reason?: string}).reason, abortSignal: callOptions.abortSignal});
+                    if (held) {
+                        output = held;
+                    } else if (name === "getSkill" && loadedSkills.has(input.skill_id)) {
                         output = {ok: true, alreadyLoaded: input.skill_id, hint: "The skill is already in this run's context."};
                     } else {
                         output = await execute(input, callOptions);
@@ -143,6 +171,7 @@ export function createToolRuntime(rawTools: ToolSet, options: {
                     if (callOptions.abortSignal?.aborted) throw error;
                     output = {error: error instanceof Error ? error.message : String(error)};
                 }
+                safety?.inspect(callOptions.toolCallId, name, output);
                 const failed = isFailed(output);
                 const failures = failed ? (failureCounts.get(signature) ?? 0) + 1 : 0;
                 failureCounts.set(signature, failures);
@@ -172,6 +201,8 @@ export function createToolRuntime(rawTools: ToolSet, options: {
                 } else {
                     projection = {type: "text" as const, value: serialize(compactToolOutput(output, toolCallId))};
                 }
+                const notice = safety?.notice(toolCallId);
+                if (notice) projection = withNotice(projection, notice);
                 const metric = metrics.get(toolCallId);
                 if (metric) {
                     metric.modelOutputChars = serialize(projection).length;

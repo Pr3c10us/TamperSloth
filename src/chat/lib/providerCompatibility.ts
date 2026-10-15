@@ -15,6 +15,13 @@ export function agentProviderOptions(providerId: ProviderId, reasoning: "balance
             return {openai: {store: false, include: ["reasoning.encrypted_content"], reasoningSummary: "auto"}};
         case "deepseek":
             return {deepseek: {thinking: {type: "enabled"}, reasoningEffort: reasoning === "thorough" ? "max" : "high"}};
+        case "kimi":
+            // Kimi K3 always reasons; the effort is ignored by older Kimi models.
+            return {moonshotai: {reasoningEffort: reasoning === "thorough" ? "max" : "high"}};
+        case "grok":
+            // Replay complete reasoning items rather than stored response ids.
+            return {xai: {store: false, include: ["reasoning.encrypted_content"], reasoningSummary: "auto",
+                reasoningEffort: reasoning === "thorough" ? "xhigh" : "high"}};
         case "google":
             return {google: {thinkingConfig: {includeThoughts: true}}};
         case "vertex":

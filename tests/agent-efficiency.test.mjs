@@ -344,7 +344,7 @@ test('Anthropic SDK sends valid history after deferred tool activation', async (
 test('settings validate budgets and usage does not double-count cached/reasoning tokens', () => {
     const load = createLoader();
     const {normalizeAgentSettings} = load('src/chat/lib/agentSettings.ts');
-    assert.deepEqual(plain(normalizeAgentSettings({maxSteps: 9999, tokenBudget: -10})), {maxSteps: 200, tokenBudget: 0, reasoning: 'balanced', showRunTokens: false, showToolTokens: false});
+    assert.deepEqual(plain(normalizeAgentSettings({maxSteps: 9999, tokenBudget: -10})), {maxSteps: 200, tokenBudget: 0, reasoning: 'balanced', showRunTokens: false, showToolTokens: false, actionApproval: 'auto'});
     const {usageRecord} = load('src/chat/lib/efficiency.ts');
     assert.deepEqual(plain(usageRecord({inputTokens: 100, outputTokens: 40, inputTokenDetails: {cacheReadTokens: 80, cacheWriteTokens: 10}, outputTokenDetails: {reasoningTokens: 30}})),
         {input: 100, output: 40, cacheRead: 80, cacheWrite: 10, reasoning: 30});

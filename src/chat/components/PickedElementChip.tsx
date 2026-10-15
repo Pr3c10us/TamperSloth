@@ -2,6 +2,7 @@ import { useState } from "react";
 import { MousePointerClick, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Hint } from "./Hint";
+import { ZoomableImage } from "./ImageLightbox";
 
 /** A picked element in the composer: the HTML goes to the model, the screenshot is only shown here. */
 export interface PickedElement {
@@ -52,12 +53,14 @@ export function PickedElementChip({ html, imageUrl, onRemove, className }: Picke
         return (
             <Hint label={snippet} className={SNIPPET_HINT}>
                 <div className={cn("group relative max-w-full overflow-hidden rounded-md border border-border bg-muted", className)}>
-                    <img
-                        src={imageUrl}
-                        alt={`Picked element ${selector}`}
-                        onError={() => setBroken(imageUrl)}
-                        className="block max-h-24 max-w-[12rem] object-contain"
-                    />
+                    <ZoomableImage src={imageUrl} alt={`Picked element ${selector}`}>
+                        <img
+                            src={imageUrl}
+                            alt={`Picked element ${selector}`}
+                            onError={() => setBroken(imageUrl)}
+                            className="block max-h-24 max-w-[12rem] object-contain"
+                        />
+                    </ZoomableImage>
                     <span className="absolute bottom-1 left-1 inline-flex max-w-[calc(100%-0.5rem)] items-center gap-1 rounded-sm bg-background/90 px-1 py-px font-mono text-[10px] text-accent">
                         <MousePointerClick className="size-2.5 shrink-0" strokeWidth={1.5} aria-hidden />
                         <span className="truncate">{selector}</span>

@@ -29,7 +29,8 @@ export function CursorGlyph({ variant = "sloth" }: { variant?: "sloth" | "user" 
 
 /**
  * The guide cursor plus its bubble. Positioned by transform from lib/pen; the
- * hotspot (rounded tip) sits at the element's origin.
+ * hotspot (rounded tip) sits at the element's origin. Sloth's cursor carries
+ * its mark while acting or idle; add `is-guiding` to hide it while it guides.
  */
 export const GuideCursor = forwardRef<HTMLDivElement, { label?: ReactNode; tag?: ReactNode; variant?: "sloth" | "user"; className?: string }>(
   function GuideCursor({ label, tag, variant = "sloth", className = "" }, ref) {
@@ -38,6 +39,11 @@ export const GuideCursor = forwardRef<HTMLDivElement, { label?: ReactNode; tag?:
         <div className="guide-cursor-glyph">
           <CursorGlyph variant={variant} />
         </div>
+        {variant === "sloth" && (
+          <div className="cursor-badge">
+            <SlothMark />
+          </div>
+        )}
         {tag ? <div className="cursor-tag">{tag}</div> : null}
         {label ? <div className="cursor-bubble">{label}</div> : null}
       </div>

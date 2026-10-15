@@ -55,7 +55,7 @@ export function Privacy() {
 const FAQS = [
   {
     q: "What does it cost?",
-    a: "You bring an API key from Anthropic, OpenAI, Google or DeepSeek and pay them for what you use. Sloth shows the tokens and cost of every reply as it goes, so there are no surprises.",
+    a: "You bring an API key from Anthropic, OpenAI, Google, DeepSeek, Kimi or Grok and pay them for what you use. Sloth shows the tokens and cost of every reply as it goes, so there are no surprises.",
   },
   {
     q: "Which browsers does it work in?",

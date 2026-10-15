@@ -329,9 +329,13 @@
     grid-template-rows: 1fr;
     opacity: 1;
 }
+/* The padding gives the active node's ring (ts-ring, 5px spread) room inside the
+   clip; the equal negative margin keeps layout and collapse height unchanged. */
 .ts-collapse > * {
     min-height: 0;
     overflow: hidden;
+    padding: 6px;
+    margin: -6px;
 }
 .ts-fade-top {
     -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 2.5rem);

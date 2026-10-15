@@ -13,6 +13,8 @@ interface Rates {
 // https://platform.claude.com/docs/en/about-claude/pricing
 // https://ai.google.dev/gemini-api/docs/pricing
 // https://api-docs.deepseek.com/quick_start/pricing/
+// https://platform.kimi.ai/docs/pricing/chat
+// https://docs.x.ai/developers/models
 // Estimates exclude taxes, account discounts/free tiers, cache storage and
 // non-token charges. Anthropic uses the app's default five-minute cache writes.
 // Vertex AI lists the same per-token rates as the Gemini API.
@@ -49,6 +51,17 @@ const MODEL_RATES: Record<string, Record<string, Rates>> = {
     deepseek: {
         "deepseek-flash": {input: .3, output: 1.2, cacheRead: .006},
         "deepseek-v4-pro": {input: 1.32, output: 3.96, cacheRead: .044},
+    },
+    kimi: {
+        "kimi-k3": {input: 3, output: 15, cacheRead: .3, cacheWrite: 3},
+        "kimi-k2.7-code": {input: .95, output: 4, cacheRead: .19},
+        "kimi-k2.6": {input: .95, output: 4, cacheRead: .16},
+    },
+    grok: {
+        "grok-4.7": {input: 2, output: 6, cacheRead: .5,
+            longContext: {above: 200000, input: 4, output: 12, cacheRead: 1}},
+        "grok-4.3": {input: 1.25, output: 2.5, cacheRead: .2,
+            longContext: {above: 200000, input: 2.5, output: 5, cacheRead: .4}},
     },
 };
 

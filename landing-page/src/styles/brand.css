@@ -54,6 +54,24 @@
 .guide-cursor.is-press {
   --press: 0.86;
 }
+/* The sloth mark trailing diagonally off the pointer, as the extension shows it while Sloth acts or idles. */
+.cursor-badge {
+  position: absolute;
+  left: 16px;
+  top: 17px;
+  width: 18px;
+  height: 18px;
+  color: #0f0f0e;
+  transition: opacity 160ms ease;
+}
+.cursor-badge svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+.guide-cursor.is-guiding .cursor-badge {
+  opacity: 0;
+}
 /* Description tag below the pointer. */
 .cursor-bubble {
   position: absolute;

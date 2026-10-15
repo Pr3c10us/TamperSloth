@@ -1,5 +1,5 @@
 import {memo, useState} from "react";
-import {Check, Copy} from "lucide-react";
+import {Check, Copy, ShieldAlert, ShieldCheck} from "lucide-react";
 import {getToolMeta, AlertCircle} from "../lib/toolMeta";
 import type {ToolCall} from "@/src/chat/hooks";
 import {AskUserCard} from "@/src/chat/components/askUser/askUserCard.tsx";
@@ -10,6 +10,7 @@ import {formatStepDuration, screenshotSource, toolErrorMessage} from "../lib/too
 import {toolVerb} from "../lib/stepSummary";
 import {Step, useNow, type StepState} from "./steps/Step";
 import {Hint} from "./Hint";
+import {ZoomableImage} from "./ImageLightbox";
 import {ErrorDetails} from "./ErrorNotice";
 import {summarizeError} from "../lib/errorSummary";
 
@@ -62,6 +63,34 @@ function CopyToolError({ tc }: { tc: ToolCall }) {
     );
 }
 
+/** What safety screening did around this call: flagged content, an approval, or a screened pass. */
+function SafetyMark({ tc }: { tc: ToolCall }) {
+    const safety = tc.safety;
+    if (!safety) return null;
+    const flagged = safety.injection?.length;
+    const label = flagged
+        ? `Possible prompt injection in this result: ${safety.injection!.join("; ")}. Sloth was warned to treat it as data.`
+        : safety.verdict === "approved" ? "You approved this action"
+        : safety.verdict === "screened" ? `Safety screen allowed this action${safety.note ? `: ${safety.note}` : ""}`
+        : safety.verdict === "blocked" ? `Blocked by safety screening${safety.note ? `: ${safety.note}` : ""}`
+        : safety.verdict === "declined" ? "You declined this action"
+        : undefined;
+    if (!label) return null;
+    const warn = flagged || safety.verdict === "blocked";
+    const Icon = warn ? ShieldAlert : ShieldCheck;
+    return (
+        <Hint label={label}>
+            <span
+                tabIndex={0}
+                aria-label={label}
+                className={`inline-flex size-6 shrink-0 cursor-default items-center justify-center rounded-md ${warn ? "text-destructive" : "text-muted-foreground"}`}
+            >
+                <Icon className="size-3.5" strokeWidth={1.75} />
+            </span>
+        </Hint>
+    );
+}
+
 interface ToolCallInlineProps {
     tc: ToolCall;
     metric?: ToolMetric;
@@ -102,7 +131,10 @@ export const ToolCallInline = memo(function ToolCallInline({ tc, metric, live }:
             meta={elapsed !== undefined && elapsed >= 1000 ? formatStepDuration(elapsed) : metric ? <ToolTokens metric={metric}/> : undefined}
             open={open}
             onOpenChange={screenshot || error ? setOpen : undefined}
-            trailing={IS_DEV && error ? <CopyToolError tc={tc}/> : undefined}
+            trailing={tc.safety || (IS_DEV && error) ? <>
+                <SafetyMark tc={tc}/>
+                {IS_DEV && error && <CopyToolError tc={tc}/>}
+            </> : undefined}
         >
             {error ? (
                 <div className="flex flex-col gap-1.5">
@@ -110,12 +142,14 @@ export const ToolCallInline = memo(function ToolCallInline({ tc, metric, live }:
                     {error.details && <ErrorDetails details={error.details}/>}
                 </div>
             ) : screenshot ? (
-                <img
-                    src={screenshot}
-                    alt={reason ? `Screenshot: ${reason}` : "Captured screenshot"}
-                    loading="lazy"
-                    className="ts-enter max-h-56 w-auto max-w-full rounded-md border border-border object-contain object-left-top"
-                />
+                <ZoomableImage src={screenshot} alt={reason ? `Screenshot: ${reason}` : "Captured screenshot"} className="max-w-full self-start rounded-md">
+                    <img
+                        src={screenshot}
+                        alt={reason ? `Screenshot: ${reason}` : "Captured screenshot"}
+                        loading="lazy"
+                        className="ts-enter max-h-56 w-auto max-w-full rounded-md border border-border object-contain object-left-top"
+                    />
+                </ZoomableImage>
             ) : undefined}
         </Step>
     );

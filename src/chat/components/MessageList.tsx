@@ -7,6 +7,7 @@ import { AssistantMessage } from "./AssistantMessage";
 import { EmptyState } from "./EmptyState";
 import { Hint } from "./Hint";
 import { ErrorNotice } from "./ErrorNotice";
+import { LivingDots } from "./LivingDots";
 import {DEFAULT_AGENT_SETTINGS, loadAgentSettings, onAgentSettingsChange} from "../lib/agentSettings";
 
 interface MessageListProps {
@@ -137,11 +138,11 @@ export const MessageList = forwardRef<HTMLDivElement, MessageListProps>(
                         )}
                     </div>
                 </div>
-                <Hint label={showJump ? "Scroll to bottom" : undefined}>
+                <Hint label={showJump ? (isLoading ? "Sloth is still working · Scroll to bottom" : "Scroll to bottom") : undefined}>
                     <button
                         type="button"
                         onClick={jumpToBottom}
-                        aria-label="Scroll to bottom"
+                        aria-label={isLoading ? "Sloth is still working. Scroll to bottom" : "Scroll to bottom"}
                         aria-hidden={!showJump}
                         tabIndex={showJump ? 0 : -1}
                         className={cn(
@@ -151,7 +152,10 @@ export const MessageList = forwardRef<HTMLDivElement, MessageListProps>(
                             showJump ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-1.5 opacity-0",
                         )}
                     >
-                        <ArrowDown className="size-4" strokeWidth={1.75} />
+                        {/* While the run continues below, the button shows it is alive rather than a plain arrow. */}
+                        {showJump && isLoading
+                            ? <LivingDots className="scale-[0.85]" />
+                            : <ArrowDown className="size-4" strokeWidth={1.75} />}
                     </button>
                 </Hint>
             </>

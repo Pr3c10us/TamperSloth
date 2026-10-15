@@ -6,6 +6,7 @@ import { MessageList } from "./components/MessageList";
 import { Composer, makeAttachmentFromFile } from "./components/Composer";
 import { HistoryDrawer } from "./components/HistoryDrawer";
 import { UserScriptsBanner } from "./components/UserScriptsBanner";
+import { ImageLightbox } from "./components/ImageLightbox";
 import {
     loadInitialSelectedModel,
     type SelectedModelEntry,
@@ -140,6 +141,8 @@ function Chat() {
                 tabId={tabId}
                 conversationId={conversationId}
             />
+
+            <ImageLightbox />
 
             <HistoryDrawer
                 open={historyOpen}

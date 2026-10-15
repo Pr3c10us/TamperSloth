@@ -40,6 +40,7 @@ import {
     type PendingAttachment,
 } from "./AttachmentChip";
 import { AskUserOverlay } from "@/src/chat/components/askUser/askUserOverlay.tsx";
+import { ActionConfirmOverlay } from "./ActionConfirmOverlay";
 import { TabWaitNotice } from "./TabWaitNotice";
 import { RateLimitNotice } from "./RateLimitNotice";
 
@@ -217,6 +218,23 @@ export function Composer({
 
     useEffect(fitTextarea, [draft]);
 
+    // Opening the panel puts the caret in the input, so the user can type right away.
+    // The panel window can gain focus after mount, so focus again then unless something else has it.
+    useEffect(() => {
+        const focusInput = () => {
+            const active = document.activeElement;
+            if (active && active !== document.body) return;
+            textareaRef.current?.focus({ preventScroll: true });
+        };
+        focusInput();
+        const frame = requestAnimationFrame(focusInput);
+        window.addEventListener("focus", focusInput);
+        return () => {
+            cancelAnimationFrame(frame);
+            window.removeEventListener("focus", focusInput);
+        };
+    }, []);
+
     // The side panel can mount this while still opening (near-zero width), which wraps
     // the placeholder into many lines; refit whenever the width settles.
     useEffect(() => {
@@ -326,6 +344,7 @@ export function Composer({
             <RateLimitNotice conversationId={conversationId} />
             <TabWaitNotice conversationId={conversationId} />
             <AskUserOverlay conversationId={conversationId} />
+            <ActionConfirmOverlay conversationId={conversationId} />
             <div className="flex flex-col gap-1.5 px-3 pb-2 pt-2">
                 <div className="flex flex-col gap-2.5 rounded-2xl border border-border bg-card p-2.5 shadow-xs transition-colors focus-within:border-foreground/40">
                     {pickedElements.length > 0 && (

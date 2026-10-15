@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ZoomableImage } from "./ImageLightbox";
 
 /** Most files one message can carry. */
 export const MAX_ATTACHMENTS = 10;
@@ -64,7 +65,9 @@ export function AttachmentChip({ att, onRemove, large }: AttachmentChipProps) {
                 )}
             >
                 {att.url ? (
-                    <img src={att.url} alt="" className="size-full object-cover" />
+                    <ZoomableImage src={att.url} alt={att.name} className="size-full">
+                        <img src={att.url} alt="" className="size-full object-cover" />
+                    </ZoomableImage>
                 ) : (
                     <PlaceholderImage label={att.name} />
                 )}
