@@ -8,6 +8,7 @@ import {
     getApiKeys,
     setApiKey,
     subscribeApiKeys,
+    VERTEX_PROJECT_KEY,
 } from "../lib/storage";
 import { clearSelectedModel } from "@/src/chat/lib/storage";
 
@@ -15,6 +16,7 @@ export function ConnectionsTab() {
     const [keys, setKeys] = useState<Record<string, string>>({});
     const [drafts, setDrafts] = useState<Record<string, string>>({});
     const [editing, setEditing] = useState<string | null>(null);
+    const [vertexProject, setVertexProject] = useState("");
 
     useEffect(() => {
         getApiKeys().then(setKeys);
@@ -26,6 +28,15 @@ export function ConnectionsTab() {
         if (!value) return;
         await setApiKey(id, value);
         setKeys((k) => ({ ...k, [id]: value }));
+        if (id === "vertex") {
+            const project = vertexProject.trim();
+            if (project) await setApiKey(VERTEX_PROJECT_KEY, project);
+            else await deleteApiKey(VERTEX_PROJECT_KEY);
+            setKeys((k) => {
+                const { [VERTEX_PROJECT_KEY]: _, ...rest } = k;
+                return project ? { ...rest, [VERTEX_PROJECT_KEY]: project } : rest;
+            });
+        }
         setDrafts((d) => {
             const { [id]: _, ...rest } = d;
             return rest;
@@ -35,6 +46,7 @@ export function ConnectionsTab() {
 
     const handleEdit = (id: string) => {
         setDrafts((d) => ({ ...d, [id]: keys[id] ?? "" }));
+        if (id === "vertex") setVertexProject(keys[VERTEX_PROJECT_KEY] ?? "");
         setEditing(id);
     };
 
@@ -46,7 +58,7 @@ export function ConnectionsTab() {
     const handleDelete = async (id: string) => {
         await deleteApiKey(id);
         setKeys((k) => {
-            const { [id]: _, ...rest } = k;
+            const { [id]: _, [VERTEX_PROJECT_KEY]: __, ...rest } = k;
             // Clear selected model if no keys remain
             if (Object.keys(rest).length === 0) {
                 void clearSelectedModel();
@@ -93,6 +105,13 @@ export function ConnectionsTab() {
                             onEdit={() => handleEdit(p.id)}
                             onDelete={() => handleDelete(p.id)}
                             onCancel={handleCancel}
+                            extra={p.id === "vertex" ? {
+                                label: "Vertex project ID",
+                                placeholder: "Project ID or number (optional)",
+                                hint: "Needed for Gemini 4 Argon, which Vertex serves only from the global location.",
+                                value: vertexProject,
+                                onChange: setVertexProject,
+                            } : undefined}
                         />
                     ))}
                 </SettingsGroup>

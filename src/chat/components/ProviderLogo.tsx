@@ -50,6 +50,7 @@ const MARKS: Record<ProviderId, () => ReactElement> = {
         />
     ),
     google: GeminiMark,
+    vertex: GeminiMark,
     deepseek: () => (
         <path
             fill="#4D6BFE"

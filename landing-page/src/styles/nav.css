@@ -1,0 +1,174 @@
+.nav {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 80;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+  padding: 0 var(--gutter);
+  pointer-events: none;
+}
+.nav::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 -40px 0;
+  background: linear-gradient(to bottom, rgb(13 14 12 / 0.85), rgb(13 14 12 / 0));
+  opacity: 0;
+  transition: opacity 0.5s var(--ease-out);
+  pointer-events: none;
+}
+.nav.is-scrolled::before {
+  opacity: 1;
+}
+.nav.is-light::before {
+  opacity: 1;
+  background: linear-gradient(to bottom, rgb(243 244 242 / 0.94), rgb(243 244 242 / 0));
+}
+.nav-logo {
+  transition: color 0.4s var(--ease-out);
+}
+.nav.is-light .nav-logo {
+  color: var(--paper-ink);
+}
+.nav > * {
+  pointer-events: auto;
+  position: relative;
+}
+
+.nav-logo {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+  color: var(--fg);
+}
+.nav-mark {
+  width: 34px;
+  height: 34px;
+  transition: transform 0.8s var(--ease-expo);
+}
+.nav-logo:hover .nav-mark {
+  transform: rotate(-12deg) scale(1.06);
+}
+.nav-word {
+  font-family: var(--font-serif);
+  font-size: 27px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+/* Hangs from the top edge like a tab pulled down from the browser chrome. */
+.nav-hang {
+  display: flex;
+  align-items: center;
+  gap: clamp(14px, 2.6vw, 44px);
+  padding: 13px clamp(18px, 2.4vw, 34px) 15px;
+  background: #080907;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 22px 22px;
+  box-shadow: 0 20px 40px -20px rgb(0 0 0 / 0.8);
+  animation: hang-in 1.2s var(--ease-expo) 0.2s both;
+}
+@keyframes hang-in {
+  from { transform: translateY(-110%); }
+  to { transform: none; }
+}
+.nav-hang a {
+  position: relative;
+  font-size: 14px;
+  color: rgb(225 224 204 / 0.72);
+  transition: color 0.25s;
+  white-space: nowrap;
+}
+.nav-hang a:hover,
+.nav-hang a.is-active {
+  color: #e1e0cc;
+}
+.nav-hang a::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -8px;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--sage);
+  box-shadow: 0 0 8px var(--sage);
+  transform: scale(0);
+  transition: transform 0.4s var(--ease-expo);
+}
+.nav-hang a.is-active::after {
+  transform: scale(1);
+}
+
+.nav-cta {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  height: 44px;
+  padding: 0 5px 0 18px;
+  border-radius: 12px;
+  background: #080907;
+  border: 1px solid var(--line-strong);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: border-color 0.3s, transform 0.4s var(--ease-expo);
+}
+.nav-cta:hover {
+  border-color: rgb(168 189 133 / 0.5);
+}
+.nav-cta-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--sage);
+  color: var(--surface);
+  overflow: hidden;
+}
+.nav-cta-icon svg {
+  width: 15px;
+  height: 15px;
+}
+.nav-cta:hover .nav-cta-icon svg {
+  animation: nudge 0.6s var(--ease-expo);
+}
+
+@media (max-width: 980px) {
+  .nav-hang a:nth-child(n + 4) {
+    display: none;
+  }
+}
+@media (max-width: 720px) {
+  .nav {
+    grid-template-columns: 1fr auto;
+  }
+  .nav-hang {
+    display: none;
+  }
+  .nav-word {
+    font-size: 23px;
+  }
+  .nav-cta {
+    height: 40px;
+    font-size: 12px;
+    padding-left: 14px;
+  }
+  .nav-cta-icon {
+    width: 30px;
+    height: 30px;
+  }
+}
+@media (max-width: 380px) {
+  .nav-word {
+    display: none;
+  }
+}

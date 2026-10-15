@@ -1,6 +1,7 @@
 import {useCallback, useSyncExternalStore} from "react";
 import {type ModelMessage, isStepCount, streamText} from "ai";
-import {formatModelName, getModel, MODELPROVIDERS, type ProviderId} from "../lib/provider.ts";
+import {formatModelName, getModel, MODELPROVIDERS, type ModelOptions, type ProviderId} from "../lib/provider.ts";
+import {getApiKeys, VERTEX_PROJECT_KEY} from "../../settings/lib/storage";
 import {withRateLimits} from "../lib/rateLimit";
 import {createAgentTools} from "../lib/tools.ts";
 import {loadAttachment, loadStoredConversation, saveAttachments, saveConversation, type StoredConversation} from "../lib/storage.ts";
@@ -349,6 +350,9 @@ async function sendMessage(
     const abortController = new AbortController();
     runs.set(conversationId, abortController);
     patchSession(conversationId, {error: null, isLoading: true});
+    const modelOptions: ModelOptions = providerId === "vertex"
+        ? {vertexProject: (await getApiKeys().catch((): Record<string, string> => ({})))[VERTEX_PROJECT_KEY]}
+        : {};
 
     // In-memory files for this message; earlier messages read theirs back from IndexedDB.
     const sentFiles = new Map<string, File>();
@@ -398,7 +402,7 @@ async function sendMessage(
         void (async () => {
             let named = "";
             try {
-                named = await generateChatTitle(getModel(providerId, apiKey, resolvedModelId), providerId, {
+                named = await generateChatTitle(getModel(providerId, apiKey, resolvedModelId, undefined, modelOptions), providerId, {
                     text,
                     attachmentNames: storedAttachments?.map(a => a.name),
                     pickedElements: elementContext?.length,
@@ -432,7 +436,7 @@ async function sendMessage(
     ]);
 
     try {
-        const model = withRateLimits(getModel(providerId, apiKey, resolvedModelId),
+        const model = withRateLimits(getModel(providerId, apiKey, resolvedModelId, undefined, modelOptions),
             {conversationId, modelName: formatModelName(resolvedModelId)});
         const settings = await loadAgentSettings();
         const archived = new Set<string>();

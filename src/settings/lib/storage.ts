@@ -2,6 +2,9 @@ const API_KEYS_NAMESPACE = "ts_api_keys";
 
 type ApiKeyMap = Record<string, string>;
 
+/** Vertex project ID or number, kept beside the keys; models served only from `global` need it. */
+export const VERTEX_PROJECT_KEY = "vertex_project";
+
 function hasChromeStorage(): boolean {
     return typeof chrome !== "undefined" && !!chrome?.storage?.local;
 }
@@ -59,6 +62,7 @@ export async function setApiKey(providerId: string, key: string): Promise<void> 
 export async function deleteApiKey(providerId: string): Promise<void> {
     const all = await readAll();
     delete all[providerId];
+    if (providerId === "vertex") delete all[VERTEX_PROJECT_KEY];
     await writeAll(all);
 }
 

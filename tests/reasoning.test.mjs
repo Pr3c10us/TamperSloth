@@ -215,6 +215,7 @@ test('provider options request readable reasoning from every provider', () => {
     assert.deepEqual(plain(agentProviderOptions('anthropic', 'balanced').anthropic.thinking), {type: 'adaptive', display: 'summarized'});
     assert.equal(agentProviderOptions('openai', 'balanced').openai.reasoningSummary, 'auto');
     assert.equal(agentProviderOptions('google', 'balanced').google.thinkingConfig.includeThoughts, true);
+    assert.equal(agentProviderOptions('vertex', 'balanced').vertex.thinkingConfig.includeThoughts, true);
     assert.equal(agentProviderOptions('deepseek', 'thorough').deepseek.thinking.type, 'enabled');
 });
 

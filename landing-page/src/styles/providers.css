@@ -1,0 +1,149 @@
+.providers {
+  padding-top: clamp(80px, 12vh, 140px);
+  padding-bottom: clamp(60px, 10vh, 120px);
+}
+.providers-cap {
+  max-width: 520px;
+  margin: 0 auto 26px;
+  text-align: center;
+  color: var(--fg-2);
+  font-size: 15px;
+}
+.providers-band {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-radius: var(--radius-lg);
+  background: #121311;
+  border: 1px solid var(--line);
+}
+.prov {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  height: 128px;
+  outline: none;
+  color: var(--fg-2);
+  transition: color 0.4s;
+  /* Dotted column rules, like the cells of a spec sheet. */
+  background-image: repeating-linear-gradient(to bottom, var(--line-strong) 0 3px, transparent 3px 7px);
+  background-size: 1px 70%;
+  background-position: 0 50%;
+  background-repeat: no-repeat;
+}
+.prov:first-child {
+  background-image: none;
+}
+.prov-mark {
+  width: 30px;
+  height: 30px;
+}
+.prov-mark .mark-fill {
+  fill: currentColor;
+  transition: opacity 0.4s;
+}
+.prov-mark .mark-brand {
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.prov-name {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.prov:hover,
+.prov:focus-visible {
+  color: var(--fg);
+}
+.prov:hover .mark-fill,
+.prov:focus-visible .mark-fill {
+  opacity: 0;
+}
+.prov:hover .mark-brand,
+.prov:focus-visible .mark-brand {
+  opacity: 1;
+}
+
+/* Sage corner brackets close in on hover. */
+.prov-corners {
+  position: absolute;
+  inset: 14px;
+  pointer-events: none;
+}
+.prov-corners i {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 0 solid var(--sage);
+  opacity: 0;
+  transition: opacity 0.3s, transform 0.5s var(--ease-expo);
+}
+.prov-corners i:nth-child(1) { left: 0; top: 0; border-left-width: 1.5px; border-top-width: 1.5px; transform: translate(-8px, -8px); }
+.prov-corners i:nth-child(2) { right: 0; top: 0; border-right-width: 1.5px; border-top-width: 1.5px; transform: translate(8px, -8px); }
+.prov-corners i:nth-child(3) { left: 0; bottom: 0; border-left-width: 1.5px; border-bottom-width: 1.5px; transform: translate(-8px, 8px); }
+.prov-corners i:nth-child(4) { right: 0; bottom: 0; border-right-width: 1.5px; border-bottom-width: 1.5px; transform: translate(8px, 8px); }
+.prov:hover .prov-corners i,
+.prov:focus-visible .prov-corners i {
+  opacity: 1;
+  transform: none;
+}
+
+.prov-tip {
+  position: absolute;
+  bottom: calc(100% - 6px);
+  left: 50%;
+  z-index: 3;
+  width: max-content;
+  max-width: 220px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--fg);
+  color: var(--surface);
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-align: center;
+  box-shadow: 0 14px 30px -12px rgb(0 0 0 / 0.6);
+  opacity: 0;
+  transform: translate(-50%, 6px);
+  transition: opacity 0.25s, transform 0.4s var(--ease-expo);
+  pointer-events: none;
+}
+.prov-tip::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  border: 6px solid transparent;
+  border-top-color: var(--fg);
+  transform: translateX(-50%);
+}
+.prov:hover .prov-tip,
+.prov:focus-visible .prov-tip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+@media (max-width: 760px) {
+  .providers-band {
+    grid-template-columns: repeat(2, 1fr);
+    background-image: none;
+  }
+  .prov {
+    height: 96px;
+    background-image: none;
+  }
+  .prov:nth-child(odd) {
+    border-right: 1px dashed var(--line-strong);
+  }
+  .prov:nth-child(-n + 2) {
+    border-bottom: 1px dashed var(--line-strong);
+  }
+  .prov-name {
+    font-size: 18px;
+  }
+  .prov-mark {
+    width: 24px;
+    height: 24px;
+  }
+}

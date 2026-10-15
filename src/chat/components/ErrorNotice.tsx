@@ -1,5 +1,7 @@
 import {useId, useState} from "react";
-import {AlertCircle, Check, ChevronRight, Copy} from "lucide-react";
+import {useNavigate} from "react-router-dom";
+import {AlertCircle, Check, ChevronRight, Copy, Settings} from "lucide-react";
+import {Button} from "@/components/ui/button";
 import {cn} from "@/lib/utils";
 import {summarizeError} from "../lib/errorSummary";
 import {Hint} from "./Hint";
@@ -53,13 +55,22 @@ export function ErrorDetails({details, className}: { details: string; className?
 
 /** A short, plain error line; the full message is one click away. */
 export function ErrorNotice({message, className}: { message: string; className?: string }) {
-    const {summary, details} = summarizeError(message);
+    const {summary, details, action} = summarizeError(message);
+    const navigate = useNavigate();
     return (
         <div role="alert" className={cn("flex flex-col gap-1.5", className)}>
             <div className="flex items-start gap-2 text-sm text-destructive">
                 <AlertCircle className="mt-[3px] size-3.5 shrink-0" strokeWidth={1.75}/>
                 <span className="min-w-0 leading-snug">{summary}</span>
             </div>
+            {action === "settings" && (
+                <div className="pl-5.5">
+                    <Button variant="outline" size="xs" onClick={() => navigate("/settings?tab=connections")}>
+                        <Settings strokeWidth={1.5}/>
+                        Open connections
+                    </Button>
+                </div>
+            )}
             {details && <ErrorDetails details={details} className="pl-5.5"/>}
         </div>
     );

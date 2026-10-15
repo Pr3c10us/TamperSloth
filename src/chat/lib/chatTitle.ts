@@ -18,6 +18,8 @@ function titleProviderOptions(providerId: ProviderId): NonNullable<ModelMessage[
             return {openai: {store: false}};
         case "google":
             return {google: {thinkingConfig: {includeThoughts: false}}};
+        case "vertex":
+            return {vertex: {thinkingConfig: {includeThoughts: false}}};
     }
 }
 

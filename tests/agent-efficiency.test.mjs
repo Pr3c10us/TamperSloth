@@ -274,7 +274,7 @@ test('Claude compaction removes invalid thinking, empty turns, and preserves app
 test('tool changes keep reasoning for other providers and preparation resets per run', () => {
     const {createStepMessagePreparer} = createLoader()('src/chat/lib/efficiency.ts');
     const history = [{role: 'assistant', content: [{type: 'reasoning', text: 'Plan', providerOptions: {deepseek: {signature: 's'}}}]}];
-    for (const provider of ['openai', 'google', 'deepseek']) {
+    for (const provider of ['openai', 'google', 'vertex', 'deepseek']) {
         const prepare = createStepMessagePreparer(provider, new Set());
         prepare(history, ['getPageText']);
         assert.equal(prepare(history, ['getPageText', 'clickElement'])[0], history[0]);

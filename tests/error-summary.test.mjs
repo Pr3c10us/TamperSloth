@@ -20,6 +20,13 @@ test('common provider failures get friendly summaries', () => {
     assert.match(summarizeError("This model's maximum context length is 128000 tokens.").summary, /too long/);
 });
 
+test('errors fixed in Settings carry an action for the notice to offer', () => {
+    const missing = 'Gemini 4 Argon on Vertex AI needs a Project ID.';
+    assert.deepEqual({...summarizeError(missing)}, {summary: missing, action: 'settings'});
+    assert.equal(summarizeError('401 Unauthorized: Incorrect API key provided').action, 'settings');
+    assert.equal(summarizeError('429 Too Many Requests').action, undefined);
+});
+
 test('short plain messages pass through without a details toggle', () => {
     const notice = 'Reached the 25-step limit. Work may be incomplete. Send another message to continue.';
     assert.deepEqual({...summarizeError(notice)}, {summary: notice});

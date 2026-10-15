@@ -7,7 +7,12 @@ export interface ErrorSummary {
     summary: string;
     /** The full original message, present only when it differs from the summary. */
     details?: string;
+    /** Set when the fix lives in Settings → Connections (a bad key, a missing project). */
+    action?: "settings";
 }
+
+/** Errors our own code raises that Settings can fix; they read as plain prose. */
+const SETTINGS_FIX = /needs a Project ID/i;
 
 const MAX_SUMMARY = 100;
 /** Plain prose up to this length is already readable, e.g. our own "Reached the step limit…" notices. */
@@ -39,15 +44,19 @@ function firstSentence(text: string): string {
     return sentence.length > MAX_SUMMARY ? `${sentence.slice(0, MAX_SUMMARY - 1).trimEnd()}…` : sentence;
 }
 
+function settingsAction(summary: string): Pick<ErrorSummary, "action"> {
+    return SETTINGS_FIX.test(summary) || /rejected the API key/.test(summary) ? {action: "settings"} : {};
+}
+
 export function summarizeError(raw: string | null | undefined): ErrorSummary {
     const text = (raw ?? "").trim();
     if (!text) return {summary: "Something went wrong."};
 
     for (const [pattern, summary] of RULES) {
-        if (pattern.test(text)) return {summary, details: text};
+        if (pattern.test(text)) return {summary, details: text, ...settingsAction(summary)};
     }
 
-    if (text.length <= MAX_PLAIN && !text.includes("\n") && !/[{[]/.test(text)) return {summary: text};
+    if (text.length <= MAX_PLAIN && !text.includes("\n") && !/[{[]/.test(text)) return {summary: text, ...settingsAction(text)};
 
     return {summary: firstSentence(text), details: text};
 }

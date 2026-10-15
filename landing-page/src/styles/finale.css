@@ -1,0 +1,116 @@
+.finale {
+  position: relative;
+  isolation: isolate;
+  margin-top: clamp(120px, 18vh, 220px);
+  padding-top: clamp(110px, 16vh, 180px);
+  overflow: hidden;
+}
+.finale-canopy {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  transform: scaleY(-1);
+  opacity: 0.9;
+}
+.finale::before {
+  /* Fade the canopy in from the page above. */
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 40%;
+  background: linear-gradient(var(--night), transparent);
+  z-index: -1;
+}
+.finale-cta {
+  text-align: center;
+}
+.finale-cta h2 {
+  font-size: var(--fs-h1);
+  line-height: 0.95;
+}
+.finale-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 40px;
+}
+.finale-kbd {
+  font-size: 14px;
+  color: var(--fg-2);
+}
+
+.wordmark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.12em;
+  margin-top: clamp(80px, 12vh, 140px);
+  font-family: var(--font-serif);
+  font-size: clamp(64px, 16.4vw, 290px);
+  line-height: 0.8;
+  letter-spacing: -0.045em;
+  white-space: nowrap;
+  color: var(--fg);
+  /* The bottom of the word dips below the footer bar. */
+  margin-bottom: -0.12em;
+  background: linear-gradient(180deg, var(--fg) 30%, rgb(246 244 239 / 0.2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.wordmark-mark {
+  flex: none;
+  width: 0.72em;
+  height: 0.72em;
+  color: var(--fg);
+  transform: translateY(0.04em);
+}
+.finale-bar {
+  position: relative;
+  border-top: 1px solid var(--line);
+  background: var(--night);
+}
+.finale-bar-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px 28px;
+  padding-top: 22px;
+  padding-bottom: 26px;
+  font-size: 13px;
+  color: var(--fg-3);
+}
+.finale-motto {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.finale-bar nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px;
+}
+.finale-bar a {
+  color: var(--fg-2);
+  transition: color 0.25s;
+}
+.finale-bar a:hover {
+  color: var(--sage);
+}
+
+@media (max-width: 720px) {
+  .finale {
+    margin-top: 60px;
+    padding-top: 90px;
+  }
+  .finale-motto {
+    order: 3;
+    width: 100%;
+  }
+}
