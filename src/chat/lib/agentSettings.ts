@@ -1,4 +1,5 @@
 import type {UsageRecord} from "./efficiency";
+import type {ApprovalMode} from "./actionScreen";
 
 export interface AgentSettings {
     maxSteps: number;
@@ -8,11 +9,17 @@ export interface AgentSettings {
     showRunTokens: boolean;
     /** Show estimated tokens on each tool call. */
     showToolTokens: boolean;
+    /**
+     * "auto": actions run after automatic safety screening; only high-risk or
+     * suspicious ones stop for approval. "ask": every action that changes
+     * something waits for approval.
+     */
+    actionApproval: ApprovalMode;
 }
 
 const KEY = "ts_agent_settings";
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {maxSteps: 200, tokenBudget: 250000, reasoning: "balanced",
-    showRunTokens: false, showToolTokens: false};
+    showRunTokens: false, showToolTokens: false, actionApproval: "auto"};
 
 export function runStopReason(settings: AgentSettings, steps: UsageRecord[], failure = ""): string {
     if (failure) return failure;
@@ -29,6 +36,7 @@ export function normalizeAgentSettings(value: Partial<AgentSettings> = {}): Agen
         reasoning: value.reasoning === "thorough" ? "thorough" : "balanced",
         showRunTokens: value.showRunTokens === true,
         showToolTokens: value.showToolTokens === true,
+        actionApproval: value.actionApproval === "ask" ? "ask" : "auto",
     };
 }
 

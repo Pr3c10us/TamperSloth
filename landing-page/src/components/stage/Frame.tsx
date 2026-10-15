@@ -139,10 +139,15 @@ export const Frame = forwardRef<FrameHandle, { step: number; playing: boolean; n
     if (!playing) return;
     const ctrl = new AbortController();
     const signal = ctrl.signal;
-    setS(initial());
-    if (ink.current) ink.current.innerHTML = "";
-    sloth.current?.classList.remove("is-on");
-    user.current?.classList.remove("is-on");
+    const resetScene = () => {
+      setS(initial());
+      if (ink.current) ink.current.innerHTML = "";
+      sloth.current?.classList.remove("is-on");
+      user.current?.classList.remove("is-on");
+    };
+    resetScene();
+    // Show me only guides, so Sloth's cursor drops its mark there.
+    sloth.current?.classList.toggle("is-guiding", step === 1);
     const chat = chatOps(set);
     const now = Date.now;
 
@@ -335,7 +340,19 @@ export const Frame = forwardRef<FrameHandle, { step: number; playing: boolean; n
       },
     };
 
-    scripts[step]?.().catch((e) => {
+    // Each mode loops, so one that started while only peeking out of the hero
+    // still plays from the top once it is properly in view.
+    const loop = async () => {
+      const script = scripts[step];
+      if (!script) return;
+      for (;;) {
+        await script();
+        await wait(2600, signal);
+        resetScene();
+        await wait(400, signal);
+      }
+    };
+    loop().catch((e) => {
       if (!(e instanceof Aborted)) console.error(e);
     });
     return () => ctrl.abort();

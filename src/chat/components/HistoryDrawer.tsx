@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MoreHorizontal, PanelLeftClose, Plus, Search, Settings, Trash2 } from "lucide-react";
 import {
     deleteConversation,
@@ -70,6 +70,7 @@ export function HistoryDrawer({
     const [conversations, setConversations] = useState<ConversationSummary[]>([]);
     const [error, setError] = useState('');
     const [query, setQuery] = useState("");
+    const searchRef = useRef<HTMLInputElement>(null);
     const running = useRunningChats();
 
     useEffect(() => {
@@ -106,6 +107,10 @@ export function HistoryDrawer({
                 side="left"
                 showCloseButton={false}
                 aria-describedby={undefined}
+                onOpenAutoFocus={(event) => {
+                    event.preventDefault();
+                    searchRef.current?.focus();
+                }}
                 className="flex flex-col gap-0 border-r border-sidebar-border bg-sidebar p-0 text-sidebar-foreground data-[side=left]:w-[300px] data-[side=left]:max-w-[88vw]"
             >
                 <div className="flex items-center justify-between px-3 pt-3 pb-2">
@@ -123,6 +128,7 @@ export function HistoryDrawer({
                     <label className="flex h-8 items-center gap-2 rounded-lg border border-sidebar-border bg-background px-2.5 text-muted-foreground transition-colors focus-within:border-ring">
                         <Search className="size-3.5 shrink-0" strokeWidth={1.5} />
                         <input
+                            ref={searchRef}
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                             placeholder="Search"

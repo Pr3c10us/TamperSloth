@@ -327,7 +327,7 @@ export function TryIt() {
           </div>
 
           <svg ref={ink} className="ink-layer" aria-hidden />
-          <GuideCursor ref={cursor} label={tip ? <TypedTip key={tip} text={tip} /> : null} />
+          <GuideCursor ref={cursor} className="is-guiding" label={tip ? <TypedTip key={tip} text={tip} /> : null} />
         </div>
 
         <div className={`try-again ${phase === "done" ? "is-on" : ""}`}>

@@ -79,7 +79,7 @@ test('vertex: gemini-4-argon is sent to the project-scoped global location, and 
     assert.ok(url.startsWith('https://aiplatform.googleapis.com/v1beta1/projects/my-project/locations/global/publishers/google/models/gemini-4-argon'), url);
 });
 
-for (const provider of ['openai', 'anthropic', 'google', 'vertex', 'deepseek']) {
+for (const provider of ['openai', 'anthropic', 'google', 'vertex', 'deepseek', 'kimi', 'grok']) {
     test(`${provider}: canonical image files reach the provider without losing media data`, async () => {
         let request;
         const modelId = MODELPROVIDERS.find(p => p.id === provider).defaultModel;
@@ -110,7 +110,7 @@ function response(provider, model, step, calls) {
                 ...(i === 0 ? {thoughtSignature: 'call-' + step} : {})})) : [{text: 'Done', thoughtSignature: 'final-signature'}]),
         ]}, finishReason: 'STOP'}], usageMetadata: {promptTokenCount: 100, candidatesTokenCount: 20, totalTokenCount: 120}};
     }
-    if (provider === 'deepseek') {
+    if (provider === 'deepseek' || provider === 'kimi') {
         return {id: 'completion-' + step, object: 'chat.completion', created: 0, model,
             choices: [{index: 0, finish_reason: calls.length ? 'tool_calls' : 'stop', message: {
                 role: 'assistant', content: calls.length ? '' : 'Done',
@@ -119,12 +119,12 @@ function response(provider, model, step, calls) {
                     function: {name: call.name, arguments: JSON.stringify(call.input)}}))} : {}),
             }}], usage: {prompt_tokens: 100, completion_tokens: 20, total_tokens: 120}};
     }
-    return {id: 'response-' + step, model, created_at: 0, status: 'completed',
-        output: [{type: 'reasoning', id: 'rs-' + step, encrypted_content: 'encrypted-' + step,
+    return {id: 'response-' + step, object: 'response', model, created_at: 0, status: 'completed',
+        output: [{type: 'reasoning', id: 'rs-' + step, status: 'completed', encrypted_content: 'encrypted-' + step,
             summary: [{type: 'summary_text', text: 'Plan ' + step}]},
         ...(calls.length ? calls.map(call => ({type: 'function_call', id: 'fc-' + call.id, call_id: call.id,
             name: call.name, arguments: JSON.stringify(call.input)}))
-            : [{type: 'message', id: 'msg-' + step, role: 'assistant', phase: 'final_answer',
+            : [{type: 'message', id: 'msg-' + step, role: 'assistant', phase: 'final_answer', status: 'completed',
                 content: [{type: 'output_text', text: 'Done', annotations: []}]}])],
         usage: {input_tokens: 100, output_tokens: 20, total_tokens: 120}};
 }
@@ -134,7 +134,7 @@ function toolHistory(provider, body) {
         return {calls: body.contents.flatMap(m => m.parts.filter(p => p.functionCall).map(p => p.functionCall.name)),
             results: body.contents.flatMap(m => m.parts.filter(p => p.functionResponse).map(p => p.functionResponse.name))};
     }
-    if (provider === 'deepseek') {
+    if (provider === 'deepseek' || provider === 'kimi') {
         return {calls: body.messages.flatMap(m => (m.tool_calls ?? []).map(p => p.id)),
             results: body.messages.filter(m => m.role === 'tool').map(m => m.tool_call_id)};
     }
@@ -172,6 +172,9 @@ for (const config of MODELPROVIDERS.filter(p => p.id !== 'anthropic')) {
                             assert.equal(message.reasoning_content, originalStep === 3 ? '' : 'Plan ' + originalStep);
                         }
                     }
+                } else if (provider === 'kimi') {
+                    // Only K3 takes an effort; the SDK drops it for older Kimi models.
+                    assert.equal(body.reasoning_effort, modelId === 'kimi-k3' ? 'high' : undefined);
                 } else if (isGemini(provider)) {
                     const turns = body.contents.filter(m => m.role === 'model');
                     const signatures = turns.flatMap(m => m.parts.filter(p => p.functionCall && p.thoughtSignature).map(p => p.thoughtSignature));
@@ -217,7 +220,7 @@ function streamingResponse(provider, model, step, calls) {
     let events;
     if (isGemini(provider)) {
         events = [response(provider, model, step, calls)];
-    } else if (provider === 'deepseek') {
+    } else if (provider === 'deepseek' || provider === 'kimi') {
         events = [{id: 'chunk-' + step, object: 'chat.completion.chunk', created: 0, model, choices: [{index: 0, delta: {
             role: 'assistant', ...(step === 0 ? {reasoning_content: 'Plan'} : {}),
             ...(calls.length ? {tool_calls: calls.map((call, index) => ({index, id: call.id, type: 'function',
@@ -226,12 +229,14 @@ function streamingResponse(provider, model, step, calls) {
             choices: [{index: 0, delta: {}, finish_reason: calls.length ? 'tool_calls' : 'stop'}],
             usage: {prompt_tokens: 100, completion_tokens: 20, total_tokens: 120}}];
     } else {
-        events = [{type: 'response.created', response: {id: 'response-' + step, created_at: 0, model}},
+        events = [{type: 'response.created', response: {id: 'response-' + step, object: 'response', created_at: 0, model, output: []}},
             {type: 'response.output_item.added', output_index: 0,
-                item: {type: 'reasoning', id: 'rs-' + step, encrypted_content: 'partial'}},
-            {type: 'response.reasoning_summary_text.delta', item_id: 'rs-' + step, summary_index: 0, delta: 'Plan'},
+                item: {type: 'reasoning', id: 'rs-' + step, status: 'in_progress', summary: [], encrypted_content: 'partial'}},
+            {type: 'response.reasoning_summary_part.added', item_id: 'rs-' + step, output_index: 0, summary_index: 0,
+                part: {type: 'summary_text', text: ''}},
+            {type: 'response.reasoning_summary_text.delta', item_id: 'rs-' + step, output_index: 0, summary_index: 0, delta: 'Plan'},
             {type: 'response.output_item.done', output_index: 0,
-                item: {type: 'reasoning', id: 'rs-' + step, encrypted_content: 'complete-' + step}},
+                item: {type: 'reasoning', id: 'rs-' + step, status: 'completed', summary: [], encrypted_content: 'complete-' + step}},
         ];
         for (const call of calls) {
             const item = {type: 'function_call', id: 'fc-' + call.id, call_id: call.id, name: call.name,
@@ -241,15 +246,15 @@ function streamingResponse(provider, model, step, calls) {
                 {type: 'response.output_item.done', output_index: 1, item});
         }
         if (!calls.length) events.push({type: 'response.output_item.added', output_index: 1,
-            item: {type: 'message', id: 'msg-' + step, phase: 'final_answer'}},
+            item: {type: 'message', id: 'msg-' + step, role: 'assistant', content: [], status: 'in_progress', phase: 'final_answer'}},
         {type: 'response.output_text.delta', item_id: 'msg-' + step, output_index: 1, content_index: 0, delta: 'Done'});
-        events.push({type: 'response.completed', response: {usage: {input_tokens: 100, output_tokens: 20}}});
+        events.push({type: 'response.completed', response: {object: 'response', status: 'completed', output: [], usage: {input_tokens: 100, output_tokens: 20}}});
     }
     return new Response(events.map(event => 'data: ' + JSON.stringify(event) + '\n\n').join(''),
         {headers: {'content-type': 'text/event-stream'}});
 }
 
-for (const provider of ['openai', 'google', 'vertex', 'deepseek']) {
+for (const provider of ['openai', 'google', 'vertex', 'deepseek', 'kimi', 'grok']) {
     test(`${provider}: streaming completes reasoning metadata before the next tool step`, async () => {
         const modelId = MODELPROVIDERS.find(p => p.id === provider).defaultModel;
         const requests = [];
@@ -268,14 +273,15 @@ for (const provider of ['openai', 'google', 'vertex', 'deepseek']) {
             if (isGemini(provider)) {
                 assert.deepEqual(body.contents.flatMap(m => m.parts.filter(p => p.functionCall && p.thoughtSignature).map(p => p.thoughtSignature)),
                     Array.from({length: step}, (_, i) => 'call-' + i));
-            } else if (provider === 'openai') {
+            } else if (provider === 'openai' || provider === 'grok') {
                 assert.equal(body.store, false);
                 assert.deepEqual(body.input.filter(p => p.type === 'reasoning').map(p => p.encrypted_content),
                     Array.from({length: step}, (_, i) => 'complete-' + i));
                 assert.ok(body.input.every(p => p.type !== 'item_reference'));
             } else {
                 const turns = body.messages.filter(m => m.role === 'assistant');
-                assert.deepEqual(turns.map(m => m.reasoning_content), ['Plan', ''].slice(0, step));
+                // DeepSeek's SDK fills a missing reasoning_content with ''; Kimi's leaves it unset.
+                assert.deepEqual(turns.map(m => m.reasoning_content), ['Plan', provider === 'kimi' ? undefined : ''].slice(0, step));
             }
             const calls = step === 0 ? [{id: 'enable', name: 'enableTools', input: {groups: ['scripting']}}]
                 : step === 1 ? [{id: 'read', name: 'getPageText', input: {}}] : [];
@@ -293,3 +299,41 @@ for (const provider of ['openai', 'google', 'vertex', 'deepseek']) {
         assert.equal(requests.length, 3);
     });
 }
+
+test('kimi: K3 goes to the Moonshot chat endpoint with the requested reasoning effort', async () => {
+    let seen;
+    const transport = async (url, init) => {
+        seen = {url: String(url), headers: new Headers(init.headers), body: JSON.parse(init.body)};
+        return new Response(JSON.stringify({id: 'kimi-1', object: 'chat.completion', created: 0, model: 'kimi-k3',
+            choices: [{index: 0, finish_reason: 'stop', message: {role: 'assistant', content: 'Done', reasoning_content: 'Plan'}}],
+            usage: {prompt_tokens: 100, completion_tokens: 20, total_tokens: 120}}),
+        {headers: {'content-type': 'application/json'}});
+    };
+    const result = await generateText({model: getModel('kimi', 'kimi-key', 'kimi-k3', transport), prompt: 'Hello',
+        providerOptions: agentProviderOptions('kimi', 'thorough')});
+    assert.equal(result.text, 'Done');
+    assert.equal(seen.url, 'https://api.moonshot.ai/v1/chat/completions');
+    assert.equal(seen.headers.get('authorization'), 'Bearer kimi-key');
+    assert.equal(seen.body.model, 'kimi-k3');
+    assert.equal(seen.body.reasoning_effort, 'max');
+});
+
+test('grok: 4.7 goes to the xAI responses endpoint and replays encrypted reasoning', async () => {
+    let seen;
+    const transport = async (url, init) => {
+        seen = {url: String(url), headers: new Headers(init.headers), body: JSON.parse(init.body)};
+        return new Response(JSON.stringify({id: 'resp-1', object: 'response', created_at: 0, status: 'completed', model: 'grok-4.7',
+            output: [{type: 'message', id: 'msg-1', role: 'assistant', status: 'completed',
+                content: [{type: 'output_text', text: 'Done', annotations: []}]}],
+            usage: {input_tokens: 100, output_tokens: 20, total_tokens: 120}}),
+        {headers: {'content-type': 'application/json'}});
+    };
+    const result = await generateText({model: getModel('grok', 'xai-key', 'grok-4.7', transport), prompt: 'Hello',
+        providerOptions: agentProviderOptions('grok', 'balanced')});
+    assert.equal(result.text, 'Done');
+    assert.equal(seen.url, 'https://api.x.ai/v1/responses');
+    assert.equal(seen.headers.get('authorization'), 'Bearer xai-key');
+    assert.equal(seen.body.model, 'grok-4.7');
+    assert.equal(seen.body.reasoning.effort, 'high');
+    assert.ok(seen.body.include.includes('reasoning.encrypted_content'));
+});

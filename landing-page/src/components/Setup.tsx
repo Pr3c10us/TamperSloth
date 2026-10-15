@@ -11,7 +11,7 @@ const KEYS = [
 
 const STEPS = [
   { n: "01", title: "Add it to Chrome", body: "One click from the Chrome Web Store. Chrome 138 or newer." },
-  { n: "02", title: "Paste a key", body: "Use a key from Anthropic, OpenAI, Google or DeepSeek. It stays in the extension's local storage." },
+  { n: "02", title: "Paste a key", body: "Use a key from Anthropic, OpenAI, Google, DeepSeek, Kimi or Grok. It stays in the extension's local storage." },
   { n: "03", title: "Press the shortcut", body: "The side panel opens on whatever page you're on. Tell the sloth what to do." },
 ];
 

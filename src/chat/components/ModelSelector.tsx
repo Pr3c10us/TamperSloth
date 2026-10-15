@@ -167,7 +167,7 @@ export function ModelSelector({selected, onChange}: ModelSelectorProps) {
                 <div className="flex min-h-0 flex-1">
                     <nav
                         aria-label="Providers"
-                        className="flex w-11 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-border bg-muted/40 py-1.5"
+                        className="flex w-11 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-border bg-muted/40 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                     >
                         {providers.map((p) => {
                             const connected = !!apiKeys[p.id];

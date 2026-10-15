@@ -2,11 +2,13 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogle } from "@ai-sdk/google";
 import { createDeepSeek } from '@ai-sdk/deepseek';
+import { createMoonshotAI } from "@ai-sdk/moonshotai";
+import { createXai } from "@ai-sdk/xai";
 // The edge entry has no Node dependencies, so it bundles for the extension.
 import { createVertex } from "@ai-sdk/google-vertex/edge";
 import type { LanguageModel } from "ai";
 
-export type ProviderId = "openai" | "anthropic" | "google" | "vertex" | "deepseek" ;
+export type ProviderId = "openai" | "anthropic" | "google" | "vertex" | "deepseek" | "kimi" | "grok";
 
 export interface ProviderConfig {
     id: ProviderId;
@@ -76,6 +78,22 @@ export const MODELPROVIDERS: ProviderConfig[] = [
         // Flash (V4.1) supports vision, including takeScreenshot output; Pro is text-only.
         models: ["deepseek-flash", "deepseek-v4-pro"],
         icon: "/deepseek.svg",
+    },
+    {
+        id: "kimi",
+        name: "Kimi",
+        // https://platform.kimi.ai/docs/pricing/chat
+        defaultModel: "kimi-k3",
+        models: ["kimi-k3", "kimi-k2.7-code", "kimi-k2.6"],
+        icon: "/kimi.svg",
+    },
+    {
+        id: "grok",
+        name: "xAI Grok",
+        // https://docs.x.ai/developers/models
+        defaultModel: "grok-4.7",
+        models: ["grok-4.7", "grok-4.3"],
+        icon: "/grok.svg",
     },
 ];
 
@@ -150,6 +168,14 @@ export function getModel(providerId: ProviderId, apiKey: string, modelId?: strin
         case "deepseek": {
             const deepseek =createDeepSeek({apiKey, fetch: transport})
             return deepseek(model)
+        }
+        case "kimi": {
+            const moonshot = createMoonshotAI({ apiKey, fetch: transport });
+            return moonshot(model);
+        }
+        case "grok": {
+            const xai = createXai({ apiKey, fetch: transport });
+            return xai(model);
         }
     }
 }

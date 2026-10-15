@@ -4,7 +4,7 @@ export function pageGuidance(args: any): any {
     const actionTypes=['click','input','change','submit','focusin','pointerup','pointerdown'];
     // Bump when the overlay's drawing changes. Its state, functions included, outlives an
     // extension reload on the page; an older overlay is disposed and built afresh.
-    const VERSION=3;
+    const VERSION=8;
     let state = win.__tamperSlothGuidance;
     if (state && state.version!==VERSION) {
         state.version=VERSION;
@@ -44,6 +44,8 @@ export function pageGuidance(args: any): any {
             .cursor{position:fixed;left:0;top:0;width:25px;height:30px;transition:transform 160ms cubic-bezier(.22,.61,.36,1)}
             .cursor svg{position:static;overflow:visible;transform-origin:3px 3px;transform:rotate(-15deg);transition:transform 80ms ease-out;filter:drop-shadow(0 0 4px #a8bd85ee) drop-shadow(0 0 10px #a8bd8599)}
             .cursor-tag{position:absolute;left:12px;top:34px;width:max-content;max-width:min(240px,calc(100vw - 24px));padding:8px 10px;background:#1d1f1b;color:#f6f4ef;border:1px solid #a8bd8566;border-radius:8px;box-shadow:0 4px 16px #0f0f0e26}
+            .cursor-badge{position:absolute;left:19px;top:20px;width:18px;height:18px;color:#0f0f0e;opacity:1;transition:opacity 160ms ease}
+            .cursor-badge[hidden]{display:block;opacity:0} .cursor-badge svg{position:static;display:block;width:18px;height:18px}
             .cursor-tag-content{display:flex;align-items:center;gap:6px;max-width:218px}
             .input-guard{position:absolute;inset:0;pointer-events:auto;cursor:progress}
             .cursor-description{min-width:0;max-width:min(218px,calc(100vw - 44px));font:400 13px/1.45 'TamperSloth Geist',system-ui,sans-serif;overflow-wrap:anywhere;white-space:normal}
@@ -59,7 +61,7 @@ export function pageGuidance(args: any): any {
             .lock-icon{flex:none;width:16px;height:16px;color:#a8bd85} .lock-icon svg{position:static;display:block;width:16px;height:16px}
             .lock-hint{color:#f6f4ef80}
             @keyframes caret{50%{opacity:0}}
-            @media(prefers-reduced-motion:reduce){.mark,.ripple,.cursor-description::after{animation:none}.cursor,.cursor svg,.lock-pill,.agent-glow{transition:none}}
+            @media(prefers-reduced-motion:reduce){.mark,.ripple,.cursor-description::after{animation:none}.cursor,.cursor svg,.cursor-badge,.lock-pill,.agent-glow{transition:none}}
         `;
         root.append(style);
         const inputGuard=document.createElement('div');inputGuard.className='input-guard';inputGuard.hidden=true;inputGuard.setAttribute('aria-hidden','true');root.append(inputGuard);
@@ -77,7 +79,11 @@ export function pageGuidance(args: any): any {
         const cursorName=document.createElement('span');cursorName.textContent='Sloth';
         const cursorContent=document.createElement('div');cursorContent.className='cursor-tag-content';
         const cursorBody=document.createElement('div');cursorBody.className='cursor-description';cursorBody.hidden=true;
-        cursorContent.append(cursorBody);cursorTag.append(cursorContent);cursor.append(cursorTag);
+        cursorContent.append(cursorBody);cursorTag.append(cursorContent);
+        // The sloth mark trails diagonally off the pointer, like a collaborator avatar, while Sloth acts or idles; guidance hides it.
+        const cursorBadge=document.createElement('div');cursorBadge.className='cursor-badge';cursorBadge.hidden=false;
+        cursorBadge.innerHTML='<svg viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M102.272 36.2747C157.226 32.7677 230.938 63.0061 251.172 117.512C253.808 124.611 260.615 155.502 251.095 158.158C246.838 153.721 243.337 145.55 239.567 140.393C225.04 120.517 199.794 102.442 174.097 104.314C159.945 105.344 156.315 118.38 158.213 130.365C160.548 145.113 173.585 156.882 185.905 164.002C194.586 168.596 226.279 185.531 215.63 198.69C206.036 210.546 174.28 217.175 160.301 218.373C159.988 218.422 159.674 218.469 159.36 218.512C122.275 223.583 39.0175 204.756 21.2527 158.264C16.1024 144.784 63.28 138.886 74.6267 134.929C91.0784 129.192 116.212 108.702 94.6173 90.098C72.6134 76.6751 41.9661 82.7133 21.0183 95.5357C16.2301 98.4664 3.93877 109.111 0.532216 106.551C-2.44754 97.2421 7.78305 80.5443 13.8882 73.348C37.0565 46.038 68.1352 39.2934 102.272 36.2747ZM151.319 179.382C153.557 177.421 154.054 177.118 154.664 174.165L154.102 172.56C151.568 171.609 138.677 175.957 133.895 176.526C128.375 177.137 122.797 176.961 117.328 176.003C97.9826 172.559 93.0729 160.644 85.6874 158.587C84.3914 160.976 83.2505 162.027 84.1835 164.868C86.5729 172.143 95.3837 177.077 101.873 180.277C116.497 187.49 137.495 188.911 151.319 179.382ZM132.413 156.689C136.731 154.643 139.929 153.589 141.801 149.197C142.518 139.285 124.917 136.183 117.476 136.556C113.565 137.494 105.067 140.015 107.811 146.096C112.551 156.601 121.925 158.769 132.413 156.689Z"/><path fill="currentColor" d="M66.4562 102.124C76.6377 101.351 85.2872 114.542 66.8027 121.012C66.1212 120.758 65.4437 120.495 64.7692 120.222C61.3401 118.82 56.8892 116.32 55.5566 112.62C55.0262 111.175 55.1088 109.577 55.7864 108.195C57.7116 104.326 62.6252 103.231 66.4562 102.124Z"/><path fill="currentColor" d="M184.468 125.412C196.596 124.992 207.26 136.94 193.138 143.966C189.074 145.26 184.501 143.672 181.769 140.476C179.939 138.333 179.052 135.541 179.308 132.734C179.662 129.088 181.796 127.559 184.468 125.412Z"/></svg>';
+        cursor.append(cursorBadge,cursorTag);
         // Edge glow and a Stop button while Sloth drives the page, so a blocked click is never a mystery.
         const agentGlow=document.createElement('div');agentGlow.className='agent-glow';agentGlow.hidden=true;agentGlow.setAttribute('aria-hidden','true');
         const lockPill=document.createElement('button');lockPill.className='lock-pill';lockPill.hidden=true;lockPill.setAttribute('type','button');
@@ -86,7 +92,7 @@ export function pageGuidance(args: any): any {
         const lockTitle=document.createElement('span');const lockHint=document.createElement('span');lockHint.className='lock-hint';
         lockPill.append(lockIcon,lockTitle,lockHint);
         root.append(agentGlow,cursor,lockPill); document.documentElement.append(host);
-        state = win.__tamperSlothGuidance = {version:VERSION, host, root, svg, status, cursor,cursorTag,cursorName,cursorBody,inputGuard,agentGlow,lockPill,lockIcon,lockTitle,lockHint, marks: new Map(), wait: null,drawQueue:[],drawing:null,agentPoints:[],agentKeys:[]};
+        state = win.__tamperSlothGuidance = {version:VERSION, host, root, svg, status, cursor,cursorBadge,cursorTag,cursorName,cursorBody,inputGuard,agentGlow,lockPill,lockIcon,lockTitle,lockHint, marks: new Map(), wait: null,drawQueue:[],drawing:null,agentPoints:[],agentKeys:[]};
         state.renderLock=()=>{
             lockPill.hidden=!state.inputLocked && !state.agentLocked;
             agentGlow.hidden=!state.agentLocked || !!state.inputLocked;
@@ -95,6 +101,8 @@ export function pageGuidance(args: any): any {
             lockTitle.textContent=guide ? 'Drawing guide' : 'Stop Sloth';lockHint.textContent='Esc';
             lockPill.setAttribute('aria-label',guide ? 'Drawing guide. Input paused. Escape cancels.' : 'Stop Sloth. Site input is paused while Sloth works.');
         };
+        // Any guide mark on the page (not the brief typing bracket) means Sloth is guiding.
+        state.renderBadge=()=>{cursorBadge.hidden=[...state.marks.keys()].some((id: string)=>id!=='__focus');};
         // Our isolated world can reach runtime messaging; the side panel stops the run holding this tab.
         state.requestStop=()=>{
             state.setAgentLocked(false);
@@ -240,7 +248,7 @@ export function pageGuidance(args: any): any {
             // Paint the live ink directly; restore its subtle shadow when complete.
             mark.group.style.filter='none';
             mark.group.style.visibility='visible';
-            const start=performance.now(),duration=Math.max(1100,Math.min(4500,length*4));cursorName.textContent='Sloth · drawing';
+            const start=performance.now(),duration=Math.max(500,Math.min(2000,length*1.8));cursorName.textContent='Sloth · drawing';
             // A background tab can suspend RAF; never leave a drawing tool waiting forever.
             mark.animationTimer=setTimeout(()=>{
                 if(state.drawing!==mark) return;
@@ -467,7 +475,7 @@ export function pageGuidance(args: any): any {
                 for(const type of actionTypes) document.removeEventListener(type,state.annotationListener,true);
                 state.annotationListening=false;
             }
-            state.drawNext();
+            state.renderBadge();state.drawNext();
             if(!state.drawing && !state.drawQueue.length) state.setInputLocked(false);
         };
         state.cue = (el: Element, action: string) => {
@@ -586,7 +594,7 @@ export function pageGuidance(args: any): any {
         if (args.label) {label=document.createElement('div'); label.hidden=true;label.className='label'; label.textContent=state.brief(args.label);label.setAttribute('aria-label',args.label);}
         let seed=2166136261;for(const char of id) seed=Math.imul(seed^char.charCodeAt(0),16777619);
         const mark={...args,id,seed,box:box ?? {x:args.points[0].x,y:args.points[0].y,width:0,height:0},group,shape,echo,fill,label,actions:new Set(),stepId:state.wait && !state.wait.result ? state.wait.id : undefined,timer:undefined as any};
-        state.marks.set(id,mark);
+        state.marks.set(id,mark);state.renderBadge();
         if(!state.annotationListening) {
             for(const type of actionTypes) document.addEventListener(type,state.annotationListener,true);
             state.annotationListening=true;

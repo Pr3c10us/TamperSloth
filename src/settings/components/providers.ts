@@ -32,4 +32,14 @@ export const PROVIDERS_PRIMARY: Provider[] = [
     name: "DeepSeek",
     link: "platform.deepseek.com",
   },
+  {
+    id: "kimi",
+    name: "Moonshot Kimi",
+    link: "platform.kimi.ai",
+  },
+  {
+    id: "grok",
+    name: "xAI Grok",
+    link: "console.x.ai",
+  },
 ];
