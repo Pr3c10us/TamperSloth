@@ -8,7 +8,7 @@ export const THINKING_LEVELS: {value: ThinkingLevel; label: string; hint: string
     {value: "max", label: "Max", hint: "The deepest reasoning the model offers. Slower and uses more tokens."},
 ];
 
-export const DEFAULT_THINKING_LEVEL: ThinkingLevel = "medium";
+export const DEFAULT_THINKING_LEVEL: ThinkingLevel = "high";
 
 export function isThinkingLevel(value: unknown): value is ThinkingLevel {
     return THINKING_LEVELS.some(level => level.value === value);

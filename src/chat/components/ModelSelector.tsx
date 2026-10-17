@@ -177,7 +177,6 @@ export function ModelSelector({selected, onChange, thinkingLevel, onThinkingLeve
                 {showThinking ? (
                     <ThinkingLevelPage
                         level={level}
-                        fallback={resolveThinkingLevel(defaultLevel, selected!.providerId, selected!.modelId)!}
                         levels={levels}
                         onBack={() => setPage("models")}
                         onSelect={(next) => {

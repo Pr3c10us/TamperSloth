@@ -16,7 +16,7 @@ import type {Quote} from "../lib/panelRequests";
 import {createToolRuntime} from "../lib/toolRuntime";
 import {clip, createStepMessagePreparer, isFailed, serialize, summarizeSelectedElement, sumUsage, usageRecord, type RunMetrics, type UsageRecord} from "../lib/efficiency";
 import {createGuidanceGuard, GUIDANCE_RESUME_NOTE} from "../lib/guidanceGuard";
-import {loadAgentSettings, runStopReason} from "../lib/agentSettings";
+import {loadAgentSettings, runStopReason, saveLastThinkingLevel} from "../lib/agentSettings";
 import {isThinkingLevel, type ThinkingLevel} from "../lib/thinkingLevel";
 import {agentProviderOptions} from "../lib/providerCompatibility";
 import {createReasoningNormalizer, type NormalizedEvent, type ThinkingContent} from "../lib/reasoning";
@@ -256,7 +256,8 @@ function activate(id: string) {
 /** Shows the blank chat; any running chat carries on off screen. */
 export function startNewChat() {
     const blank = blankSession();
-    patchSession(blank.id, {error: null});
+    // Unset, it follows the last level picked in any chat.
+    patchSession(blank.id, {error: null, thinkingLevel: undefined});
     activate(blank.id);
 }
 
@@ -310,9 +311,10 @@ export function discardConversation(id: string) {
     notify();
 }
 
-/** Sets the thinking level the active chat's next runs use. */
+/** Sets the thinking level the active chat's next runs use, and the one new chats start with. */
 function setThinkingLevel(level: ThinkingLevel) {
     patchSession(activeId, {thinkingLevel: level});
+    void saveLastThinkingLevel(level).catch((error) => console.warn("[Tampersloth] Could not save thinking level:", error));
 }
 
 function subscribe(fn: () => void) {

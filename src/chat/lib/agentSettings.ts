@@ -5,7 +5,7 @@ import {DEFAULT_THINKING_LEVEL, isThinkingLevel, type ThinkingLevel} from "./thi
 export interface AgentSettings {
     maxSteps: number;
     tokenBudget: number;
-    /** Thinking level a new chat starts with; each chat can change its own. */
+    /** Thinking level a new chat starts with: the last one picked in any chat. */
     thinkingLevel: ThinkingLevel;
     /** Show the run's total input/output tokens under each reply. */
     showRunTokens: boolean;
@@ -61,6 +61,10 @@ export async function saveAgentSettings(settings: AgentSettings) {
     else localStorage.setItem(KEY, JSON.stringify(value));
 }
 
+/** Remembers a level picked in a chat, so the next new chat starts with it. */
+export async function saveLastThinkingLevel(thinkingLevel: ThinkingLevel) {
+    await saveAgentSettings({...await loadAgentSettings(), thinkingLevel});
+}
 
 /** Calls back with fresh settings whenever they are saved from another page. */
 export function onAgentSettingsChange(callback: (settings: AgentSettings) => void): () => void {

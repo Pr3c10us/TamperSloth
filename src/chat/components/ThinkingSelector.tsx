@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { DEFAULT_AGENT_SETTINGS, loadAgentSettings, onAgentSettingsChange } from "../lib/agentSettings";
 import { THINKING_LEVELS, type ThinkingLevel } from "../lib/thinkingLevel";
 
-/** The default level from Preferences, kept current when it changes there. */
+/** The level new chats start with (the last one picked), kept current when it changes. */
 export function useDefaultThinkingLevel(): ThinkingLevel {
     const [fallback, setFallback] = useState<ThinkingLevel>(DEFAULT_AGENT_SETTINGS.thinkingLevel);
     useEffect(() => {
@@ -16,7 +16,6 @@ export function useDefaultThinkingLevel(): ThinkingLevel {
 
 interface ThinkingLevelPageProps {
     level: ThinkingLevel;
-    fallback: ThinkingLevel;
     /** The levels the selected model offers. */
     levels: ThinkingLevel[];
     onSelect: (level: ThinkingLevel) => void;
@@ -24,7 +23,7 @@ interface ThinkingLevelPageProps {
 }
 
 /** The model picker's thinking page: this chat's level, applied from the next message on. */
-export function ThinkingLevelPage({ level, fallback, levels, onSelect, onBack }: ThinkingLevelPageProps) {
+export function ThinkingLevelPage({ level, levels, onSelect, onBack }: ThinkingLevelPageProps) {
     return (
         <div className="flex min-h-0 flex-1 flex-col">
             <button
@@ -34,7 +33,6 @@ export function ThinkingLevelPage({ level, fallback, levels, onSelect, onBack }:
             >
                 <ChevronLeft className="size-3.5 text-muted-foreground" strokeWidth={1.75}/>
                 Thinking
-                <span className="ml-auto font-mono text-[9.5px] uppercase tracking-[.14em] text-muted-foreground">This chat</span>
             </button>
             <div role="radiogroup" aria-label="Thinking level" className="min-h-0 flex-1 overflow-y-auto p-1">
                 {THINKING_LEVELS.filter((option) => levels.includes(option.value)).map((option) => {
@@ -49,14 +47,7 @@ export function ThinkingLevelPage({ level, fallback, levels, onSelect, onBack }:
                             className="flex w-full items-start gap-2.5 rounded-md px-2.5 py-1.5 text-left outline-none hover:bg-muted focus-visible:bg-muted"
                         >
                             <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5">
-                                    <span className="text-[13px] font-medium text-foreground">{option.label}</span>
-                                    {option.value === fallback && (
-                                        <span className="rounded-sm bg-muted px-1 font-mono text-[9px] uppercase tracking-[.08em] text-muted-foreground">
-                                            Default
-                                        </span>
-                                    )}
-                                </div>
+                                <div className="text-[13px] font-medium text-foreground">{option.label}</div>
                                 <div className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{option.hint}</div>
                             </div>
                             <Check className={cn("mt-0.5 size-3.5 shrink-0 text-accent", !selected && "invisible")} strokeWidth={2}/>

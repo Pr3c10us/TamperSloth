@@ -173,7 +173,7 @@ export function PreferencesTab() {
             <SettingsSection title="Reasoning">
                 <SettingsGroup>
                     <SettingRow stacked label="Default thinking level"
-                        description={`${THINKING_LEVELS.find(o => o.value === settings.thinkingLevel)!.hint} New chats start here; change it for one chat beside the model picker.`}>
+                        description={`${THINKING_LEVELS.find(o => o.value === settings.thinkingLevel)!.hint} New chats start here. Picking a level in a chat, beside the model picker, updates this too.`}>
                         <div role="radiogroup" aria-label="Default thinking level" className="grid grid-cols-4 gap-0.5 rounded-lg bg-muted p-[3px]">
                             {THINKING_LEVELS.map(option => (
                                 <Choice key={option.value} disabled={!ready} selected={settings.thinkingLevel === option.value}
