@@ -5,7 +5,6 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  CircleDot,
   CornerDownLeft,
   FileText,
   GalleryVerticalEnd,
@@ -23,6 +22,7 @@ import {
   Route,
   Save,
   ScanSearch,
+  Settings,
   SquarePen,
   TreePine,
   X,
@@ -169,7 +169,7 @@ function StepNode({ icon: I, state }: { icon: LucideIcon; state: "active" | "don
   );
 }
 
-function StepRow({ icon, state, title, meta, expandable }: { icon: LucideIcon; state: "active" | "done"; title: ReactNode; meta?: ReactNode; expandable?: boolean }) {
+export function StepRow({ icon, state, title, meta, expandable }: { icon: LucideIcon; state: "active" | "done"; title: ReactNode; meta?: ReactNode; expandable?: boolean }) {
   return (
     <div className="sp-step">
       <div className={`sp-step-head ${expandable ? "is-btn" : ""}`}>
@@ -334,7 +334,14 @@ function Composer({ draft, loading, onSend, sendRef, pressed, sendTarget }: Comp
             aria-label={loading ? "Stop" : "Send"}
             tabIndex={onSend ? 0 : -1}
           >
-            {loading ? <CircleDot size={16} strokeWidth={1.75} /> : <CornerDownLeft size={16} strokeWidth={1.75} />}
+            {loading ? (
+              // Same footprint as Send, so the input doesn't shift when a run starts.
+              <span className="sp-stop">
+                <i />
+              </span>
+            ) : (
+              <CornerDownLeft size={16} strokeWidth={1.75} />
+            )}
           </button>
         </div>
       </div>
@@ -359,7 +366,9 @@ function Composer({ draft, loading, onSend, sendRef, pressed, sendTarget }: Comp
         <div className="sp-model-wrap">
           <span className="sp-model">
             <ProviderMark />
-            <span>Claude Sonnet 5.5</span>
+            <span className="sp-trunc">Claude Sonnet 5.5</span>
+            {/* The chat's thinking level, picked from the model menu. */}
+            <span className="sp-level">High</span>
             <ChevronUp size={12} strokeWidth={1.5} />
           </span>
           {loading && <LoaderCircle className="sp-spin" size={14} strokeWidth={1.75} aria-label="Working" />}
@@ -422,12 +431,18 @@ export function SidePanel({ theme, title, messages, chrome = true, className = "
               {title ?? "New chat"}
             </h3>
           </div>
-          <span className="sp-hbtn">
-            <SquarePen size={16} strokeWidth={1.5} />
-          </span>
-          <span className="sp-hbtn">
-            <GalleryVerticalEnd size={16} strokeWidth={1.5} />
-          </span>
+          <div className="sp-hactions">
+            {/* New chat stays disabled until the conversation has started. */}
+            <span className={`sp-hbtn ${messages.length ? "" : "is-off"}`}>
+              <SquarePen size={16} strokeWidth={1.5} />
+            </span>
+            <span className="sp-hbtn">
+              <GalleryVerticalEnd size={16} strokeWidth={1.5} />
+            </span>
+            <span className="sp-hbtn">
+              <Settings size={16} strokeWidth={1.5} />
+            </span>
+          </div>
         </header>
         <div ref={list} className="sp-list-scroll">
           <div className="sp-msgs">

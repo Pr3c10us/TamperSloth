@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent, type ReactNode, type Re
 import { ArrowDown, ArrowUp, Check, ChevronDown, Coins, Copy, CornerDownLeft, Hash, Mic, MousePointerSquareDashed, PencilLine, Plus, Sigma } from "lucide-react";
 import { CursorGlyph } from "./brand";
 import { LivingDots, SidePanel } from "./panel/Panel";
+import { TabManagerVisual } from "./TabManager";
 import { drawStrokes, prefersReducedMotion, setCursor } from "../lib/pen";
 import { sketchScribble } from "../lib/sketch";
 import "../styles/toolbox.css";
@@ -374,6 +375,10 @@ export function Toolbox() {
         </Card>
         <Card className="span-4" visual={<CostVisual />} title="Every token, priced" delay={160}>
           Tokens and cost for every reply, so the bill never sneaks up on you.
+        </Card>
+        <Card className="span-12 is-wide" visual={<TabManagerVisual />} title="Tabs, kept tidy">
+          Sloth opens research tabs in the background and files them under one 🦥 group. It pins, mutes and moves tabs when you ask, folds
+          references away, and closes what it opened when the job is done. Your own tabs and groups stay yours.
         </Card>
         <Card className="span-8" visual={<ToolsVisual />} title="Power tools, when you want them">
           Raw JavaScript, network capture, shadow DOM, real mouse and keyboard input. Switched on only when the task calls for it.

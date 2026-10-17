@@ -23,6 +23,7 @@
 .span-5 { grid-column: span 5; }
 .span-7 { grid-column: span 7; }
 .span-8 { grid-column: span 8; }
+.span-12 { grid-column: span 12; }
 
 .tb-card {
   position: relative;
@@ -73,6 +74,20 @@
   color: var(--fg-2);
   font-size: 15px;
   line-height: 1.55;
+}
+
+/* A full-row card: the copy sits to the left of a wide visual. */
+.tb-card.is-wide {
+  display: grid;
+  grid-template-columns: minmax(250px, 0.85fr) 2.4fr;
+}
+.tb-card.is-wide .tb-copy {
+  order: -1;
+  align-self: end;
+  padding: 22px 28px 14px 18px;
+}
+.tb-card.is-wide .tb-visual {
+  min-height: 400px;
 }
 
 /* Picker: pickerOverlay.ts draws a rounded box just outside the element, a sage
@@ -500,7 +515,20 @@
     grid-column: span 12;
   }
 }
+@media (max-width: 1000px) {
+  .tb-card.is-wide {
+    display: flex;
+  }
+  .tb-card.is-wide .tb-copy {
+    order: 0;
+    align-self: auto;
+    padding: 22px 18px 14px;
+  }
+}
 @media (max-width: 680px) {
+  .tb-card.is-wide .tb-visual {
+    min-height: 320px;
+  }
   .tb-grid > * {
     grid-column: span 12;
   }
