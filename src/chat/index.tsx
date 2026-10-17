@@ -34,6 +34,11 @@ function Chat() {
         cancel,
         clear,
         loadConversation,
+        queued,
+        editing,
+        editMessage,
+        cancelEdit,
+        unqueueMessage,
     } = useAgent();
 
     // Unsent text, picks and files belong to the chat, and wait for it while the user is elsewhere.
@@ -124,6 +129,7 @@ function Chat() {
                 messages={messages}
                 isLoading={isLoading}
                 error={error}
+                onEditMessage={editMessage}
             />
 
             <Composer
@@ -145,6 +151,10 @@ function Chat() {
                 onCancel={cancel}
                 tabId={tabId}
                 conversationId={conversationId}
+                queued={queued}
+                onUnqueue={unqueueMessage}
+                editing={editing}
+                onCancelEdit={cancelEdit}
             />
 
             <ImageLightbox />

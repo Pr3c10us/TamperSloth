@@ -14,6 +14,8 @@ interface MessageListProps {
     messages: ChatMessage[];
     isLoading: boolean;
     error: string | null;
+    /** Starts editing a sent message; stable across renders so messages stay memoized. */
+    onEditMessage: (id: string) => void;
 }
 
 // Within this many px of the end counts as "at the bottom" (fractional scroll positions).
@@ -27,7 +29,7 @@ const distanceFromBottom = (element: HTMLElement) => element.scrollHeight - elem
  * scroll-to-bottom button, resumes it.
  */
 export const MessageList = forwardRef<HTMLDivElement, MessageListProps>(
-    function MessageList({ messages, isLoading, error }, forwardedRef) {
+    function MessageList({ messages, isLoading, error, onEditMessage }, forwardedRef) {
 
         const [settings, setSettings] = useState(DEFAULT_AGENT_SETTINGS);
         const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -121,7 +123,7 @@ export const MessageList = forwardRef<HTMLDivElement, MessageListProps>(
                         {messages.length === 0 && <EmptyState />}
                         {messages.map((m, i) =>
                             m.role === "user" ? (
-                                <UserMessage key={m.id} msg={m} />
+                                <UserMessage key={m.id} msg={m} onEdit={isLoading ? undefined : onEditMessage} />
                             ) : (
                                 <AssistantMessage
                                     key={m.id}

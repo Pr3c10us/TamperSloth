@@ -1,7 +1,7 @@
 import type { ProviderId } from "./provider.ts";
 import type { BackgroundScript } from "./types.ts";
 import type { ThinkingLevel } from "./thinkingLevel.ts";
-import {readChat, readChatSummaries, writeChat, removeChat, writeAttachments, readAttachment, type ConversationSummary, type StoredAttachmentData} from './conversationDB';
+import {readChat, readChatSummaries, writeChat, removeChat, writeAttachments, readAttachment, removeAttachments, type ConversationSummary, type StoredAttachmentData} from './conversationDB';
 export type {ConversationSummary} from './conversationDB';
 
 
@@ -76,6 +76,10 @@ export async function saveAttachments(records: StoredAttachmentData[]): Promise<
 
 export async function loadAttachment(id: string): Promise<Blob | null> {
     return readAttachment(id);
+}
+
+export async function deleteAttachments(ids: string[]): Promise<void> {
+    if (ids.length) await removeAttachments(ids);
 }
 
 export async function deleteConversation(id: string): Promise<void> {

@@ -2,7 +2,7 @@
   "name": "TamperSloth puts an AI agent to work on every page you browse",
   "short_name": "TamperSloth",
   "description": "Put your browser to work.",
-  "version": "3.0",
+  "version": "3.1",
   "manifest_version": 3,
   "minimum_chrome_version": "138",
   "action": {

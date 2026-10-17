@@ -35,7 +35,6 @@ import type { ThinkingLevel } from "../lib/thinkingLevel";
 import { PickedElementChip, type PickedElement } from "./PickedElementChip";
 import {
     AttachmentChip,
-    formatSize,
     MAX_ATTACHMENTS,
     type PendingAttachment,
 } from "./AttachmentChip";
@@ -45,6 +44,8 @@ import { UserWaitNotice } from "./UserWaitNotice";
 import { TabWaitNotice } from "./TabWaitNotice";
 import { RateLimitNotice } from "./RateLimitNotice";
 import { TaskTabsCard } from "./TaskTabsCard";
+import { QueuedMessages } from "./QueuedMessages";
+import type { QueuedMessage } from "../hooks/useAgent";
 
 interface ComposerProps {
     draft: string;
@@ -66,6 +67,13 @@ interface ComposerProps {
     onCancel: () => void;
     tabId: number;
     conversationId: string;
+    /** Messages sent while the chat works, waiting for its next step. */
+    queued: QueuedMessage[];
+    /** Drops a queued message; `edit` puts it back in the input. */
+    onUnqueue: (id: string, edit?: boolean) => void;
+    /** A sent message is back in the input; Esc puts it and the messages after it back in the chat. */
+    editing: boolean;
+    onCancelEdit: () => void;
 }
 
 /** Label row for a group of attachments above the input: icon, name, count and "clear all". */
@@ -108,6 +116,10 @@ export function Composer({
     onCancel,
     tabId,
     conversationId,
+    queued,
+    onUnqueue,
+    editing,
+    onCancelEdit,
 }: ComposerProps) {
     const [isPicking, setIsPicking] = useState(false);
     const [isDrawing, setIsDrawing] = useState(false);
@@ -288,8 +300,9 @@ export function Composer({
         ta.setSelectionRange(ta.value.length, ta.value.length);
     };
 
+    // While Sloth works, sending queues the message for its next step.
     const send = async () => {
-        if (!canSend || isLoading) return;
+        if (!canSend) return;
         if (!listening) {
             onSend();
             return;
@@ -302,7 +315,7 @@ export function Composer({
     useEffect(() => {
         if (!sendQueued) return;
         setSendQueued(false);
-        if (canSend && !isLoading) onSend();
+        if (canSend) onSend();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sendQueued]);
 
@@ -327,7 +340,6 @@ export function Composer({
     // Images on the clipboard (e.g. a copied screenshot) become attachments.
     // Text still pastes normally; the default is suppressed only for image-only pastes.
     const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-        if (isLoading) return;
         const images = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
         if (!images.length) return;
         if (!e.clipboardData.types.includes("text/plain")) e.preventDefault();
@@ -363,6 +375,7 @@ export function Composer({
             <UserWaitNotice conversationId={conversationId} />
             <AskUserOverlay conversationId={conversationId} />
             <ActionConfirmOverlay conversationId={conversationId} />
+            <QueuedMessages queued={queued} onRemove={(id) => onUnqueue(id)} onEdit={(id) => onUnqueue(id, true)} />
             <div className="flex flex-col gap-1.5 px-3 pb-2 pt-2">
                 <div className="flex flex-col gap-2.5 rounded-2xl border border-border bg-card p-2.5 shadow-xs transition-colors focus-within:border-foreground/40">
                     {pickedElements.length > 0 && (
@@ -484,9 +497,12 @@ export function Composer({
                                 if (e.key === "Enter" && !e.shiftKey) {
                                     e.preventDefault();
                                     void send();
+                                } else if (e.key === "Escape" && editing) {
+                                    e.preventDefault();
+                                    onCancelEdit();
                                 }
                             }}
-                            placeholder="Tell the sloth what to do…"
+                            placeholder={isLoading ? "Add to what Sloth is doing…" : "Tell the sloth what to do…"}
                             rows={1}
                             className={cn(listening && "hidden", "min-w-0 flex-1 resize-none border-0 bg-transparent px-1 py-0.5 font-sans text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground")}
                         />
@@ -502,6 +518,19 @@ export function Composer({
                             </button>
                         )}
 
+                        {isLoading && canSend && (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => void send()}
+                                aria-label="Send to Sloth's next step"
+                                title="Send to Sloth's next step"
+                                className="shrink-0 text-foreground"
+                            >
+                                <CornerDownLeft strokeWidth={1.75} />
+                            </Button>
+                        )}
                         {isLoading ? (
                             <button
                                 type="button"
@@ -547,7 +576,7 @@ export function Composer({
                                     variant="ghost"
                                     size="icon-xs"
                                     onClick={handleAttach}
-                                    disabled={isLoading || filesFull}
+                                    disabled={filesFull}
                                     aria-label={filesFull ? `Attachment limit reached (${MAX_ATTACHMENTS} files)` : "Attach file"}
                                     className="text-muted-foreground hover:text-foreground"
                                 >
@@ -678,14 +707,4 @@ function dataUrlToFile(dataUrl: string, name: string) {
     return new File([bytes], name, { type });
 }
 
-export function makeAttachmentFromFile(f: File): PendingAttachment {
-    return {
-        kind: f.type.startsWith("image/") ? "image" : "file",
-        name: f.name,
-        size: formatSize(f.size),
-        ext: (f.name.split(".").pop() || "").toUpperCase().slice(0, 4),
-        url: f.type.startsWith("image/") ? URL.createObjectURL(f) : null,
-        mediaType: f.type || "application/octet-stream",
-        file: f,
-    };
-}
+export { makeAttachmentFromFile } from "./AttachmentChip";

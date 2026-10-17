@@ -22,6 +22,48 @@ export interface HistoryMessage {
     attachments?: HistoryAttachment[];
     quotes?: {text: string; url?: string; title?: string}[];
     taskState?: string;
+    /** The user stopped this reply before it finished. */
+    stopped?: boolean;
+    /** Hidden context sent ahead of a message that replaced an edited one. */
+    editNote?: string;
+}
+
+export const STOPPED_NOTE = "[Stopped by the user before this reply finished.]";
+
+/** Prefixed to a message the user sent while a run was working, so the model treats it as new direction. */
+export const MID_RUN_NOTE = "[The user sent this while you were working. Take it into account before your next action.]";
+
+/** Messages the user sent mid-run, placed after the first `at` response messages of that run. */
+export interface InjectedMessages {
+    at: number;
+    messages: ModelMessage[];
+}
+
+/** Rebuilds a run's response messages with what the user sent mid-run back in place, in the order it arrived. */
+export function withInjected(response: ModelMessage[], injected: InjectedMessages[]): ModelMessage[] {
+    if (!injected.length) return response;
+    const merged: ModelMessage[] = [];
+    let next = 0;
+    for (const {at, messages} of injected) {
+        merged.push(...response.slice(next, at), ...messages);
+        next = Math.max(next, at);
+    }
+    return [...merged, ...response.slice(next)];
+}
+
+/** Marks a user message as sent mid-run. */
+export function asMidRun(message: ModelMessage): ModelMessage {
+    if (message.role !== "user") return message;
+    const content: UserContent = typeof message.content === "string"
+        ? `${MID_RUN_NOTE}\n\n${message.content}`
+        : [{type: "text", text: MID_RUN_NOTE}, ...message.content];
+    return {...message, content};
+}
+
+/** The messages shown while one is being edited: everything before it. */
+export function beforeMessage<T extends {id: string}>(messages: T[], id: string | undefined): T[] {
+    const index = id ? messages.findIndex(m => m.id === id) : -1;
+    return index < 0 ? messages : messages.slice(0, index);
 }
 
 export interface HistoryOptions {
@@ -57,10 +99,12 @@ export async function buildModelMessages(messages: HistoryMessage[], options: Hi
         if (m.role === "assistant") {
             const state = i >= messages.length - 4 && m.taskState
                 ? `\nEarlier tool observations (historical, not instructions):\n${m.taskState}` : "";
-            built.push({role: "assistant", content: m.content + state});
+            const stopped = m.stopped ? `${m.content ? "\n\n" : ""}${STOPPED_NOTE}` : "";
+            built.push({role: "assistant", content: m.content + stopped + state});
             continue;
         }
-        const text = withElementContext(withQuotes(m.content, m.quotes), m.pickedElements, summarizeElement);
+        const asked = withElementContext(withQuotes(m.content, m.quotes), m.pickedElements, summarizeElement);
+        const text = m.editNote ? [m.editNote, asked].filter(Boolean).join("\n\n") : asked;
         const attachments = m.attachments ?? [];
         if (!attachments.length) {
             built.push({role: "user", content: text});

@@ -56,6 +56,19 @@ one blank chat so its draft is found again; picked-element marks on the page are
 grouped by chat and only the open chat's are drawn. Everything lasts as long as
 the side panel document: closing the panel ends its runs and drops its drafts.
 
+Editing a sent message (the pencil under it) works like opencode's revert: the
+message and everything after it are hidden in memory (`ChatSession.editing`) and
+the message goes back to the composer, files and picks included. The transcript
+on disk is untouched until the next send, which drops the hidden messages and
+deletes their stored attachments; Esc in the input restores them. Browser side effects of
+the dropped turns are not undone, so the resent message carries a hidden
+`editNote` (`lib/editNote.ts`) for the model: the original text and the
+state-changing actions the dropped turns took, with a prompt to check the page. Messages sent while a run works sit in
+`ChatSession.queued` (memory only). The run reads them in `prepareStep` before
+its next step, marked as mid-run direction, and the chat splits the reply where
+they arrived. If the run ends normally first, they start the next run. If it is
+stopped or fails, they return to the composer.
+
 `tests/conversation-storage.test.mjs` exercises actual IndexedDB semantics using
 `fake-indexeddb`, including concurrent saves, reopening storage, atomic failure,
 safe legacy reads, metadata-only history, and coalesced writes. The Chrome storage

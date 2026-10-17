@@ -1,4 +1,7 @@
 import { memo, useEffect, useState } from "react";
+import { Pencil } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ChatMessage, StoredAttachment } from "../hooks/useAgent";
 import { attachmentUrl } from "../lib/attachmentUrls";
 import { MarkdownContent } from "./Markdown";
@@ -32,12 +35,13 @@ function SentPickedElement({ html, shotId }: { html: string; shotId?: string | n
 
 // Streaming re-renders the whole list on every delta; `msg` keeps its identity
 // for every message except the one being written, so memo skips the rest.
-export const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage }) {
+// `onEdit` is absent while the chat is working: a message can only be edited between runs.
+export const UserMessage = memo(function UserMessage({ msg, onEdit }: { msg: ChatMessage; onEdit?: (id: string) => void }) {
     const picked = msg.pickedElements ?? [];
     const attachments = msg.attachments ?? [];
     const quotes = msg.quotes ?? [];
     return (
-        <div className="flex flex-col items-end gap-2">
+        <div className="group/user flex flex-col items-end gap-2">
             <div className="font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground">
                 You
             </div>
@@ -65,6 +69,20 @@ export const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage
                     {picked.map((html, i) => (
                         <SentPickedElement key={i} html={html} shotId={msg.pickedElementShots?.[i]} />
                     ))}
+                </div>
+            )}
+            {onEdit && (
+                // Out of the way until the message is hovered or focused, like the reply's actions.
+                <div className="-mr-1 opacity-0 transition-opacity group-hover/user:opacity-100 focus-within:opacity-100">
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon-xs" onClick={() => onEdit(msg.id)} aria-label="Edit message"
+                                className="text-muted-foreground hover:text-foreground">
+                                <Pencil className="size-3.5" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">Edit and resend</TooltipContent>
+                    </Tooltip>
                 </div>
             )}
         </div>

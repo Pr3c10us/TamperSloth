@@ -130,8 +130,8 @@ export function targetSpecs(name: string, input: Record<string, any>, lookupMark
 
 export interface SafetyGateOptions {
     conversationId: string;
-    /** The user's message that started this run. */
-    request: string;
+    /** The user's message that started this run; a function when messages sent mid-run extend it. */
+    request: string | (() => string);
     mode: ApprovalMode;
     /** Asks a model for a verdict; without it, flagged actions go to the user. */
     screen?: (instructions: string, prompt: string, signal?: AbortSignal) => Promise<string>;
@@ -200,7 +200,7 @@ export function createSafetyGate(options: SafetyGateOptions) {
                 if (options.screen) {
                     try {
                         verdict = parseVerdict(await options.screen(SCREENER_INSTRUCTIONS, screenPrompt({
-                            userRequest: options.request, tool: name, reason: call.reason, input, target,
+                            userRequest: typeof options.request === "function" ? options.request() : options.request, tool: name, reason: call.reason, input, target,
                             risks: assessment.reasons, flagged,
                         }), call.abortSignal));
                     } catch (error) {

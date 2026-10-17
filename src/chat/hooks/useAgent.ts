@@ -1,16 +1,17 @@
-import {useCallback, useSyncExternalStore} from "react";
+import {useCallback, useMemo, useSyncExternalStore} from "react";
 import {type ModelMessage, generateText, isStepCount, streamText} from "ai";
 import {formatModelName, getModel, MODELPROVIDERS, type ModelOptions, type ProviderId} from "../lib/provider.ts";
 import {getApiKeys, VERTEX_PROJECT_KEY} from "../../settings/lib/storage";
 import {withRateLimits} from "../lib/rateLimit";
 import {createAgentTools} from "../lib/tools.ts";
 import {browserCall, setTaskStatus} from "../lib/browserTools";
-import {loadAttachment, loadStoredConversation, readFile, saveAttachments, saveConversation, type StoredConversation} from "../lib/storage.ts";
+import {deleteAttachments, loadAttachment, loadStoredConversation, readFile, saveAttachments, saveConversation, type StoredConversation} from "../lib/storage.ts";
 import {seedAttachmentUrl} from "../lib/attachmentUrls";
-import {buildModelMessages} from "../lib/historyMessages";
+import {buildEditNote} from "../lib/editNote";
+import {asMidRun, beforeMessage, buildModelMessages, withInjected, type InjectedMessages} from "../lib/historyMessages";
 import {createConversationSaver} from '../lib/conversationSaver';
 import SYSTEM_PROMPT from "../lib/prompt.ts";
-import type {PendingAttachment} from "../components/AttachmentChip.tsx";
+import {makeAttachmentFromFile, MAX_ATTACHMENTS, type PendingAttachment} from "../components/AttachmentChip.tsx";
 import type {PickedElement} from "../components/PickedElementChip.tsx";
 import type {Quote} from "../lib/panelRequests";
 import {createToolRuntime} from "../lib/toolRuntime";
@@ -23,7 +24,8 @@ import {createReasoningNormalizer, type NormalizedEvent, type ThinkingContent} f
 import {partialReason} from "../lib/toolReason";
 import {generateChatTitle, requestTitle, titleProviderOptions} from "../lib/chatTitle";
 import type {ToolSafety} from "../lib/safetyGate";
-import {clearDraft} from "../lib/drafts";
+import {clearDraft, getDraft, updateDraft, type Draft} from "../lib/drafts";
+import {answerPendingAsk, getPendingAsk} from "../lib/askUserBus";
 import {holdsTab, othersHoldTabs, releaseTabs, tabHolder} from "../lib/tabLease";
 
 export interface StoredAttachment {
@@ -78,6 +80,21 @@ export interface ChatMessage {
     quotes?: Quote[];
     taskState?: string;
     runMetrics?: RunMetrics;
+    /** The user stopped this reply before it finished. */
+    stopped?: boolean;
+    /** Not shown: tells the model this message replaced an edited one, and what the dropped turns did. */
+    editNote?: string;
+}
+
+/** A message sent while the chat's run was working; the run reads it before its next step. */
+export interface QueuedMessage {
+    id: string;
+    text: string;
+    pickedElements?: PickedElement[];
+    attachments?: PendingAttachment[];
+    quotes?: Quote[];
+    /** The model chosen when it was sent, for when it has to start a run of its own. */
+    model: { providerId: ProviderId; apiKey: string; modelId?: string };
 }
 
 const SAVE_THROTTLE_MS = 700;
@@ -147,6 +164,14 @@ export interface ChatSession {
     thinkingLevel?: ThinkingLevel;
     isLoading: boolean;
     error: string | null;
+    /** Sent while the run was working, waiting for its next step. */
+    queued: QueuedMessage[];
+    /**
+     * Set while a sent message is being edited: it and everything after it are
+     * hidden, and dropped for good on the next send. `previousDraft` is what the
+     * composer held before, restored if the edit is cancelled.
+     */
+    editing?: { messageId: string; previousDraft: Draft };
 }
 
 // Chats live in this module rather than in a component, so a run keeps
@@ -186,7 +211,7 @@ function blankSession(): ChatSession {
     for (const session of sessions.values()) {
         if (session.messages.length === 0 && !session.isLoading) return session;
     }
-    const session: ChatSession = {id: crypto.randomUUID(), createdAt: Date.now(), title: null, messages: [], isLoading: false, error: null};
+    const session: ChatSession = {id: crypto.randomUUID(), createdAt: Date.now(), title: null, messages: [], isLoading: false, error: null, queued: []};
     sessions.set(session.id, session);
     return session;
 }
@@ -240,8 +265,9 @@ function updateMessages(id: string, updater: (messages: ChatMessage[]) => ChatMe
 /** Frees a chat that is off screen, idle and written to disk; history reloads it. */
 function evictIfSettled(id: string) {
     const session = sessions.get(id);
-    // The blank chat has nothing on disk to come back from.
-    if (!session || id === activeId || session.isLoading || dirty.has(id) || session.messages.length === 0) return;
+    // The blank chat has nothing on disk to come back from; queued messages and edits live only here.
+    if (!session || id === activeId || session.isLoading || dirty.has(id) || session.messages.length === 0
+        || session.queued.length || session.editing) return;
     sessions.delete(id);
     notify();
 }
@@ -289,6 +315,7 @@ export async function openConversation(id: string) {
             thinkingLevel: isThinkingLevel(conversation.thinkingLevel) ? conversation.thinkingLevel : undefined,
             isLoading: false,
             error: null,
+            queued: [],
         });
     }
     activate(id);
@@ -357,29 +384,101 @@ export function useRunningChats(): string[] {
     return useSyncExternalStore(subscribe, getRunningIds);
 }
 
-async function sendMessage(
+/**
+ * Holds a message sent while the chat is working, for the run to read before its
+ * next step. A plain reply while the agent waits on its own question answers it.
+ */
+function queueMessage(conversationId: string, message: Omit<QueuedMessage, "id">) {
+    const plainReply = message.text && !message.pickedElements?.length && !message.attachments?.length && !message.quotes?.length;
+    if (plainReply && getPendingAsk(conversationId)) {
+        answerPendingAsk(conversationId, {label: message.text, custom: true});
+        return;
+    }
+    updateSession(conversationId, (s) => ({...s, queued: [...s.queued, {...message, id: crypto.randomUUID()}]}));
+}
+
+/** Puts queued messages back in the composer, ahead of anything typed since. */
+function draftFromQueued(conversationId: string, items: QueuedMessage[]) {
+    if (!items.length) return;
+    updateDraft(conversationId, (d) => ({
+        text: [...items.map(q => q.text), d.text].filter(Boolean).join("\n\n"),
+        pickedElements: [...items.flatMap(q => q.pickedElements ?? []), ...d.pickedElements],
+        files: [...items.flatMap(q => q.attachments ?? []), ...d.files].slice(0, MAX_ATTACHMENTS),
+        quotes: [...items.flatMap(q => q.quotes ?? []), ...d.quotes],
+    }));
+}
+
+/** Drops a queued message before the run reads it; `edit` moves it back to the composer instead. */
+export function unqueueMessage(conversationId: string, id: string, edit = false) {
+    const item = sessions.get(conversationId)?.queued.find(q => q.id === id);
+    if (!item) return;
+    updateSession(conversationId, (s) => ({...s, queued: s.queued.filter(q => q.id !== id)}));
+    if (edit) draftFromQueued(conversationId, [item]);
+}
+
+/**
+ * Hides a sent message and everything after it, and puts the message back in
+ * the composer to change and resend. Nothing is dropped until that send, so the
+ * edit can be cancelled. What the agent already did in the browser stays done.
+ */
+export async function editMessage(conversationId: string, messageId: string) {
+    const session = sessions.get(conversationId);
+    const message = session?.messages.find(m => m.id === messageId);
+    if (!session || !message || message.role !== "user" || session.isLoading) return;
+    // Files come back from storage as new Files, so the resend stores them under new ids.
+    const files = (await Promise.all((message.attachments ?? []).map(async (a) => {
+        const blob = a.id ? await loadAttachment(a.id).catch(() => null) : null;
+        return blob ? makeAttachmentFromFile(new File([blob], a.name, {type: a.mediaType ?? blob.type})) : null;
+    }))).filter((a): a is PendingAttachment => a !== null);
+    const pickedElements: PickedElement[] = await Promise.all((message.pickedElements ?? []).map(async (html, i) => {
+        const shotId = message.pickedElementShots?.[i];
+        const shot = shotId ? await loadAttachment(shotId).catch(() => null) : null;
+        return {html, screenshot: shot ? await fileToDataUrl(shot) : null};
+    }));
+    const current = sessions.get(conversationId);
+    if (!current || current.isLoading) return;
+    patchSession(conversationId, {
+        error: null,
+        editing: {messageId, previousDraft: current.editing?.previousDraft ?? getDraft(conversationId)},
+    });
+    updateDraft(conversationId, () => ({text: message.content, pickedElements, files, quotes: message.quotes ?? []}));
+}
+
+/** Ends an edit without sending: the hidden messages return and the composer gets back what it held. */
+export function cancelEdit(conversationId: string) {
+    const editing = sessions.get(conversationId)?.editing;
+    if (!editing) return;
+    patchSession(conversationId, {editing: undefined});
+    updateDraft(conversationId, () => editing.previousDraft);
+}
+
+/**
+ * On send, drops the message being edited and everything after it, with their
+ * stored files. Returns the note telling the model what the new message replaces.
+ */
+function commitEdit(conversationId: string): string | undefined {
+    const session = sessions.get(conversationId);
+    if (!session?.editing) return undefined;
+    const kept = beforeMessage(session.messages, session.editing.messageId);
+    const dropped = session.messages.slice(kept.length);
+    updateSession(conversationId, (s) => ({...s, messages: kept, editing: undefined}));
+    const ids = dropped.flatMap(m => [...(m.attachments ?? []).map(a => a.id), ...(m.pickedElementShots ?? [])])
+        .filter((id): id is string => Boolean(id));
+    void deleteAttachments(ids).catch((error) => console.warn("[Tampersloth] Could not delete edited-out attachments:", error));
+    const [original, ...after] = dropped;
+    return original ? buildEditNote(original.content, after) : undefined;
+}
+
+/** Builds a user message and starts storing its files and picked-element screenshots. */
+async function prepareUserMessage(
     conversationId: string,
     text: string,
-    providerId: ProviderId,
-    apiKey: string,
-    modelId?: string,
     elementContext?: PickedElement[],
     attachments?: PendingAttachment[],
     quotes?: Quote[],
 ) {
-    const started = performance.now();
-    const startedAt = Date.now();
-    const resolvedModelId = modelId ?? MODELPROVIDERS.find(p => p.id === providerId)!.defaultModel;
-    const abortController = new AbortController();
-    runs.set(conversationId, abortController);
-    let failed = false;
-    patchSession(conversationId, {error: null, isLoading: true});
-    const modelOptions: ModelOptions = providerId === "vertex"
-        ? {vertexProject: (await getApiKeys().catch((): Record<string, string> => ({})))[VERTEX_PROJECT_KEY]}
-        : {};
-
     // In-memory files for this message; earlier messages read theirs back from IndexedDB.
-    const sentFiles = new Map<string, File>();
+    const sentFiles = new Map<string, Blob>();
     const storedAttachments: StoredAttachment[] | undefined = attachments?.length
         ? attachments.map((a) => {
             const id = crypto.randomUUID();
@@ -400,10 +499,10 @@ async function sendMessage(
             return id;
         }))
         : undefined;
-    const attachmentsSaved = saveAttachments([...sentFiles, ...shotBlobs].map(([id, blob]) => ({id, conversationId, blob})))
+    const saved = saveAttachments([...sentFiles, ...shotBlobs].map(([id, blob]) => ({id, conversationId, blob})))
         .catch((error) => patchSession(conversationId, {error: `Could not save attachments: ${error instanceof Error ? error.message : String(error)}`}));
 
-    const userMsg: ChatMessage = {
+    const message: ChatMessage = {
         id: crypto.randomUUID(),
         role: "user",
         content: text,
@@ -414,6 +513,51 @@ async function sendMessage(
         attachments: storedAttachments,
         quotes: quotes?.length ? quotes : undefined,
     };
+    return {message, files: sentFiles, saved};
+}
+
+function toModelMessages(messages: ChatMessage[], files: Map<string, Blob>) {
+    return buildModelMessages(messages, {
+        summarizeElement: summarizeSelectedElement,
+        loadAttachment: async (a) => {
+            if (!a.id) return null;
+            const blob = files.get(a.id) ?? await loadAttachment(a.id).catch(() => null);
+            return blob ? fileToDataUrl(blob) : null;
+        },
+    });
+}
+
+async function sendMessage(
+    conversationId: string,
+    text: string,
+    providerId: ProviderId,
+    apiKey: string,
+    modelId?: string,
+    elementContext?: PickedElement[],
+    attachments?: PendingAttachment[],
+    quotes?: Quote[],
+) {
+    // Mid-run, the message waits for the run's next step instead of starting another run.
+    if (sessions.get(conversationId)?.isLoading) {
+        queueMessage(conversationId, {text, pickedElements: elementContext, attachments, quotes, model: {providerId, apiKey, modelId}});
+        return;
+    }
+    const started = performance.now();
+    const startedAt = Date.now();
+    const resolvedModelId = modelId ?? MODELPROVIDERS.find(p => p.id === providerId)!.defaultModel;
+    const abortController = new AbortController();
+    runs.set(conversationId, abortController);
+    let failed = false;
+    patchSession(conversationId, {error: null, isLoading: true});
+    const editNote = commitEdit(conversationId);
+    const modelOptions: ModelOptions = providerId === "vertex"
+        ? {vertexProject: (await getApiKeys().catch((): Record<string, string> => ({})))[VERTEX_PROJECT_KEY]}
+        : {};
+
+    const {message: userMsg, files: sentFiles, saved: attachmentsSaved} =
+        await prepareUserMessage(conversationId, text, elementContext, attachments, quotes);
+    const storedAttachments = userMsg.attachments;
+    if (editNote) userMsg.editNote = editNote;
 
     const previous = sessions.get(conversationId)?.messages ?? [];
     const isFirstMessage = !previous.some(m => m.role === "user");
@@ -440,16 +584,10 @@ async function sendMessage(
     }
     await attachmentsSaved;
 
-    const modelMessages = await buildModelMessages(updatedMessages, {
-        summarizeElement: summarizeSelectedElement,
-        loadAttachment: async (a) => {
-            if (!a.id) return null;
-            const blob = sentFiles.get(a.id) ?? await loadAttachment(a.id).catch(() => null);
-            return blob ? fileToDataUrl(blob) : null;
-        },
-    });
+    const modelMessages = await toModelMessages(updatedMessages, sentFiles);
 
-    const assistantId = crypto.randomUUID();
+    // Changes when a message the user sends mid-run splits the reply on screen.
+    let assistantId = crypto.randomUUID();
     const updateAssistant = (updater: (msg: ChatMessage) => ChatMessage) =>
         updateMessages(conversationId, (prev) => prev.map((m) => (m.id === assistantId ? updater(m) : m)));
     updateMessages(conversationId, (prev) => [
@@ -458,6 +596,10 @@ async function sendMessage(
             runMetrics: {providerId, modelId: resolvedModelId, startedAt,
                 steps: [], tools: [], compactedResults: 0, elapsedMs: 0}},
     ]);
+    // Shows messages the user sent mid-run once the stream reaches their step; set up with the run.
+    let showSent = () => {};
+    // The part of the reply now being written: its first step and when it began.
+    let segment = {step: 0, startedAt};
 
     try {
         const model = withRateLimits(getModel(providerId, apiKey, resolvedModelId, undefined, modelOptions),
@@ -469,6 +611,14 @@ async function sendMessage(
         let stepContext = {activeTools: 0, contextChars: 0, recordedAt: startedAt};
         const metrics: RunMetrics = {providerId, modelId: resolvedModelId, startedAt,
             steps: [], tools: [], compactedResults: 0, elapsedMs: 0};
+        // Each part of a reply split by mid-run messages shows the steps, tokens and time it covered.
+        const metricsFor = (from: number, to: number | undefined, since: number, until = Date.now()): RunMetrics => {
+            if (from === 0 && to === undefined) return {...metrics, steps: [...metrics.steps], tools: [...metrics.tools]};
+            const steps = metrics.steps.slice(from, to);
+            return {...metrics, startedAt: since, steps, tools: [...metrics.tools],
+                total: steps.length ? sumUsage(steps) : undefined, elapsedMs: until - since};
+        };
+        const currentMetrics = () => metricsFor(segment.step, undefined, segment.startedAt);
         // Screening reports can arrive before the call's own stream part; they wait here until it does.
         const safetyById = new Map<string, ToolSafety>();
         const withSafety = (tc: ToolCall): ToolCall => {
@@ -484,13 +634,13 @@ async function sendMessage(
             } : m);
         };
         // The screener judges actions against what the user asked for, including a request's earlier turns.
-        const userRequest = [...updatedMessages.filter(m => m.role === "user").slice(-3, -1).map(m => `Earlier: ${clip(m.content, 600)}`),
+        let userRequest = [...updatedMessages.filter(m => m.role === "user").slice(-3, -1).map(m => `Earlier: ${clip(m.content, 600)}`),
             ...(quotes ?? []).map(q => `Quoted from the page: ${clip(q.text, 400)}`), text].filter(Boolean).join("\n");
         const runtime = createToolRuntime(createAgentTools({conversationId, abortSignal: abortController.signal}), {
             request: text,
             safety: {
                 conversationId,
-                request: userRequest,
+                request: () => userRequest,
                 mode: settings.actionApproval,
                 screen: async (instructions, prompt, signal) => (await generateText({
                     model, instructions, prompt, abortSignal: signal, maxRetries: 1,
@@ -533,6 +683,49 @@ This task's tabs (open from earlier in this chat; reuse them, and finish when do
         };
 
         const guard = createGuidanceGuard();
+        // Messages the user sent mid-run: the model gets them before its next step,
+        // and the chat shows them once the stream reaches that step.
+        const injected: InjectedMessages[] = [];
+        // Each batch keeps how many steps had finished when the model read it: where the reply splits.
+        const unshown: { step: number; messages: ChatMessage[] }[] = [];
+        const readQueued = async (at: number) => {
+            const queued = sessions.get(conversationId)?.queued ?? [];
+            if (!queued.length || abortController.signal.aborted) return;
+            patchSession(conversationId, {queued: []});
+            const prepared = await Promise.all(queued.map(q =>
+                prepareUserMessage(conversationId, q.text, q.pickedElements, q.attachments, q.quotes)));
+            await Promise.all(prepared.map(p => p.saved));
+            const messages = await Promise.all(prepared.map(p => toModelMessages([p.message], p.files)));
+            injected.push({at, messages: messages.flat().map(asMidRun)});
+            unshown.push({step: metrics.steps.length, messages: prepared.map(p => p.message)});
+            userRequest += queued.map(q => `\nAdded while working: ${clip(q.text, 600)}`).join("");
+        };
+        // The reply so far ends where the user's messages arrived and resumes after them.
+        showSent = () => {
+            if (!unshown.length) return;
+            const batches = unshown.splice(0);
+            const sent = batches.flatMap(b => b.messages);
+            const current = sessions.get(conversationId)?.messages.find(m => m.id === assistantId);
+            if (!current?.blocks.length) {
+                updateMessages(conversationId, (prev) => {
+                    const index = prev.findIndex(m => m.id === assistantId);
+                    return index < 0 ? [...prev, ...sent] : [...prev.slice(0, index), ...sent, ...prev.slice(index)];
+                });
+                return;
+            }
+            const nextId = crypto.randomUUID();
+            const endedAt = Date.now();
+            // Steps can finish before the stream shows the split, so both parts are measured from the boundary.
+            const boundary = Math.max(segment.step, batches[0].step);
+            const ended = metricsFor(segment.step, boundary, segment.startedAt, endedAt);
+            segment = {step: boundary, startedAt: endedAt};
+            updateMessages(conversationId, (prev) => prev.flatMap((m): ChatMessage[] => m.id !== assistantId ? [m] : [
+                {...m, blocks: closeThinking(m.blocks, endedAt), runMetrics: ended},
+                ...sent,
+                {id: nextId, role: "assistant", content: "", toolCalls: [], blocks: [], runMetrics: currentMetrics(), taskState: m.taskState},
+            ]));
+            assistantId = nextId;
+        };
         let passMessages: ModelMessage[] = [...modelMessages, {role: "user", content: `Current-tab metadata (untrusted page data): ${tabContext}`}];
         const appendText = (text: string) => updateAssistant((m) => {
             const blocks = [...m.blocks];
@@ -561,10 +754,11 @@ This task's tabs (open from earlier in this chat; reuse them, and finish when do
                 tools: runtime.tools,
                 stopWhen: [isStepCount(settings.maxSteps), () => Boolean(stopReason)],
                 abortSignal: abortController.signal,
-                prepareStep: ({initialMessages, responseMessages}) => {
+                prepareStep: async ({initialMessages, responseMessages}) => {
+                    await readQueued(responseMessages.length);
                     // Rebuild from the original transcript: v7 otherwise carries
                     // compacted projections and cache breakpoints into later steps.
-                    const messages = [...initialMessages, ...responseMessages];
+                    const messages = [...initialMessages, ...withInjected(responseMessages, injected)];
                     const activeTools = runtime.activeTools();
                     const compacted = prepareMessages(messages, activeTools);
                     stepContext = {activeTools: activeTools.length, contextChars: serialize(compacted).length, recordedAt: Date.now()};
@@ -577,7 +771,7 @@ This task's tabs (open from earlier in this chat; reuse them, and finish when do
                     metrics.elapsedMs = Math.round(performance.now() - started);
                     stopReason = runStopReason(settings, metrics.steps, runtime.repeatedFailure());
                     metrics.stopReason = stopReason || undefined;
-                    updateAssistant(m => ({...m, runMetrics: {...metrics, steps: [...metrics.steps], tools: [...metrics.tools]}}));
+                    updateAssistant(m => ({...m, runMetrics: currentMetrics()}));
                 },
                 providerOptions,
             });
@@ -598,6 +792,8 @@ This task's tabs (open from earlier in this chat; reuse them, and finish when do
             // Streamed argument JSON per call, so the reason can title the call early.
             const inputText = new Map<string, string>();
             for await (const part of result.stream) {
+                // Every part of the previous step has been shown by the time the next one starts.
+                if (part.type === "start-step") showSent();
                 handleNormalized(reasoning.push(part));
                 if (part.type === "tool-input-start") {
                     flushHeld();
@@ -706,7 +902,7 @@ This task's tabs (open from earlier in this chat; reuse them, and finish when do
                         metrics.total = sumUsage(passTotals);
                         metrics.elapsedMs = Math.round(performance.now() - started);
                         metrics.tools = runtime.metrics();
-                        updateAssistant(m => ({...m, runMetrics: {...metrics, steps: [...metrics.steps], tools: [...metrics.tools]}}));
+                        updateAssistant(m => ({...m, runMetrics: currentMetrics()}));
                         console.info("[Tampersloth] run metrics", metrics);
                     }
                     // Anything but "stop" means the run was cut short. Without
@@ -740,7 +936,9 @@ This task's tabs (open from earlier in this chat; reuse them, and finish when do
             }
             handleNormalized(reasoning.flush());
             if (held && !abortController.signal.aborted && !stopReason && guard.resume()) {
-                passMessages = [...passMessages, ...(await result.response).messages, {role: "user", content: GUIDANCE_RESUME_NOTE}];
+                passMessages = [...passMessages, ...withInjected((await result.response).messages, injected),
+                    {role: "user", content: GUIDANCE_RESUME_NOTE}];
+                injected.length = 0;
                 continue;
             }
             flushHeld();
@@ -754,6 +952,8 @@ This task's tabs (open from earlier in this chat; reuse them, and finish when do
             patchSession(conversationId, {error: err.message ?? "Something went wrong"});
         }
     } finally {
+        // Read by the model but stopped before their step began.
+        showSent();
         // A stopped or failed task can't finish its own tabs: close the disposable ones, keeping retained tabs.
         if (failed || abortController.signal.aborted) await finishTaskTabs(conversationId);
         // Tabs still open at a normal end mean the task waits on the user's reply.
@@ -769,10 +969,25 @@ This task's tabs (open from earlier in this chat; reuse them, and finish when do
         // A stopped run never receives "finish", so total it from completed steps,
         // and any reasoning it was in the middle of is over.
         const endedAt = Date.now();
-        updateAssistant(m => ({...m, blocks: closeThinking(m.blocks, endedAt), runMetrics: m.runMetrics
+        const stopped = abortController.signal.aborted;
+        updateAssistant(m => ({...m, ...(stopped ? {stopped: true} : {}), blocks: closeThinking(m.blocks, endedAt), runMetrics: m.runMetrics
             ? {...m.runMetrics, total: m.runMetrics.total ?? sumUsage(m.runMetrics.steps),
-                elapsedMs: Math.round(performance.now() - started)} : undefined}));
+                elapsedMs: segment.step === 0 ? Math.round(performance.now() - started) : endedAt - segment.startedAt} : undefined}));
         patchSession(conversationId, {isLoading: false});
+        const waiting = sessions.get(conversationId)?.queued ?? [];
+        if (waiting.length) {
+            patchSession(conversationId, {queued: []});
+            if (failed || stopped) {
+                // A stop means stop: what was waiting goes back to the composer instead of starting a run.
+                draftFromQueued(conversationId, waiting);
+            } else {
+                // The run ended without another step to read them: the first starts the next run, which reads the rest at once.
+                const [first, ...rest] = waiting;
+                void sendMessage(conversationId, first.text, first.model.providerId, first.model.apiKey, first.model.modelId,
+                    first.pickedElements, first.attachments, first.quotes);
+                if (rest.length) updateSession(conversationId, (s) => ({...s, queued: [...rest, ...s.queued]}));
+            }
+        }
     }
 }
 
@@ -781,8 +996,18 @@ type SendArgs = Parameters<typeof sendMessage> extends [string, ...infer Rest] ?
 export function useAgent() {
     const session = useSyncExternalStore(subscribe, () => sessions.get(activeId)!);
     const send = useCallback((...args: SendArgs) => sendMessage(session.id, ...args), [session.id]);
+    // While a message is being edited, it and everything after it are hidden.
+    const messages = useMemo(() => beforeMessage(session.messages, session.editing?.messageId),
+        [session.messages, session.editing?.messageId]);
+    const edit = useCallback((messageId: string) => editMessage(session.id, messageId), [session.id]);
     return {
-        messages: session.messages,
+        messages,
+        queued: session.queued,
+        /** A sent message is back in the composer, hiding it and everything after it. */
+        editing: Boolean(session.editing),
+        editMessage: edit,
+        cancelEdit: () => cancelEdit(session.id),
+        unqueueMessage: (id: string, edit?: boolean) => unqueueMessage(session.id, id, edit),
         title: session.title,
         isLoading: session.isLoading,
         error: session.error,

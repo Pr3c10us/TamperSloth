@@ -198,6 +198,11 @@ function stringOf(value: unknown): string {
     return typeof value === "string" ? value : "";
 }
 
+/** Tools that only read: running them leaves the browser as it was. */
+export function isReadOnlyTool(name: string): boolean {
+    return READ_ONLY.has(name);
+}
+
 const NONE: ActionAssessment = {risk: "none", reasons: [], payload: []};
 const LOW: ActionAssessment = {risk: "low", reasons: [], payload: []};
 

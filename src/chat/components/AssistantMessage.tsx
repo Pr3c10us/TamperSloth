@@ -6,6 +6,7 @@ import {CARD_TOOLS, ToolCallInline} from "./ToolCallInline";
 import {isTrivialThinking} from "./ThinkingBlock";
 import {LiveStatus, StepSequence, type SequenceBlock} from "./StepSequence";
 import {Button} from "@/components/ui/button";
+import {cn} from "@/lib/utils";
 import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
 import {formatElapsedTime} from "../lib/efficiency";
 import {estimateRunCost, formatCost} from "../lib/pricing";
@@ -69,12 +70,12 @@ function CopyMessageButton({text}: { text: string }) {
 const compactNumber = new Intl.NumberFormat("en-US", {notation: "compact", maximumFractionDigits: 1});
 
 /** One run metric as a short value, usually with an icon; the tooltip names it in full. */
-function MetricChip({icon: Icon, value, label}: { icon?: LucideIcon; value: string; label: string }) {
+function MetricChip({icon: Icon, value, label, className}: { icon?: LucideIcon; value: string; label: string; className?: string }) {
     return (
         <Tooltip>
             <TooltipTrigger asChild>
                 <span tabIndex={0} aria-label={label}
-                    className="flex h-6 cursor-default items-center gap-1 rounded-sm px-1 text-xs tabular-nums text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
+                    className={cn("flex h-6 cursor-default items-center gap-1 rounded-sm px-1 text-xs tabular-nums text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring", className)}>
                     {Icon && <Icon className="size-3.5" strokeWidth={1.75}/>}
                     {value}
                 </span>
@@ -139,6 +140,11 @@ export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, 
                     <LiveStatus label="Working" since={msg.runMetrics?.startedAt}/>
                 </div>
             )}
+            {!live && msg.stopped && (
+                <div className="font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground">
+                    Stopped
+                </div>
+            )}
             {!live && (fullText || msg.runMetrics) && (
                 // Message actions stay out of the way until the message is hovered or focused.
                 <div className="-ml-1 flex flex-wrap items-center gap-0.5 opacity-0 transition-opacity group-hover/assistant:opacity-100 focus-within:opacity-100">
@@ -146,23 +152,24 @@ export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, 
                     {msg.runMetrics && (
                         <MetricChip value={formatElapsedTime(msg.runMetrics.elapsedMs)} label="Time to complete"/>
                     )}
-                    {showRunTokens && total && (showCost ? (
+                    {/* Token and cost chips sit closer together than the surrounding actions. */}
+                    {showRunTokens && total && <div className="flex items-center">{showCost ? (
                         <>
-                            <MetricChip icon={ArrowUp} value={formatCost(cost?.input)} label={`Input cost · ${modelLabel}`}/>
-                            <MetricChip icon={ArrowDown} value={formatCost(cost?.output)} label={`Output cost · ${modelLabel}`}/>
-                            <MetricChip icon={Sigma} label="Total estimated cost at standard API rates"
+                            <MetricChip className="px-0.5" icon={ArrowUp} value={formatCost(cost?.input)} label={`Input cost · ${modelLabel}`}/>
+                            <MetricChip className="px-0.5" icon={ArrowDown} value={formatCost(cost?.output)} label={`Output cost · ${modelLabel}`}/>
+                            <MetricChip className="px-0.5" icon={Sigma} label="Total estimated cost at standard API rates"
                                 value={formatCost(cost?.input !== undefined && cost.output !== undefined ? cost.input + cost.output : undefined)}/>
                         </>
                     ) : (
                         <>
-                            {total.input !== undefined && <MetricChip icon={ArrowUp} value={compactNumber.format(total.input)}
+                            {total.input !== undefined && <MetricChip className="px-0.5" icon={ArrowUp} value={compactNumber.format(total.input)}
                                 label={`${total.input.toLocaleString()} input tokens`}/>}
-                            {!!cachedInput && <MetricChip icon={DatabaseZap} value={compactNumber.format(cachedInput)}
+                            {!!cachedInput && <MetricChip className="px-0.5" icon={DatabaseZap} value={compactNumber.format(cachedInput)}
                                 label={`${cachedInput.toLocaleString()} input tokens read from cache`}/>}
-                            {total.output !== undefined && <MetricChip icon={ArrowDown} value={compactNumber.format(total.output)}
+                            {total.output !== undefined && <MetricChip className="px-0.5" icon={ArrowDown} value={compactNumber.format(total.output)}
                                 label={`${total.output.toLocaleString()} output tokens`}/>}
                         </>
-                    ))}
+                    )}</div>}
                     {showRunTokens && total && (
                         <Tooltip>
                             <TooltipTrigger asChild>

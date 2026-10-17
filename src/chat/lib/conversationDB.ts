@@ -76,6 +76,14 @@ export function removeChat(id: string) {
     }, ['conversations', 'summaries', 'attachments']);
 }
 
+/** Deletes attachments by id, e.g. those of messages dropped by an edit. */
+export function removeAttachments(ids: string[]) {
+    return write(transaction => {
+        const attachments = transaction.objectStore('attachments');
+        for (const id of ids) attachments.delete(id);
+    }, ['attachments']);
+}
+
 export interface StoredAttachmentData {
     id: string;
     conversationId: string;
