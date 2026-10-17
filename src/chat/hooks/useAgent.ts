@@ -4,7 +4,7 @@ import {formatModelName, getModel, MODELPROVIDERS, type ModelOptions, type Provi
 import {getApiKeys, VERTEX_PROJECT_KEY} from "../../settings/lib/storage";
 import {withRateLimits} from "../lib/rateLimit";
 import {createAgentTools} from "../lib/tools.ts";
-import {browserCall} from "../lib/browserTools";
+import {browserCall, setTaskStatus} from "../lib/browserTools";
 import {loadAttachment, loadStoredConversation, readFile, saveAttachments, saveConversation, type StoredConversation} from "../lib/storage.ts";
 import {seedAttachmentUrl} from "../lib/attachmentUrls";
 import {buildModelMessages} from "../lib/historyMessages";
@@ -517,6 +517,7 @@ async function sendMessage(
         } catch { /* Browsing tools report actionable permission/tab errors. */ }
         // A task paused for the user's answer resumes with the tabs, group and notes it already had.
         const task = await browserCall('tabs', {action: 'list', conversationId}).then(r => r.task, () => undefined);
+        if (task) void setTaskStatus(conversationId, 'working');
         if (task) tabContext += `
 This task's tabs (open from earlier in this chat; reuse them, and finish when done): ${serialize(task)}`;
 
@@ -755,6 +756,8 @@ This task's tabs (open from earlier in this chat; reuse them, and finish when do
     } finally {
         // A stopped or failed task can't finish its own tabs: close the disposable ones, keeping retained tabs.
         if (failed || abortController.signal.aborted) await finishTaskTabs(conversationId);
+        // Tabs still open at a normal end mean the task waits on the user's reply.
+        else await setTaskStatus(conversationId, 'waiting');
         // Keep the cursor through idle tool pauses, then remove the run's decorations
         // before handing the tab to the next waiting chat. Cleanup is browser-wide,
         // so it is skipped while another chat still holds a tab.

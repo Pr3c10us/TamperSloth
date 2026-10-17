@@ -44,6 +44,7 @@ import { ActionConfirmOverlay } from "./ActionConfirmOverlay";
 import { UserWaitNotice } from "./UserWaitNotice";
 import { TabWaitNotice } from "./TabWaitNotice";
 import { RateLimitNotice } from "./RateLimitNotice";
+import { TaskTabsCard } from "./TaskTabsCard";
 
 interface ComposerProps {
     draft: string;
@@ -356,6 +357,7 @@ export function Composer({
 
     return (
         <div ref={containerRef} className="fixed bottom-0 inset-x-0 z-20 flex shrink-0 flex-col bg-background">
+            <TaskTabsCard conversationId={conversationId} />
             <RateLimitNotice conversationId={conversationId} />
             <TabWaitNotice conversationId={conversationId} />
             <UserWaitNotice conversationId={conversationId} />

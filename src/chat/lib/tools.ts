@@ -1,5 +1,5 @@
 import {tool} from "ai";
-import {createBrowserTools, browserImageOutput, browserCall} from './browserTools';
+import {createBrowserTools, browserImageOutput, browserCall, setTaskStatus} from './browserTools';
 import {z} from "zod";
 import type {BackgroundScript} from "./types";
 import {
@@ -2111,6 +2111,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 }, {
                     show: () => { showTip().catch(error => console.warn('[Tampersloth] Could not show the tip:', error)); },
                 }) : () => {};
+                if (tip) void setTaskStatus(context.conversationId, 'waiting');
                 try {
                     const start = Date.now();
                     const deadline = start + seconds * 1000;
@@ -2161,6 +2162,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                             : "No change. Wait again if a reply is still expected, otherwise report back."};
                 } finally {
                     endCard();
+                    if (tip) void setTaskStatus(context.conversationId, 'working');
                     if (tipShown) void browserCall('guidance', {tabId, action: 'remove', id: tipId}).catch(() => {});
                 }
             },
@@ -2620,6 +2622,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             }),
             execute: async ({question, options: rawOptions}, {toolCallId, abortSignal}) => {
                 const options = rawOptions.map((opt) => (typeof opt === "string" ? {label: opt} : opt));
+                void setTaskStatus(context.conversationId, 'waiting');
                 return new Promise<{ answer: AskUserAnswer }>((resolve, reject) => {
                     const onAbort = () => {
                         rejectPendingAsk(context.conversationId, new Error("aborted"));
@@ -2638,7 +2641,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                             reject(err);
                         },
                     });
-                });
+                }).finally(() => { void setTaskStatus(context.conversationId, 'working'); });
             },
         }),
     }, context.conversationId, () => tabId, context.abortSignal);

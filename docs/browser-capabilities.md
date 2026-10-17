@@ -27,6 +27,16 @@ Each chat keeps a task workspace in session storage (`src/background/taskTabs.ts
 - `finish` closes the task's tabs except retained ones or those in `keepTabIds`. Kept tabs are ungrouped first, so the temporary group disappears. It returns the noted findings. The original tab, the user's tabs and the user's groups are left alone.
 - A stopped or failed run, or a deleted chat, runs `finish` automatically. Runs that end normally keep the workspace, so a task waiting on the user's reply resumes with its tabs, which are listed in the run-start context.
 
+### How TamperSloth groups look
+
+- Every task group is green and titled `🦥 <name>`. The agent supplies only the name; a prefix it types is stripped, and it cannot recolor or unprefix its own group.
+- While the task waits on the user (askUser, a sign-in wait, or a run that ended with its tabs still open), the title reads `🦥 ⏸ <name>`.
+- Selecting the working tab again collapses the reference group; selecting a reference expands it.
+- After a browser restart or extension update, leftover `🦥` groups no task owns trigger a notification offering to close them. Nothing closes unless the user clicks **Close them**.
+- A task may keep at most **Tabs per task** (settings, default 6) tabs open at once; the working tab and reused tabs don't count. Over the limit, create opens nothing and tells the agent to close references first.
+- `finish` always removes the group: tabs the task didn't open are ungrouped, not closed. The working tab is never closed by the agent unless the user asked (`userRequested`). Its URL is remembered in local storage, so the restart cleanup ungroups it instead of closing it.
+- The panel shows a collapsible task-tabs card above the composer: each tab's purpose, note count, and a click to switch to it.
+
 ## Browser controls
 
 Saved scripts run on matching pages according to each script's active or paused setting. Browser control messages are accepted only from the extension UI; user-script messages use their separate channel. The chat's Stop button cancels the current response without disabling saved scripts.

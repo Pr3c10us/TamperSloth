@@ -17,11 +17,13 @@ export interface AgentSettings {
      * something waits for approval.
      */
     actionApproval: ApprovalMode;
+    /** Most tabs one task may have open at once, besides the tab the chat started in. */
+    maxTaskTabs: number;
 }
 
 const KEY = "ts_agent_settings";
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {maxSteps: 200, tokenBudget: 1000000, thinkingLevel: DEFAULT_THINKING_LEVEL,
-    showRunTokens: false, showToolTokens: false, actionApproval: "auto"};
+    showRunTokens: false, showToolTokens: false, actionApproval: "auto", maxTaskTabs: 6};
 
 export function runStopReason(settings: AgentSettings, steps: UsageRecord[], failure = ""): string {
     if (failure) return failure;
@@ -43,6 +45,7 @@ export function normalizeAgentSettings(value: SavedAgentSettings = {}): AgentSet
         showRunTokens: value.showRunTokens === true,
         showToolTokens: value.showToolTokens === true,
         actionApproval: value.actionApproval === "ask" ? "ask" : "auto",
+        maxTaskTabs: Number.isFinite(value.maxTaskTabs) ? Math.max(1, Math.min(20, Math.round(value.maxTaskTabs!))) : 6,
     };
 }
 

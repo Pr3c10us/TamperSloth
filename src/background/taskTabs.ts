@@ -6,7 +6,19 @@
  */
 
 interface TaskTab {owned: boolean; purpose?: string; notes: string[]; retain?: boolean; /** The blank tab the chat started on: grouped with the task, kept at finish. */ origin?: boolean}
-interface Workspace {originTabId?: number; groupId?: number; title?: string; tabs: Record<string, TaskTab>}
+import {loadAgentSettings} from '../chat/lib/agentSettings';
+
+export type TaskStatus = 'working' | 'waiting';
+interface Workspace {originTabId?: number; groupId?: number; title?: string; status?: TaskStatus; tabs: Record<string, TaskTab>}
+
+/** Every TamperSloth group carries this prefix and color, so users can tell them from their own groups. */
+export const GROUP_PREFIX = '🦥';
+export const GROUP_COLOR = 'green' as const;
+const PAUSED = '⏸';
+/** The bare task name, without our prefix or status marks a model or user may have typed. */
+export const bareTitle = (title: string) => title.replace(/^(?:\s*(?:🦥|⏸️?|TS\s*\|))+\s*/u, '').trim();
+const groupTitle = (ws: Workspace) => `${GROUP_PREFIX} ${ws.status === 'waiting' ? PAUSED + ' ' : ''}${ws.title}`;
+const isOurs = (title: string | undefined) => !!title?.startsWith(GROUP_PREFIX);
 
 const KEY = 'ts_task_tabs';
 const MAX_NOTES = 20;
@@ -38,7 +50,7 @@ async function joinGroup(ws: Workspace, tabIds: TabIds) {
         return;
     }
     ws.groupId = await chrome.tabs.group({tabIds, createProperties: {windowId}});
-    await chrome.tabGroups.update(ws.groupId, {title: ws.title});
+    await chrome.tabGroups.update(ws.groupId, {title: groupTitle(ws), color: GROUP_COLOR});
 }
 
 export interface OpenOptions {urls: string[]; group?: string; purpose?: string; background: boolean; openerTabId?: number; originBlank?: boolean}
@@ -48,14 +60,22 @@ export function openTaskTabs(conversationId: string, originTabId: number | undef
     return transaction(async () => {
         const ws = workspace(conversationId);
         ws.originTabId ??= originTabId;
-        ws.title ??= options.group?.trim() || undefined;
+        ws.title ??= bareTitle(options.group ?? '') || undefined;
         if (!ws.title) throw new Error('Name the task group first: pass group, a short descriptive title such as "Laptop Comparison".');
         const owned = await Promise.all(Object.entries(ws.tabs).filter(([, t]) => t.owned)
             .map(([id]) => chrome.tabs.get(Number(id)).catch(() => undefined)));
         const windowId = originTabId ? await chrome.tabs.get(originTabId).then(t => t.windowId, () => undefined) : undefined;
         const active = !options.background && options.urls.length === 1;
+        const reusable = (url: string) => owned.find(t => t && (sameUrl(t.url, url) || sameUrl(t.pendingUrl, url)));
+        // The working tab never counts: the limit is on the extra tabs a task keeps open at once.
+        const open = owned.filter(t => t && t.id !== ws.originTabId && !ws.tabs[t.id!]?.origin).length;
+        const adding = new Set(options.urls.filter(url => !reusable(url)).map(url => url.replace(/#.*$/, ''))).size;
+        const {maxTaskTabs} = await loadAgentSettings();
+        if (open + adding > maxTaskTabs) {
+            throw new Error(`Tab limit: this task has ${open} of ${maxTaskTabs} tabs open, and this would open ${adding} more. Close task tabs you no longer need (browserTabs close), or read pages one after another. The user can raise "Tabs per task" in settings.`);
+        }
         const opened = await Promise.all(options.urls.map(async url => {
-            const existing = owned.find(t => t && (sameUrl(t.url, url) || sameUrl(t.pendingUrl, url)));
+            const existing = reusable(url);
             if (existing?.id) return {tab: existing, reused: true};
             const tab = await chrome.tabs.create({url, active, ...(windowId !== undefined ? {windowId} : {}),
                 ...(options.openerTabId ? {openerTabId: options.openerTabId} : {})});
@@ -67,7 +87,10 @@ export function openTaskTabs(conversationId: string, originTabId: number | undef
         }
         // A chat started on a new tab page is using that tab for the task, so it joins the group too.
         const adoptOrigin = options.originBlank && originTabId !== undefined && !ws.tabs[originTabId]?.owned;
-        if (adoptOrigin) ws.tabs[originTabId] = {...ws.tabs[originTabId], owned: true, origin: true, notes: ws.tabs[originTabId]?.notes ?? []};
+        if (adoptOrigin) {
+            ws.tabs[originTabId] = {...ws.tabs[originTabId], owned: true, origin: true, notes: ws.tabs[originTabId]?.notes ?? []};
+            await rememberOrigin(conversationId, originTabId);
+        }
         let groupError: string | undefined;
         await joinGroup(ws, [...(adoptOrigin ? [originTabId] : []), ...opened.map(o => o.tab.id!)] as TabIds).catch(error => { groupError = String(error?.message ?? error); });
         return {group: {groupId: ws.groupId, title: ws.title, ...(groupError ? {error: groupError} : {})},
@@ -97,7 +120,7 @@ export async function describeTask(conversationId: string) {
         const tab = await chrome.tabs.get(Number(id)).catch(() => undefined);
         return tab && {tabId: tab.id, url: tab.url, title: tab.title, ...record};
     }));
-    return {group: ws.groupId === undefined ? undefined : {groupId: ws.groupId, title: ws.title}, workingTabId: ws.originTabId, tabs: tabs.filter(Boolean)};
+    return {group: ws.groupId === undefined ? undefined : {groupId: ws.groupId, title: ws.title, status: ws.status ?? 'working'}, workingTabId: ws.originTabId, tabs: tabs.filter(Boolean)};
 }
 
 /** Throws unless every tab was opened by this task or the user asked to change their own tabs. */
@@ -107,6 +130,15 @@ export async function assertTaskTabs(conversationId: string | undefined, tabIds:
     const ws = workspaces[conversationId];
     const foreign = tabIds.filter(id => !ws?.tabs[id]?.owned);
     if (foreign.length) throw new Error(`Tab${foreign.length > 1 ? 's' : ''} ${foreign.join(', ')} ${foreign.length > 1 ? 'were' : 'was'} already open before this task. Leave the user's tabs as they are unless the user explicitly asked to change them; then pass userRequested true.`);
+}
+
+/** The tab the chat started in holds the user's result, so the agent never closes it on its own. */
+export async function assertNotWorkingTab(conversationId: string | undefined, tabIds: number[], userRequested: boolean | undefined) {
+    if (!conversationId || userRequested) return;
+    await settled();
+    const ws = workspaces[conversationId];
+    const working = tabIds.find(id => id === ws?.originTabId || ws?.tabs[id]?.origin);
+    if (working !== undefined) throw new Error(`Tab ${working} is the working tab the chat started in; it stays open. Close only reference tabs, or pass userRequested true if the user asked to close it.`);
 }
 
 /** Throws unless the group is this task's group or the user asked to change their own groups. */
@@ -136,6 +168,14 @@ export function finishTask(conversationId: string, keepTabIds: number[] = []) {
         const grouped = keep.filter(tab => tab.groupId !== -1 && tab.groupId === ws.groupId).map(tab => tab.id!);
         if (grouped.length) await chrome.tabs.ungroup(grouped as TabIds);
         if (close.length) await chrome.tabs.remove(close);
+        // Chrome removes a group with its last tab. Tabs the task didn't open (e.g. dragged in by the user)
+        // leave it open and ungrouped, so the group always goes away while their tabs stay.
+        const group = ws.groupId === undefined ? undefined : await chrome.tabGroups.get(ws.groupId).catch(() => undefined);
+        if (group && isOurs(group.title)) {
+            const stragglers = (await chrome.tabs.query({groupId: group.id})).map(tab => tab.id!);
+            if (stragglers.length) await chrome.tabs.ungroup(stragglers as TabIds);
+        }
+        await forgetOrigin(conversationId);
         return {closed: close, kept: keep.map(tab => tab.id!),
             findings: live.filter(({record}) => record.notes.length || record.purpose)
                 .map(({tab, record}) => ({tabId: tab.id, url: tab.url, title: tab.title, purpose: record.purpose, notes: record.notes}))};
@@ -156,4 +196,125 @@ chrome.tabs.onCreated.addListener(tab => {
 });
 chrome.tabs.onRemoved.addListener(id => {
     void transaction(async () => { for (const ws of Object.values(workspaces)) delete ws.tabs[id]; });
+});
+
+/** Shows in the group title whether the task is working or waiting on the user. */
+export function setTaskStatus(conversationId: string, status: TaskStatus) {
+    return transaction(async () => {
+        const ws = workspaces[conversationId];
+        if (!ws || ws.status === status && status === 'working') return {ok: true};
+        ws.status = status;
+        if (ws.groupId !== undefined) await chrome.tabGroups.update(ws.groupId, {title: groupTitle(ws)}).catch(() => {});
+        return {ok: true};
+    });
+}
+
+/**
+ * Keeps the task group's prefix and color through the agent's own edits. For any
+ * other group, the requested style passes through unchanged.
+ */
+export function taskGroupStyle(conversationId: string | undefined, groupId: number, style: chrome.tabGroups.UpdateProperties) {
+    return transaction(async () => {
+        const ws = conversationId ? workspaces[conversationId] : undefined;
+        if (!ws || ws.groupId !== groupId) return style;
+        if (style.title !== undefined) ws.title = bareTitle(style.title) || ws.title;
+        return {...style, title: groupTitle(ws), color: GROUP_COLOR};
+    });
+}
+
+/** Back on the working tab the references are out of the way; opening a reference shows its group again. */
+export function tidyTaskGroup(conversationId: string, selectedTabId: number) {
+    return transaction(async () => {
+        const ws = workspaces[conversationId];
+        if (ws?.groupId === undefined) return;
+        const tab = await chrome.tabs.get(selectedTabId).catch(() => undefined);
+        if (!tab) return;
+        if (tab.groupId === ws.groupId) await chrome.tabGroups.update(ws.groupId, {collapsed: false}).catch(() => {});
+        else if (selectedTabId === ws.originTabId) await chrome.tabGroups.update(ws.groupId, {collapsed: true}).catch(() => {});
+    });
+}
+
+const LEFTOVER_KEY = 'ts_leftover_groups';
+const LEFTOVER_NOTICE = 'tampersloth-leftover-groups';
+
+/** Groups with our prefix that no live task owns, e.g. restored by Chrome after a restart. */
+async function leftoverGroups() {
+    await settled();
+    const owned = new Set(Object.values(workspaces).map(ws => ws.groupId));
+    return (await chrome.tabGroups.query({})).filter(group => isOurs(group.title) && !owned.has(group.id));
+}
+
+/** Offers, never forces, closing leftover TamperSloth groups: the user may have adopted one. */
+async function offerLeftoverCleanup() {
+    const groups = await leftoverGroups();
+    if (!groups.length) return;
+    const origins = await rememberedOrigins();
+    const tabs = await chrome.tabs.query({});
+    const count = tabs.filter(tab => groups.some(group => group.id === tab.groupId) && !isRememberedOrigin(origins, tab.url)).length;
+    await chrome.storage.session.set({[LEFTOVER_KEY]: groups.map(group => group.id)});
+    await chrome.notifications.create(LEFTOVER_NOTICE, {type: 'basic', iconUrl: 'icon.png', title: 'Leftover TamperSloth tabs',
+        message: `${groups.length === 1 ? `"${bareTitle(groups[0].title ?? '')}" is` : `${groups.length} TamperSloth groups are`} still open from an earlier session (${count} tab${count === 1 ? '' : 's'}).`,
+        buttons: [{title: 'Close them'}, {title: 'Keep them'}], requireInteraction: true});
+}
+
+/** Closes the offered groups' tabs, skipping any group the user renamed or a task has taken over since. */
+export async function closeLeftoverGroups() {
+    const offered = new Set((await chrome.storage.session.get(LEFTOVER_KEY))[LEFTOVER_KEY] as number[] | undefined);
+    const groups = (await leftoverGroups()).filter(group => offered.has(group.id)).map(group => group.id);
+    const origins = await rememberedOrigins();
+    const grouped = (await chrome.tabs.query({})).filter(tab => groups.includes(tab.groupId));
+    // A tab the user started a chat in may sit in its task's group: it leaves the group instead of closing.
+    const spared = grouped.filter(tab => isRememberedOrigin(origins, tab.url)).map(tab => tab.id!);
+    const tabIds = grouped.filter(tab => !spared.includes(tab.id!)).map(tab => tab.id!);
+    if (spared.length) await chrome.tabs.ungroup(spared as TabIds);
+    if (tabIds.length) await chrome.tabs.remove(tabIds);
+    await chrome.storage.session.remove(LEFTOVER_KEY);
+    await pruneOrigins();
+    return {closed: tabIds, spared};
+}
+
+export function installLeftoverGroupCheck() {
+    const check = () => { void offerLeftoverCleanup().catch(error => console.warn('[Tampersloth] Leftover group check failed:', error)); };
+    // Session storage, and so every task record, is gone after a browser restart or extension update.
+    chrome.runtime.onStartup?.addListener(check);
+    chrome.runtime.onInstalled?.addListener(check);
+    chrome.notifications.onButtonClicked?.addListener((id, button) => {
+        if (id !== LEFTOVER_NOTICE) return;
+        void chrome.notifications.clear(id);
+        if (button === 0) void closeLeftoverGroups();
+        else void chrome.storage.session.remove(LEFTOVER_KEY).then(pruneOrigins);
+    });
+}
+
+/**
+ * Grouped working tabs by URL, in local storage: unlike task records it survives a
+ * browser restart, when tab ids change and only the URL still identifies the tab.
+ */
+const ORIGINS_KEY = 'ts_task_origins';
+async function rememberedOrigins(): Promise<Record<string, string>> {
+    return ((await chrome.storage.local.get(ORIGINS_KEY))[ORIGINS_KEY] ?? {}) as Record<string, string>;
+}
+const isRememberedOrigin = (origins: Record<string, string>, url?: string) => Object.values(origins).some(origin => sameUrl(origin, url));
+async function rememberOrigin(conversationId: string, tabId: number) {
+    const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+    const url = tab?.url || tab?.pendingUrl;
+    if (url) await chrome.storage.local.set({[ORIGINS_KEY]: {...await rememberedOrigins(), [conversationId]: url}});
+}
+async function forgetOrigin(conversationId: string) {
+    const origins = await rememberedOrigins();
+    if (!(conversationId in origins)) return;
+    delete origins[conversationId];
+    await chrome.storage.local.set({[ORIGINS_KEY]: origins});
+}
+/** Drops entries whose task is gone; after a restart, that is all of them once leftovers are handled. */
+async function pruneOrigins() {
+    await settled();
+    const origins = await rememberedOrigins();
+    await chrome.storage.local.set({[ORIGINS_KEY]: Object.fromEntries(Object.entries(origins).filter(([id]) => workspaces[id]))});
+}
+// The working tab is usually navigated to the site the work belongs on; follow it.
+chrome.tabs.onUpdated?.addListener((tabId, change) => {
+    if (!change.url) return;
+    const entry = Object.entries(workspaces).find(([, ws]) => ws.tabs[tabId]?.origin);
+    if (entry) void rememberOrigin(entry[0], tabId);
 });

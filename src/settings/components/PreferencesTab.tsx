@@ -122,6 +122,15 @@ export function PreferencesTab() {
                         </div>
                     </SettingRow>
 
+                    <SettingRow stacked label="Tabs per task"
+                        description="Most tabs a task can have open at once, not counting the tab you started in. Sloth closes ones it no longer needs to open more.">
+                        <div className="flex items-center gap-3">
+                            <Slider id="maxTaskTabs" aria-label="Tabs per task" min={1} max={20} step={1} disabled={!ready}
+                                value={[settings.maxTaskTabs]} onValueChange={([value]) => update({maxTaskTabs: value})} />
+                            <span className="w-9 shrink-0 text-right font-mono text-[13px] tabular-nums">{settings.maxTaskTabs}</span>
+                        </div>
+                    </SettingRow>
+
                     <SettingRow stacked label="Token budget per run" htmlFor="tokenBudget"
                         description="Input and output across all steps, including cached input. Checked after each step, so the last one can run over. Continue stopped work with another message.">
                         <div className="flex flex-col gap-2">

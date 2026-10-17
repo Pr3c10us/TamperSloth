@@ -22,6 +22,11 @@ export async function browserCall(operation: BrowserOperation, input: unknown) {
     return response;
 }
 
+/** Marks the task group as working or waiting on the user; a chat without task tabs is unaffected. */
+export function setTaskStatus(conversationId: string, status: 'working' | 'waiting') {
+    return browserCall('taskStatus', {conversationId, status}).catch(() => {});
+}
+
 export function browserImageOutput(output: any) {
     const {screenshot, ...details} = output;
     return {type: 'content' as const, value: [

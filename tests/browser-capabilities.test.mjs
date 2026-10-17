@@ -22,7 +22,8 @@ function fixture(seed = {}) {
         storage: {local: area(saved), session: area(session)},
         action: {setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {}, setTitle: async () => {}},
         tabs: {onCreated: eventBus(), onRemoved: eventBus(), query: async options => [...tabs.values()].filter(tab =>
-            (options?.windowId === undefined || tab.windowId === options.windowId) && (!options?.active || tab.active)),
+            (options?.windowId === undefined || tab.windowId === options.windowId) && (!options?.active || tab.active)
+            && (options?.groupId === undefined || tab.groupId === options.groupId)),
             get: async id => { if (!tabs.has(id)) throw new Error('Tab gone'); return tabs.get(id); },
             create: async options => { const tab = {id: nextId++, windowId: 1, ...options}; tabs.set(tab.id, tab); chrome.tabs.onCreated.fire(tab); return tab; },
             update: async (id, options) => {
@@ -167,6 +168,7 @@ test('task tabs open together in one named group, stay tied to their notes, and 
     assert.deepEqual(plain(opened.output.opened.map(t => t.tabId)), [8, 9, 10]);
     assert.equal(opened.output.group.title, 'Portfolio Inspiration');
     const groupId = opened.output.group.groupId;
+    assert.equal(f.groups.get(groupId).title, '🦥 Portfolio Inspiration');
     assert.deepEqual([8, 9, 10].map(id => f.tabs.get(id).groupId), [groupId, groupId, groupId]);
     assert.ok([8, 9, 10].every(id => !f.tabs.get(id).active), 'Several pages load in the background');
     assert.equal((await invoke(tools, 'getCurrentTab')).output.tabId, 7);
@@ -212,10 +214,15 @@ test('a chat started on a new tab page groups that tab with the task and keeps i
     const opened = await invoke(tools, 'browserTabs', {action: 'create', urls: ['https://www.behance.net/', 'https://dribbble.com/'], group: 'Portfolio Inspiration'});
     const groupId = opened.output.group.groupId;
     assert.deepEqual([7, 8, 9].map(id => f.tabs.get(id).groupId), [groupId, groupId, groupId]);
+    await assert.rejects(f.run('tabs', {conversationId: 'test', originTabId: 7, action: 'close', tabIds: [7, 8]}), /working tab/);
+    assert.ok(f.tabs.has(7) && f.tabs.has(8), 'A refused close closes nothing');
+    f.tabs.set(30, {id: 30, windowId: 1, url: 'https://mine.example', groupId});
     const finished = (await invoke(tools, 'browserTabs', {action: 'finish'})).output;
     assert.deepEqual(plain(finished.kept), [7]);
     assert.deepEqual(plain(finished.closed).sort((a, b) => a - b), [8, 9]);
-    assert.equal(f.tabs.get(7).groupId, -1, 'The working tab leaves the group, so the group disappears');
+    assert.equal(f.tabs.get(7).groupId, -1, 'The working tab leaves the group');
+    assert.ok(f.tabs.has(30), 'A tab the user dragged into the group stays open');
+    assert.equal(f.tabs.get(30).groupId, -1, 'and leaves it, so the group is gone');
 });
 
 test('reference tabs are read in place while page actions stay on the working tab', async () => {
@@ -233,6 +240,73 @@ test('reference tabs are read in place while page actions stay on the working ta
     const selected = await invoke(tools, 'browserTabs', {action: 'select', tabId: reference});
     assert.equal(selected.output.workingTabId, 7);
     assert.equal((await invoke(tools, 'browserTabs', {action: 'select', tabId: 7})).output.workingTabId, undefined);
+});
+
+test('task groups carry the sloth prefix and green color, show waiting, and tidy away behind the working tab', async () => {
+    const f = fixture();
+    const tools = f.load('src/chat/lib/tools.ts').createAgentTools({conversationId: 'test'});
+    const opened = await invoke(tools, 'browserTabs', {action: 'create', urls: ['https://dribbble.com/', 'https://www.behance.net/'], group: '🦥 TS | Portfolio Inspiration'});
+    const groupId = opened.output.group.groupId;
+    assert.equal(opened.output.group.title, 'Portfolio Inspiration', 'A prefix the model typed is not doubled');
+    assert.equal(f.groups.get(groupId).title, '🦥 Portfolio Inspiration');
+    assert.equal(f.groups.get(groupId).color, 'green');
+
+    await f.run('taskStatus', {conversationId: 'test', status: 'waiting'});
+    assert.equal(f.groups.get(groupId).title, '🦥 ⏸ Portfolio Inspiration');
+    assert.equal((await f.run('tabs', {action: 'list', conversationId: 'test'})).task.group.status, 'waiting');
+    await f.run('taskStatus', {conversationId: 'test', status: 'working'});
+    assert.equal(f.groups.get(groupId).title, '🦥 Portfolio Inspiration');
+    await f.run('taskStatus', {conversationId: 'other', status: 'waiting'});
+
+    await invoke(tools, 'browserTabGroups', {action: 'update', groupId, title: 'Portfolio Ideas', color: 'red'});
+    assert.equal(f.groups.get(groupId).title, '🦥 Portfolio Ideas');
+    assert.equal(f.groups.get(groupId).color, 'green', 'The agent cannot restyle away the TamperSloth look');
+
+    await invoke(tools, 'browserTabs', {action: 'select', tabId: 8});
+    assert.equal(f.groups.get(groupId).collapsed, false);
+    await invoke(tools, 'browserTabs', {action: 'select', tabId: 7});
+    assert.equal(f.groups.get(groupId).collapsed, true, 'Back on the working tab the references fold away');
+});
+
+test('leftover sloth groups from an earlier session are offered for closing, never closed unasked', async () => {
+    const f = fixture();
+    const notices = [];
+    Object.assign(f.chrome.runtime, {onStartup: eventBus(), onInstalled: eventBus()});
+    f.chrome.notifications = {create: async (id, options) => { notices.push({id, ...options}); return id; }, clear: async () => {}, onButtonClicked: eventBus()};
+    f.groups.set(40, {id: 40, windowId: 1, title: '🦥 Laptop Comparison', color: 'green'});
+    f.groups.set(41, {id: 41, windowId: 1, title: 'Work', color: 'green'});
+    f.tabs.set(20, {id: 20, windowId: 1, url: 'https://a.example', groupId: 40});
+    f.tabs.set(21, {id: 21, windowId: 1, url: 'https://b.example', groupId: 41});
+    f.tabs.set(22, {id: 22, windowId: 1, url: 'https://example.com/editor', groupId: 40});
+    f.saved.ts_task_origins = {old: 'https://example.com/editor'};
+    f.load('src/background/taskTabs.ts').installLeftoverGroupCheck();
+    f.chrome.runtime.onStartup.fire();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(notices.length, 1);
+    assert.match(notices[0].message, /"Laptop Comparison" is still open from an earlier session \(1 tab\)/);
+    assert.ok(f.tabs.has(20), 'Nothing closes before the user chooses');
+    f.chrome.notifications.onButtonClicked.fire(notices[0].id, 0);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(f.tabs.has(20), false);
+    assert.ok(f.tabs.has(21), "The user's own green group is untouched");
+    assert.equal(f.tabs.get(22).groupId, -1, 'The tab a chat started in leaves the group instead of closing');
+    assert.deepEqual(plain(f.saved.ts_task_origins), {});
+});
+
+test('a task keeps at most the configured number of tabs open, not counting the working tab', async () => {
+    const f = fixture({ts_agent_settings: {maxTaskTabs: 2}});
+    f.tabs.get(7).url = 'chrome://newtab/';
+    const tools = f.load('src/chat/lib/tools.ts').createAgentTools({conversationId: 'test'});
+    const task = input => f.run('tabs', {conversationId: 'test', originTabId: 7, originBlank: true, ...input});
+    await assert.rejects(task({action: 'create', urls: ['https://a.example/', 'https://b.example/', 'https://c.example/'], group: 'Limits'}), /2 tabs open|0 of 2/);
+    assert.equal(f.tabs.size, 1, 'Over the limit nothing opens');
+    const opened = await invoke(tools, 'browserTabs', {action: 'create', urls: ['https://a.example/', 'https://b.example/'], group: 'Limits'});
+    assert.equal(opened.output.opened.length, 2);
+    assert.equal(f.tabs.get(7).groupId, opened.output.group.groupId, 'The working tab joins but does not count');
+    assert.equal((await task({action: 'create', url: 'https://a.example/#top'})).reused, true, 'Reusing a tab is always allowed');
+    await assert.rejects(task({action: 'create', url: 'https://c.example/'}), /Tab limit: this task has 2 of 2/);
+    await task({action: 'close', tabId: opened.output.opened[0].tabId});
+    assert.ok((await task({action: 'create', url: 'https://c.example/', background: true})).opened[0].tabId);
 });
 
 test('raw JS uses isolated world, structured values and per-frame errors', async () => {

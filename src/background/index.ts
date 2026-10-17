@@ -3,6 +3,7 @@ import {handleBrowserMessage, cdp} from './browserService';
 import {captureAnnotatedViewport, captureRegion, captureViewportScreenshot} from './screenshotCapture';
 import {installPanelLifecycle, cleanupBrowserGuidance} from './panelLifecycle';
 import {installContextMenu} from './contextMenu';
+import {installLeftoverGroupCheck} from './taskTabs';
 import {queuePanelRequest} from '../chat/lib/panelRequests';
 import {
     deleteScriptValue,
@@ -41,6 +42,7 @@ async function openPanel(tab: chrome.tabs.Tab) {
 
 chrome.action.onClicked.addListener(openPanel);
 installContextMenu(openPanel);
+installLeftoverGroupCheck();
 
 chrome.alarms.create('keepalive', {periodInMinutes: 0.5});
 chrome.alarms.onAlarm.addListener(() => { /* just waking up is enough */ });

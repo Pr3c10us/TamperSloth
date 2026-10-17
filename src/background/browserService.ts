@@ -2,7 +2,7 @@ import {browserSchemas, type BrowserOperation} from '../chat/lib/browserSchemas'
 import {CDPManager} from './cdp';
 import {VisualBrowser} from './visualBrowser';
 import {runPageGuidance} from './pageGuidance';
-import {assertTaskGroup, assertTaskTabs, describeTask, finishTask, noteTaskTab, openTaskTabs} from './taskTabs';
+import {assertNotWorkingTab, assertTaskGroup, assertTaskTabs, describeTask, finishTask, noteTaskTab, openTaskTabs, setTaskStatus, taskGroupStyle, tidyTaskGroup} from './taskTabs';
 
 export const cdp = new CDPManager();
 const visual = new VisualBrowser(cdp);
@@ -110,7 +110,11 @@ async function run(operation: BrowserOperation, input: unknown) {
             if (['close', 'move', 'pin', 'unpin', 'mute', 'unmute'].includes(a.action)) {
                 const ids: number[] = a.tabIds ?? [requireValue(tabId, 'tabId or tabIds')];
                 await assertTaskTabs(conversationId, ids, a.userRequested);
-                if (a.action === 'close') { await chrome.tabs.remove(ids); return {closed: ids}; }
+                if (a.action === 'close') {
+                    await assertNotWorkingTab(conversationId, ids, a.userRequested);
+                    await chrome.tabs.remove(ids);
+                    return {closed: ids};
+                }
                 if (a.action === 'move') {
                     const moved = await chrome.tabs.move(ids, {index: a.index ?? -1, ...(a.windowId !== undefined ? {windowId: a.windowId} : {})});
                     return {tabs: (Array.isArray(moved) ? moved : [moved]).map(tabSummary)};
@@ -122,6 +126,7 @@ async function run(operation: BrowserOperation, input: unknown) {
                 const tab = await chrome.tabs.update(requireValue(tabId, 'tabId'), {active: true});
                 if (!tab) throw new Error('Tab no longer exists');
                 await chrome.windows.update(tab.windowId, {focused: true});
+                if (conversationId) await tidyTaskGroup(conversationId, tab.id!);
                 return {tabId: tab.id, url: tab.url, title: tab.title};
             }
             const opener = requireValue(a.openerTabId ?? tabId, 'openerTabId');
@@ -141,10 +146,13 @@ async function run(operation: BrowserOperation, input: unknown) {
                 const [groups, tabs] = await Promise.all([chrome.tabGroups.query({}), chrome.tabs.query({})]);
                 return {groups: groups.map(g => ({...groupSummary(g), tabIds: tabs.filter(t => t.groupId === g.id).map(t => t.id)}))};
             }
-            const style = {...(a.title !== undefined ? {title: a.title} : {}), ...(a.color ? {color: a.color} : {}), ...(a.collapsed !== undefined ? {collapsed: a.collapsed} : {})};
+            let style: chrome.tabGroups.UpdateProperties = {...(a.title !== undefined ? {title: a.title} : {}), ...(a.color ? {color: a.color} : {}), ...(a.collapsed !== undefined ? {collapsed: a.collapsed} : {})};
             if (a.action === 'ungroup' || a.action === 'group') await assertTaskTabs(a.conversationId, requireValue(a.tabIds, 'tabIds'), a.userRequested);
             if (a.action === 'ungroup') { await chrome.tabs.ungroup(a.tabIds); return {ungrouped: a.tabIds}; }
-            if (a.groupId !== undefined) await assertTaskGroup(a.conversationId, a.groupId, a.userRequested);
+            if (a.groupId !== undefined) {
+                await assertTaskGroup(a.conversationId, a.groupId, a.userRequested);
+                style = await taskGroupStyle(a.conversationId, a.groupId, style);
+            }
             if (a.action === 'group') {
                 const groupId = await chrome.tabs.group({tabIds: a.tabIds, ...(a.groupId !== undefined ? {groupId: a.groupId} : {})});
                 const group = Object.keys(style).length ? await chrome.tabGroups.update(groupId, style) : await chrome.tabGroups.get(groupId);
@@ -154,6 +162,7 @@ async function run(operation: BrowserOperation, input: unknown) {
             if (a.action === 'update') return {group: groupSummary((await chrome.tabGroups.update(groupId, style))!)};
             return {group: groupSummary((await chrome.tabGroups.move(groupId, {index: a.index ?? -1, ...(a.windowId !== undefined ? {windowId: a.windowId} : {})}))!)};
         }
+        case 'taskStatus': return setTaskStatus(a.conversationId, a.status);
         case 'evaluate': {
             const target = {tabId: requireValue(tabId, 'tabId'), ...(a.frameIds ? {frameIds: a.frameIds} : {})};
             // USER_SCRIPT is a separate isolated world with configurable CSP; extension ISOLATED forbids raw eval.

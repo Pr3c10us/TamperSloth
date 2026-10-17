@@ -87,6 +87,8 @@ export const browserSchemas = {
         title: z.string().max(100).optional(), color: z.enum(['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange']).optional(),
         collapsed: z.boolean().optional(), index: z.number().int().min(-1).optional().describe('move: tab index the group starts at; -1 is the end.'),
         windowId: z.number().int().nonnegative().optional().describe('move: destination window.')}),
+    // Run lifecycle only; not a model tool.
+    taskStatus: z.object({conversationId: z.string().min(1).max(200), status: z.enum(['working', 'waiting'])}),
     evaluate: z.object({tabId, code: z.string().min(1).max(100000), world: z.enum(['ISOLATED', 'MAIN']).default('ISOLATED'),
         frameIds: z.array(z.number().int().nonnegative()).min(1).max(50).optional(), timeoutMs: z.number().int().min(100).max(30000).default(10000)}),
     store: z.object({action: z.enum(['get', 'set', 'delete', 'list']), namespace: z.string().min(1).max(200), key: z.string().min(1).max(200).optional(), value: z.json().optional()}),
