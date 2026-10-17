@@ -212,11 +212,11 @@ test('a real SDK stream normalizes reasoning, inline tags and streamed reasons t
 });
 
 test('provider options request readable reasoning from every provider', () => {
-    assert.deepEqual(plain(agentProviderOptions('anthropic', 'balanced').anthropic.thinking), {type: 'adaptive', display: 'summarized'});
-    assert.equal(agentProviderOptions('openai', 'balanced').openai.reasoningSummary, 'auto');
-    assert.equal(agentProviderOptions('google', 'balanced').google.thinkingConfig.includeThoughts, true);
-    assert.equal(agentProviderOptions('vertex', 'balanced').vertex.thinkingConfig.includeThoughts, true);
-    assert.equal(agentProviderOptions('deepseek', 'thorough').deepseek.thinking.type, 'enabled');
+    assert.deepEqual(plain(agentProviderOptions('anthropic', 'high').anthropic.thinking), {type: 'adaptive', display: 'summarized'});
+    assert.equal(agentProviderOptions('openai', 'high').openai.reasoningSummary, 'auto');
+    assert.equal(agentProviderOptions('google', 'high').google.thinkingConfig.includeThoughts, true);
+    assert.equal(agentProviderOptions('vertex', 'high').vertex.thinkingConfig.includeThoughts, true);
+    assert.equal(agentProviderOptions('deepseek', 'max').deepseek.thinking.type, 'enabled');
 });
 
 test('only screenshot tools expose an image, and errors surface their message', () => {

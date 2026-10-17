@@ -1,5 +1,6 @@
 import type { ProviderId } from "./provider.ts";
 import type { BackgroundScript } from "./types.ts";
+import type { ThinkingLevel } from "./thinkingLevel.ts";
 import {readChat, readChatSummaries, writeChat, removeChat, writeAttachments, readAttachment, type ConversationSummary, type StoredAttachmentData} from './conversationDB';
 export type {ConversationSummary} from './conversationDB';
 
@@ -48,6 +49,8 @@ export interface StoredConversation {
     id: string;
     title: string;
     messages: unknown[];
+    /** Absent on chats saved before thinking levels; they follow the default. */
+    thinkingLevel?: ThinkingLevel;
     createdAt: number;
     updatedAt: number;
 }

@@ -1,9 +1,12 @@
-import {useEffect, useMemo, useRef, useState, type KeyboardEvent} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent} from "react";
 import {useNavigate} from "react-router-dom";
-import {Check, ChevronDown, ChevronUp, KeyRound, Search, Settings2, X} from "lucide-react";
+import {Brain, Check, ChevronDown, ChevronRight, ChevronUp, KeyRound, Search, Settings2, X} from "lucide-react";
 import {MODELPROVIDERS, formatModelName, isKnownModel, type ProviderConfig, type ProviderId} from "../lib/provider";
 import {loadSelectedModel, saveSelectedModel} from "../lib/storage";
 import {ProviderLogo} from "./ProviderLogo";
+import {ThinkingLevelPage, useDefaultThinkingLevel} from "./ThinkingSelector";
+import {THINKING_LEVELS, type ThinkingLevel} from "../lib/thinkingLevel";
+import {resolveThinkingLevel, thinkingLevelsFor} from "../lib/providerCompatibility";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Popover, PopoverContent, PopoverTrigger,} from "@/components/ui/popover";
@@ -21,20 +24,43 @@ export interface SelectedModelEntry {
 interface ModelSelectorProps {
     selected: SelectedModelEntry | null;
     onChange: (entry: SelectedModelEntry) => void;
+    /** This chat's thinking level; `undefined` follows the default in Preferences. */
+    thinkingLevel: ThinkingLevel | undefined;
+    onThinkingLevelChange: (level: ThinkingLevel) => void;
 }
 
 function toEntry(p: ProviderConfig, modelId: string): SelectedModelEntry {
     return {providerId: p.id, modelId, providerName: p.name, providerIcon: p.icon};
 }
 
-export function ModelSelector({selected, onChange}: ModelSelectorProps) {
+export function ModelSelector({selected, onChange, thinkingLevel, onThinkingLevelChange}: ModelSelectorProps) {
     const navigate = useNavigate();
     const [open, setOpen] = useState(false);
+    // The panel is too narrow for a flyout, so thinking levels replace the model list instead.
+    const [page, setPage] = useState<"models" | "thinking">("models");
+    const defaultLevel = useDefaultThinkingLevel();
+    // A level the model doesn't offer runs as the nearest one it does; the chat keeps its choice for other models.
+    const levels = selected ? thinkingLevelsFor(selected.providerId, selected.modelId) : [];
+    const level = selected ? resolveThinkingLevel(thinkingLevel ?? defaultLevel, selected.providerId, selected.modelId) : undefined;
+    const levelLabel = level && THINKING_LEVELS.find((l) => l.value === level)!.label;
     const [query, setQuery] = useState("");
     const [activeId, setActiveId] = useState<ProviderId>(MODELPROVIDERS[0].id);
     const [highlight, setHighlight] = useState(0);
     const [apiKeys, setApiKeys] = useState<Partial<Record<ProviderId, string>>>({});
     const listRef = useRef<HTMLDivElement>(null);
+    // The popover takes each page's height, so switching pages morphs its size.
+    const [pageHeight, setPageHeight] = useState<number>();
+    const pageObserver = useRef<ResizeObserver | null>(null);
+    // A callback ref: the popover's content mounts in a portal after this component's effects run.
+    const pageRef = useCallback((el: HTMLDivElement | null) => {
+        pageObserver.current?.disconnect();
+        pageObserver.current = null;
+        if (!el) return;
+        const measure = () => setPageHeight(el.offsetHeight);
+        measure();
+        pageObserver.current = new ResizeObserver(measure);
+        pageObserver.current.observe(el);
+    }, []);
 
     useEffect(() => {
         getApiKeys().then((m) => setApiKeys(m as Partial<Record<ProviderId, string>>));
@@ -79,12 +105,17 @@ export function ModelSelector({selected, onChange}: ModelSelectorProps) {
             ?.scrollIntoView({block: "nearest"});
     }, [highlight]);
 
+    const showThinking = page === "thinking" && !!level;
+
     const handleOpenChange = (next: boolean) => {
         if (next) {
             const firstConnected = MODELPROVIDERS.find((p) => !!apiKeys[p.id]);
             setActiveId(selected?.providerId ?? firstConnected?.id ?? MODELPROVIDERS[0].id);
+            setPage("models");
         } else {
             setQuery("");
+            // Reopening starts from the model list, without morphing from the last page's height.
+            setPageHeight(undefined);
         }
         setOpen(next);
     };
@@ -122,10 +153,12 @@ export function ModelSelector({selected, onChange}: ModelSelectorProps) {
                     variant="ghost"
                     size="xs"
                     aria-expanded={open}
-                    className="max-w-[200px] gap-1.5 overflow-hidden px-1.5 font-sans text-[12.5px] font-normal text-muted-foreground hover:bg-transparent hover:text-foreground aria-expanded:text-foreground"
+                    aria-label={levelLabel ? `${label}, ${levelLabel} thinking` : label}
+                    className="max-w-[240px] gap-1.5 overflow-hidden px-1.5 font-sans text-[12.5px] font-normal text-muted-foreground hover:bg-transparent hover:text-foreground aria-expanded:text-foreground"
                 >
                     {selected && <ProviderLogo provider={selected.providerId} className="size-3.5"/>}
                     <span className="truncate">{label}</span>
+                    {levelLabel && <span className="shrink-0 text-muted-foreground/70">{levelLabel}</span>}
                     {open ? (
                         <ChevronDown className="size-3 text-muted-foreground" strokeWidth={1.5}/>
                     ) : (
@@ -137,8 +170,22 @@ export function ModelSelector({selected, onChange}: ModelSelectorProps) {
                 side="top"
                 align="end"
                 sideOffset={6}
-                className="flex h-[320px] w-[20rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden p-0"
+                style={{height: pageHeight}}
+                className="w-[20rem] max-w-[calc(100vw-1.5rem)] overflow-hidden p-0 transition-[height] duration-200 ease-[cubic-bezier(.2,.8,.2,1)] motion-reduce:transition-none"
             >
+                <div ref={pageRef} className={cn("flex flex-col", !showThinking && "h-[320px]")}>
+                {showThinking ? (
+                    <ThinkingLevelPage
+                        level={level}
+                        fallback={resolveThinkingLevel(defaultLevel, selected!.providerId, selected!.modelId)!}
+                        levels={levels}
+                        onBack={() => setPage("models")}
+                        onSelect={(next) => {
+                            onThinkingLevelChange(next);
+                            handleOpenChange(false);
+                        }}
+                    />
+                ) : (<>
                 <div className="flex items-center gap-2 border-b border-border px-2.5 py-1.5">
                     <Search className="size-3 text-muted-foreground" strokeWidth={1.5}/>
                     <Input
@@ -284,6 +331,17 @@ export function ModelSelector({selected, onChange}: ModelSelectorProps) {
                     </div>
                 </div>
 
+                {level && <button
+                    type="button"
+                    onClick={() => setPage("thinking")}
+                    className="flex items-center gap-2 border-t border-border px-2.5 py-2 text-left text-[12.5px] text-foreground outline-none hover:bg-muted/60 focus-visible:bg-muted/60"
+                >
+                    <Brain className="size-3.5 text-muted-foreground" strokeWidth={1.5}/>
+                    Thinking
+                    <span className="ml-auto text-muted-foreground">{levelLabel}</span>
+                    <ChevronRight className="size-3.5 text-muted-foreground" strokeWidth={1.75}/>
+                </button>}
+
                 <button
                     type="button"
                     onClick={openConnections}
@@ -292,6 +350,8 @@ export function ModelSelector({selected, onChange}: ModelSelectorProps) {
                     <Settings2 className="size-2.5" strokeWidth={1.5}/>
                     BYOK · Manage keys in Connections
                 </button>
+                </>)}
+                </div>
             </PopoverContent>
         </Popover>
     );

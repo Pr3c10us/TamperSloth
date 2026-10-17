@@ -5,6 +5,7 @@ import {Slider} from "@/components/ui/slider";
 import {Switch} from "@/components/ui/switch";
 import {cn} from "@/lib/utils";
 import {DEFAULT_AGENT_SETTINGS, loadAgentSettings, saveAgentSettings, type AgentSettings} from "@/src/chat/lib/agentSettings";
+import {THINKING_LEVELS} from "@/src/chat/lib/thinkingLevel";
 import {saveThemePreference, useThemePreference, type ThemePreference} from "../lib/theme";
 import {SettingRow, SettingsGroup, SettingsSection, TabIntro} from "./Section";
 
@@ -14,11 +15,6 @@ const BUDGET_PRESETS = [
     {value: 500_000, label: "500k"},
     {value: 1_000_000, label: "1M"},
     {value: 0, label: "No limit"},
-];
-
-const REASONING_OPTIONS: {value: AgentSettings["reasoning"]; label: string; hint: string}[] = [
-    {value: "balanced", label: "Balanced", hint: "Lower effort, faster replies."},
-    {value: "thorough", label: "Thorough", hint: "Maximum effort on every step."},
 ];
 
 const APPROVAL_OPTIONS: {value: AgentSettings["actionApproval"]; label: string; hint: string}[] = [
@@ -36,7 +32,7 @@ const THEME_OPTIONS: {value: ThemePreference; label: string; icon: LucideIcon}[]
 
 type SaveState = "idle" | "saved" | "error";
 
-/** Pill-style single choice. Used for presets and the reasoning mode. */
+/** Pill-style single choice. Used for presets and the thinking level. */
 function Choice({selected, disabled, onSelect, children}: {
     selected: boolean; disabled?: boolean; onSelect: () => void; children: ReactNode;
 }) {
@@ -176,12 +172,12 @@ export function PreferencesTab() {
 
             <SettingsSection title="Reasoning">
                 <SettingsGroup>
-                    <SettingRow stacked label="DeepSeek reasoning"
-                        description={`${REASONING_OPTIONS.find(o => o.value === settings.reasoning)!.hint} Other providers keep their own settings.`}>
-                        <div role="radiogroup" aria-label="DeepSeek reasoning" className="grid grid-cols-2 gap-0.5 rounded-lg bg-muted p-[3px]">
-                            {REASONING_OPTIONS.map(option => (
-                                <Choice key={option.value} disabled={!ready} selected={settings.reasoning === option.value}
-                                    onSelect={() => update({reasoning: option.value})}>
+                    <SettingRow stacked label="Default thinking level"
+                        description={`${THINKING_LEVELS.find(o => o.value === settings.thinkingLevel)!.hint} New chats start here; change it for one chat beside the model picker.`}>
+                        <div role="radiogroup" aria-label="Default thinking level" className="grid grid-cols-4 gap-0.5 rounded-lg bg-muted p-[3px]">
+                            {THINKING_LEVELS.map(option => (
+                                <Choice key={option.value} disabled={!ready} selected={settings.thinkingLevel === option.value}
+                                    onSelect={() => update({thinkingLevel: option.value})}>
                                     {option.label}
                                 </Choice>
                             ))}

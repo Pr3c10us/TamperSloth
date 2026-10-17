@@ -27,6 +27,8 @@ function Chat() {
         title,
         isLoading,
         error,
+        thinkingLevel,
+        setThinkingLevel,
         conversationId,
         sendMessage,
         cancel,
@@ -136,6 +138,8 @@ function Chat() {
                 removeFile={removeFile}
                 selectedModel={selectedModel}
                 setSelectedModel={setSelectedModel}
+                thinkingLevel={thinkingLevel}
+                setThinkingLevel={setThinkingLevel}
                 isLoading={isLoading}
                 onSend={handleSend}
                 onCancel={cancel}

@@ -31,6 +31,7 @@ import { DictationWave } from "./DictationWave";
 import type { Quote } from "../lib/panelRequests";
 import { QuoteChip } from "./QuoteChip";
 import { ModelSelector, type SelectedModelEntry } from "./ModelSelector";
+import type { ThinkingLevel } from "../lib/thinkingLevel";
 import { PickedElementChip, type PickedElement } from "./PickedElementChip";
 import {
     AttachmentChip,
@@ -57,6 +58,8 @@ interface ComposerProps {
     removeFile: (index: number) => void;
     selectedModel: SelectedModelEntry | null;
     setSelectedModel: (m: SelectedModelEntry) => void;
+    thinkingLevel: ThinkingLevel | undefined;
+    setThinkingLevel: (level: ThinkingLevel) => void;
     isLoading: boolean;
     onSend: () => void;
     onCancel: () => void;
@@ -97,6 +100,8 @@ export function Composer({
     removeFile,
     selectedModel,
     setSelectedModel,
+    thinkingLevel,
+    setThinkingLevel,
     isLoading,
     onSend,
     onCancel,
@@ -636,6 +641,8 @@ export function Composer({
                         <ModelSelector
                             selected={selectedModel}
                             onChange={setSelectedModel}
+                            thinkingLevel={thinkingLevel}
+                            onThinkingLevelChange={setThinkingLevel}
                         />
                         {isLoading && (
                             <LoaderCircle

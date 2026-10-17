@@ -16,6 +16,7 @@ import {createToolRuntime} from "../lib/toolRuntime";
 import {clip, createStepMessagePreparer, isFailed, serialize, summarizeSelectedElement, sumUsage, usageRecord, type RunMetrics, type UsageRecord} from "../lib/efficiency";
 import {createGuidanceGuard, GUIDANCE_RESUME_NOTE} from "../lib/guidanceGuard";
 import {loadAgentSettings, runStopReason} from "../lib/agentSettings";
+import {isThinkingLevel, type ThinkingLevel} from "../lib/thinkingLevel";
 import {agentProviderOptions} from "../lib/providerCompatibility";
 import {createReasoningNormalizer, type NormalizedEvent, type ThinkingContent} from "../lib/reasoning";
 import {partialReason} from "../lib/toolReason";
@@ -141,6 +142,8 @@ export interface ChatSession {
     /** Model-written title; `null` until the first request has been named. */
     title: string | null;
     messages: ChatMessage[];
+    /** Chosen for this chat; `undefined` follows the default in settings. */
+    thinkingLevel?: ThinkingLevel;
     isLoading: boolean;
     error: string | null;
 }
@@ -162,7 +165,7 @@ const save = createConversationSaver(async (conversation) => {
     await saveConversation(conversation);
     const session = sessions.get(conversation.id);
     if (session && session.messages === conversation.messages && (session.title ?? "") === conversation.title
-        && !pendingSaves.has(conversation.id)) {
+        && session.thinkingLevel === conversation.thinkingLevel && !pendingSaves.has(conversation.id)) {
         dirty.delete(conversation.id);
         evictIfSettled(conversation.id);
     }
@@ -204,6 +207,7 @@ function scheduleSave(session: ChatSession) {
         id: session.id,
         title: session.title ?? "",
         messages: session.messages,
+        thinkingLevel: session.thinkingLevel,
         createdAt: session.createdAt,
         updatedAt: Date.now(),
     });
@@ -219,7 +223,8 @@ function updateSession(id: string, updater: (session: ChatSession) => ChatSessio
     if (!previous) return;
     const next = updater(previous);
     sessions.set(id, next);
-    if (next.messages !== previous.messages || next.title !== previous.title) scheduleSave(next);
+    if (next.messages !== previous.messages || next.title !== previous.title
+        || next.thinkingLevel !== previous.thinkingLevel) scheduleSave(next);
     notify();
 }
 
@@ -279,6 +284,7 @@ export async function openConversation(id: string) {
             // Chats closed before their title arrived are saved untitled.
             title: conversation.title || (firstRequest && requestTitle(firstRequest.content)) || null,
             messages: migrated,
+            thinkingLevel: isThinkingLevel(conversation.thinkingLevel) ? conversation.thinkingLevel : undefined,
             isLoading: false,
             error: null,
         });
@@ -295,6 +301,11 @@ export function discardConversation(id: string) {
     sessions.delete(id);
     if (id === activeId) activeId = blankSession().id;
     notify();
+}
+
+/** Sets the thinking level the active chat's next runs use. */
+function setThinkingLevel(level: ThinkingLevel) {
+    patchSession(activeId, {thinkingLevel: level});
 }
 
 function subscribe(fn: () => void) {
@@ -495,7 +506,8 @@ async function sendMessage(
             }
         } catch { /* Browsing tools report actionable permission/tab errors. */ }
 
-        const providerOptions = agentProviderOptions(providerId, settings.reasoning);
+        const providerOptions = agentProviderOptions(providerId,
+            sessions.get(conversationId)?.thinkingLevel ?? settings.thinkingLevel, resolvedModelId);
 
         // Instructions accept a system message with providerOptions, so
         // Anthropic can cache tools and the trusted system prompt together.
@@ -754,6 +766,8 @@ export function useAgent() {
         title: session.title,
         isLoading: session.isLoading,
         error: session.error,
+        thinkingLevel: session.thinkingLevel,
+        setThinkingLevel,
         conversationId: session.id,
         sendMessage: send,
         cancel,

@@ -8,7 +8,7 @@ const load = createLoader();
 // Gemini API and Vertex AI share one wire protocol.
 const isGemini = provider => provider === 'google' || provider === 'vertex';
 const {getModel, MODELPROVIDERS} = load('src/chat/lib/provider.ts');
-const {agentProviderOptions} = load('src/chat/lib/providerCompatibility.ts');
+const {agentProviderOptions, thinkingLevelsFor, resolveThinkingLevel} = load('src/chat/lib/providerCompatibility.ts');
 const {createStepMessagePreparer} = load('src/chat/lib/efficiency.ts');
 const {createToolRuntime} = load('src/chat/lib/toolRuntime.ts');
 
@@ -58,7 +58,7 @@ test('vertex: express-mode key goes in x-goog-api-key and thoughts are requested
             {headers: {'content-type': 'application/json'}});
     };
     const result = await generateText({model: getModel('vertex', 'vertex-key', 'gemini-3.8-flash', transport),
-        prompt: 'Hello', providerOptions: agentProviderOptions('vertex', 'balanced')});
+        prompt: 'Hello', providerOptions: agentProviderOptions('vertex', 'high')});
     assert.equal(result.text, 'Done');
     assert.ok(seen.url.startsWith('https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.8-flash'), seen.url);
     assert.equal(seen.headers.get('x-goog-api-key'), 'vertex-key');
@@ -199,7 +199,7 @@ for (const config of MODELPROVIDERS.filter(p => p.id !== 'anthropic')) {
             const result = await generateText({model: getModel(provider, 'test-key', modelId, transport, {vertexProject: 'test-project'}),
                 messages: [{role: 'user', content: 'Earlier request'}, {role: 'assistant', content: 'Earlier answer'},
                     {role: 'user', content: 'Inspect the approved draft'}],
-                tools: runtime.tools, providerOptions: agentProviderOptions(provider, 'balanced'),
+                tools: runtime.tools, providerOptions: agentProviderOptions(provider, 'high'),
                 prepareStep: ({initialMessages, responseMessages}) => {
                 const messages = [...initialMessages, ...responseMessages];
                     const activeTools = runtime.activeTools();
@@ -288,7 +288,7 @@ for (const provider of ['openai', 'google', 'vertex', 'deepseek', 'kimi', 'grok'
             return streamingResponse(provider, modelId, step, calls);
         };
         const result = streamText({model: getModel(provider, 'test-key', modelId, transport), prompt: 'Inspect the page',
-            tools: runtime.tools, providerOptions: agentProviderOptions(provider, 'balanced'),
+            tools: runtime.tools, providerOptions: agentProviderOptions(provider, 'high'),
             prepareStep: ({initialMessages, responseMessages}) => {
                 const messages = [...initialMessages, ...responseMessages];
                 const activeTools = runtime.activeTools();
@@ -310,7 +310,7 @@ test('kimi: K3 goes to the Moonshot chat endpoint with the requested reasoning e
         {headers: {'content-type': 'application/json'}});
     };
     const result = await generateText({model: getModel('kimi', 'kimi-key', 'kimi-k3', transport), prompt: 'Hello',
-        providerOptions: agentProviderOptions('kimi', 'thorough')});
+        providerOptions: agentProviderOptions('kimi', 'max')});
     assert.equal(result.text, 'Done');
     assert.equal(seen.url, 'https://api.moonshot.ai/v1/chat/completions');
     assert.equal(seen.headers.get('authorization'), 'Bearer kimi-key');
@@ -329,11 +329,63 @@ test('grok: 4.7 goes to the xAI responses endpoint and replays encrypted reasoni
         {headers: {'content-type': 'application/json'}});
     };
     const result = await generateText({model: getModel('grok', 'xai-key', 'grok-4.7', transport), prompt: 'Hello',
-        providerOptions: agentProviderOptions('grok', 'balanced')});
+        providerOptions: agentProviderOptions('grok', 'high')});
     assert.equal(result.text, 'Done');
     assert.equal(seen.url, 'https://api.x.ai/v1/responses');
     assert.equal(seen.headers.get('authorization'), 'Bearer xai-key');
     assert.equal(seen.body.model, 'grok-4.7');
     assert.equal(seen.body.reasoning.effort, 'high');
     assert.ok(seen.body.include.includes('reasoning.encrypted_content'));
+});
+
+test('thinking levels reach every provider as its own effort setting', async () => {
+    const expected = {
+        anthropic: {low: 'low', medium: 'medium', high: 'high', max: 'max'},
+        openai: {low: 'low', medium: 'medium', high: 'high', max: 'max'},
+        grok: {low: 'low', medium: 'medium', high: 'high', max: 'xhigh'},
+        deepseek: {low: 'low', medium: 'high', high: 'high', max: 'max'},
+        kimi: {low: 'low', medium: 'high', high: 'high', max: 'max'},
+        google: {low: 'low', medium: 'medium', high: 'high', max: 'high'},
+        vertex: {low: 'low', medium: 'medium', high: 'high', max: 'high'},
+    };
+    const effortOf = (provider, body) => provider === 'anthropic' ? body.output_config?.effort
+        : provider === 'openai' || provider === 'grok' ? body.reasoning?.effort
+            : isGemini(provider) ? body.generationConfig.thinkingConfig.thinkingLevel
+                : body.reasoning_effort;
+    for (const [provider, levels] of Object.entries(expected)) {
+        const modelId = MODELPROVIDERS.find(p => p.id === provider).defaultModel;
+        for (const [level, effort] of Object.entries(levels)) {
+            let body;
+            const transport = async (_url, init) => {
+                body = JSON.parse(init.body);
+                const reply = provider === 'anthropic'
+                    ? {id: 'msg-1', type: 'message', role: 'assistant', model: modelId, stop_reason: 'end_turn',
+                        content: [{type: 'text', text: 'Done'}], usage: {input_tokens: 100, output_tokens: 20}}
+                    : response(provider, modelId, 0, []);
+                return new Response(JSON.stringify(reply), {headers: {'content-type': 'application/json'}});
+            };
+            const result = await generateText({model: getModel(provider, 'test-key', modelId, transport), prompt: 'Hello',
+                providerOptions: agentProviderOptions(provider, level)});
+            assert.equal(result.text, 'Done');
+            assert.equal(effortOf(provider, body), effort, `${provider} ${level}`);
+        }
+    }
+});
+
+test('the picker offers only the levels each provider documents', () => {
+    const levels = (provider, model) => [...thinkingLevelsFor(provider, model)];
+    assert.deepEqual(levels('anthropic'), ['low', 'medium', 'high', 'max']);
+    assert.deepEqual(levels('openai'), ['low', 'medium', 'high', 'max']);
+    assert.deepEqual(levels('grok'), ['low', 'medium', 'high', 'max']);
+    assert.deepEqual(levels('google'), ['low', 'medium', 'high']);
+    assert.deepEqual(levels('vertex'), ['low', 'medium', 'high']);
+    assert.deepEqual(levels('deepseek'), ['low', 'high', 'max']);
+    assert.deepEqual(levels('kimi', 'kimi-k3'), ['low', 'high', 'max']);
+    assert.deepEqual(levels('kimi', 'kimi-k2.6'), []);
+    // An unoffered choice runs as the nearest offered level, deeper on a tie.
+    assert.equal(resolveThinkingLevel('max', 'google'), 'high');
+    assert.equal(resolveThinkingLevel('medium', 'deepseek'), 'high');
+    assert.equal(resolveThinkingLevel('low', 'deepseek'), 'low');
+    assert.equal(resolveThinkingLevel('high', 'kimi', 'kimi-k2.6'), undefined);
+    assert.equal(agentProviderOptions('kimi', 'max', 'kimi-k2.6').moonshotai.reasoningEffort, undefined);
 });

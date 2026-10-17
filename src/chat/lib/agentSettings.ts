@@ -1,10 +1,12 @@
 import type {UsageRecord} from "./efficiency";
 import type {ApprovalMode} from "./actionScreen";
+import {DEFAULT_THINKING_LEVEL, isThinkingLevel, type ThinkingLevel} from "./thinkingLevel";
 
 export interface AgentSettings {
     maxSteps: number;
     tokenBudget: number;
-    reasoning: "balanced" | "thorough";
+    /** Thinking level a new chat starts with; each chat can change its own. */
+    thinkingLevel: ThinkingLevel;
     /** Show the run's total input/output tokens under each reply. */
     showRunTokens: boolean;
     /** Show estimated tokens on each tool call. */
@@ -18,7 +20,7 @@ export interface AgentSettings {
 }
 
 const KEY = "ts_agent_settings";
-export const DEFAULT_AGENT_SETTINGS: AgentSettings = {maxSteps: 200, tokenBudget: 1000000, reasoning: "balanced",
+export const DEFAULT_AGENT_SETTINGS: AgentSettings = {maxSteps: 200, tokenBudget: 1000000, thinkingLevel: DEFAULT_THINKING_LEVEL,
     showRunTokens: false, showToolTokens: false, actionApproval: "auto"};
 
 export function runStopReason(settings: AgentSettings, steps: UsageRecord[], failure = ""): string {
@@ -29,11 +31,15 @@ export function runStopReason(settings: AgentSettings, steps: UsageRecord[], fai
         ? `Reached the ${settings.tokenBudget.toLocaleString()}-token run budget.` : "";
 }
 
-export function normalizeAgentSettings(value: Partial<AgentSettings> = {}): AgentSettings {
+/** Settings saved before thinking levels had a DeepSeek-only `reasoning` mode instead. */
+type SavedAgentSettings = Partial<AgentSettings> & {reasoning?: "balanced" | "thorough"};
+
+export function normalizeAgentSettings(value: SavedAgentSettings = {}): AgentSettings {
     return {
         maxSteps: Number.isFinite(value.maxSteps) ? Math.max(5, Math.min(200, Math.round(value.maxSteps!))) : 200,
         tokenBudget: Number.isFinite(value.tokenBudget) ? Math.max(0, Math.round(value.tokenBudget!)) : 1000000,
-        reasoning: value.reasoning === "thorough" ? "thorough" : "balanced",
+        thinkingLevel: isThinkingLevel(value.thinkingLevel) ? value.thinkingLevel
+            : value.reasoning === "thorough" ? "max" : DEFAULT_THINKING_LEVEL,
         showRunTokens: value.showRunTokens === true,
         showToolTokens: value.showToolTokens === true,
         actionApproval: value.actionApproval === "ask" ? "ask" : "auto",
