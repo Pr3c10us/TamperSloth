@@ -29,3 +29,7 @@ extension
 /claude-launce-video/
 /claude-sonnet-launce-video/
 /sol-launce-video/
+
+# Cloudflare
+.wrangler
+/store-assets/

@@ -120,14 +120,14 @@ export function chatOps(set: (f: (p: { msgs: DemoMsg[] }) => { msgs: DemoMsg[] }
   };
 }
 
-export const Frame = forwardRef<FrameHandle, { step: number; playing: boolean; narrow: boolean }>(function Frame({ step, playing, narrow }, ref) {
+export const Frame = forwardRef<FrameHandle, { step: number; playing: boolean; narrow: boolean; size?: { w: number; h: number } }>(function Frame({ step, playing, narrow, size }, ref) {
   const [s, setS] = useState<State>(initial);
   const frame = useRef<HTMLDivElement>(null);
   const ink = useRef<SVGSVGElement>(null);
   const sloth = useRef<HTMLDivElement>(null);
   const user = useRef<HTMLDivElement>(null);
   const fx = useRef<HTMLDivElement>(null);
-  const design = narrow ? NARROW : WIDE;
+  const design = size ?? (narrow ? NARROW : WIDE);
 
   useImperativeHandle(ref, () => ({ el: frame.current }), []);
 

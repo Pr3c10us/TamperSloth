@@ -3,6 +3,7 @@ import { GuideCursor, Icon, TypedTip } from "./brand";
 import { SidePanel, type DemoMsg } from "./panel/Panel";
 import { chatOps } from "./stage/Frame";
 import { LockPill } from "./stage/LockPill";
+import { scrollToTarget } from "../lib/motion";
 import { Aborted, drawStrokes, moveCursor, prefersReducedMotion, setCursor, typeText, wait } from "../lib/pen";
 import { sketchArrow, sketchEllipse, sketchRect, type Box } from "../lib/sketch";
 import "../styles/tryit.css";
@@ -186,11 +187,26 @@ export function TryIt() {
       ops.step({ kind: "tool", tool: "getPageStructure", reason: "Find the newsletter settings", state: "active", startedAt: Date.now() });
       await wait(850, signal);
       ops.finishStep({ tokens: [24, 380] });
+      // On phones the panel sits below the app, so bring the app back into view before drawing on it.
+      const stacked = window.matchMedia("(max-width: 860px)").matches;
+      if (stacked) {
+        const app = stage.current!.querySelector<HTMLElement>(".app")!;
+        scrollToTarget(Math.max(0, app.getBoundingClientRect().top + window.scrollY - 88));
+        await wait(prefersReducedMotion() ? 0 : 900, signal);
+      }
       const t = box("toggle");
       setCursor(cur, { x: t.x + t.w + 220, y: t.y - 40 });
 
       if (!live.current.digest) {
-        await step("toggle", "Guide you to turn on Weekly digest", "Switch on Weekly digest", (b) => sketchEllipse(b, 21, 12), (b) => ({ x: b.x - 26, y: b.y + b.h / 2 + 2 }), { left: true });
+        // On phones the toggle hugs the left edge, so the cursor and its tip sit to its right.
+        await step(
+          "toggle",
+          "Guide you to turn on Weekly digest",
+          "Switch on Weekly digest",
+          (b) => sketchEllipse(b, 21, 12),
+          (b) => (stacked ? { x: b.x + b.w + 14, y: b.y + b.h / 2 + 2 } : { x: b.x - 26, y: b.y + b.h / 2 + 2 }),
+          { left: !stacked },
+        );
       }
       if (live.current.day !== "Fri") {
         await step("fri", "Guide you to pick Friday", "Choose Fri", (b) => sketchArrow({ x: b.x - 150, y: b.y + b.h + 64 }, { x: b.x + b.w * 0.3, y: b.y + b.h + 8 }, 8, 0.35), (b) => ({ x: b.x - 166, y: b.y + b.h + 60 }));

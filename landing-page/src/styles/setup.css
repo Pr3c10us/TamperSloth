@@ -165,20 +165,18 @@
   color: var(--fg-3);
 }
 
+/* Phones keep the desktop motion: keys shrink to the left, panel slides in from the right. */
 @media (max-width: 560px) {
   .keys-stage:has(.peek.is-open) .keys {
-    transform: translateY(-120px) scale(0.7);
+    transform: translateX(-94px) scale(0.38);
   }
   .peek {
-    top: auto;
-    left: 14px;
-    width: auto;
-    height: 230px;
-    transform: translateY(calc(100% + 24px));
+    width: 175px;
   }
   .peek-inner {
-    width: 125%;
-    height: 288px;
+    width: 360px;
+    height: 206%;
+    transform: scale(0.486);
   }
 }
 @media (max-width: 900px) {

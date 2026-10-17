@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Canopy } from "./Canopy";
-import { ArrowIcon, GuideCursor, TypedTip } from "./brand";
+import { ArrowIcon, GuideCursor } from "./brand";
 import { drawStrokes, moveCursor, prefersReducedMotion, setCursor, wait, Aborted } from "../lib/pen";
 import { sketchArrow, sketchEllipse } from "../lib/sketch";
 import { INSTALL_URL } from "../lib/site";
@@ -16,7 +16,6 @@ export function Hero() {
   const cursor = useRef<HTMLDivElement>(null);
   const word = useRef<HTMLSpanElement>(null);
   const cta = useRef<HTMLAnchorElement>(null);
-  const [tip, setTip] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -69,14 +68,10 @@ export function Hero() {
       const bend = Math.min(1.1, (want * 2) / len);
       // On phones the paragraph spans the width, so the pen just glides down instead.
       if (!narrow) await drawStrokes(layer, sketchArrow(from, to, 5, bend), { cursor: cur, signal, instant, className: "ink ink-thin" });
-      // On phones the stage sits right under the button, so the tip goes above the cursor.
       const rest = narrow ? { x: b.x - 10, y: b.y + b.h * 0.55 } : { x: to.x - 34, y: to.y + 6 };
-      cur.classList.toggle("tip-left", narrow);
-      cur.classList.toggle("tip-up", narrow);
       if (instant) setCursor(cur, rest);
       else await moveCursor(cur, rest, signal, 420);
       cur.classList.add("is-on");
-      setTip(true);
     };
 
     const run = async () => {
@@ -114,7 +109,7 @@ export function Hero() {
       <Canopy className="hero-canopy" />
       <div className="hero-inner">
         <a className="hero-chip" href="#toolbox">
-          <span className="hero-chip-tag">2.1</span>
+          <span className="hero-chip-tag">3.0</span>
           <span>Now with voice dictation</span>
           <ArrowIcon />
         </a>
@@ -148,7 +143,7 @@ export function Hero() {
       </div>
       <div className="hero-annot">
         <svg ref={ink} className="ink-layer" aria-hidden />
-        <GuideCursor ref={cursor} className="is-guiding" label={tip ? <TypedTip text="Start here." /> : null} />
+        <GuideCursor ref={cursor} className="is-guiding" />
       </div>
     </section>
   );

@@ -1,7 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { Frame, NARROW, WIDE } from "./Frame";
+import { Frame, WIDE } from "./Frame";
 import { gsap, ScrollTrigger, scrollToTarget } from "../../lib/motion";
 import "../../styles/stage.css";
+
+// Design width of the frame on phones: the panel keeps its 384px, the page gets the rest.
+const PHONE_W = 920;
 
 const STEPS: { n: string; label: string; title: ReactNode; sub: string }[] = [
   {
@@ -50,7 +53,7 @@ export function Stage() {
   const stepRef = useRef(0);
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [layout, setLayout] = useState({ narrow: false, scale: 0.8 });
+  const [layout, setLayout] = useState({ narrow: false, scale: 0.8, size: WIDE });
 
   // Scale the fixed-size frame into whatever room the viewport leaves.
   useLayoutEffect(() => {
@@ -59,10 +62,18 @@ export function Stage() {
     const measure = () => {
       const w = el.clientWidth;
       const h = el.clientHeight;
-      const narrow = w < 700;
-      const d = narrow ? NARROW : WIDE;
-      const scale = Math.max(0.2, Math.min(w / d.w, h / d.h, 1.12));
-      setLayout((prev) => (prev.narrow === narrow && Math.abs(prev.scale - scale) < 0.002 ? prev : { narrow, scale }));
+      // Phones get the same side-by-side frame as desktop, a little narrower and
+      // as tall as the room allows so it fills the screen.
+      const narrow = false;
+      let size = WIDE;
+      let scale = Math.max(0.2, Math.min(w / WIDE.w, h / WIDE.h, 1.12));
+      if (w < 700) {
+        scale = w / PHONE_W;
+        size = { w: PHONE_W, h: Math.round(Math.min(1500, Math.max(WIDE.h, h / scale))) };
+      }
+      setLayout((prev) =>
+        prev.narrow === narrow && Math.abs(prev.scale - scale) < 0.002 && prev.size.w === size.w && Math.abs(prev.size.h - size.h) < 4 ? prev : { narrow, scale, size },
+      );
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -148,7 +159,7 @@ export function Stage() {
     scrollToTarget(Math.round(st.start + ((i + 0.08) / 3) * (st.end - st.start)));
   };
 
-  const d = layout.narrow ? NARROW : WIDE;
+  const d = layout.size;
 
   return (
     <section id="stage" ref={section} className="stage-sec" aria-label="What Tampersloth does">
@@ -187,7 +198,7 @@ export function Stage() {
         <div className="stage-persp">
           <div ref={tilt} className="stage-tilt" style={{ width: d.w * layout.scale, height: d.h * layout.scale }}>
             <div className="stage-scale" style={{ transform: `scale(${layout.scale})` }}>
-              <Frame step={step} playing={playing} narrow={layout.narrow} />
+              <Frame step={step} playing={playing} narrow={layout.narrow} size={layout.size} />
             </div>
           </div>
         </div>
