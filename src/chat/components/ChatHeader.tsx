@@ -1,4 +1,4 @@
-import { GalleryVerticalEnd, PanelLeft, SquarePen } from "lucide-react";
+import { GalleryVerticalEnd, PanelLeft, Settings, SquarePen } from "lucide-react";
 import {
     PageHeader,
     PageHeaderAction,
@@ -14,6 +14,7 @@ interface ChatHeaderProps {
     isLoading: boolean;
     onNewChat: () => void;
     onBack: () => void;
+    onOpenSettings: () => void;
     onToggleHistory: () => void;
     historyOpen: boolean;
 }
@@ -24,6 +25,7 @@ export function ChatHeader({
     isLoading,
     onNewChat,
     onBack,
+    onOpenSettings,
     onToggleHistory,
     historyOpen,
 }: ChatHeaderProps) {
@@ -59,6 +61,9 @@ export function ChatHeader({
                 </PageHeaderAction>
                 <PageHeaderAction label="Gallery" onClick={onBack}>
                     <GalleryVerticalEnd />
+                </PageHeaderAction>
+                <PageHeaderAction label="Settings" onClick={onOpenSettings}>
+                    <Settings />
                 </PageHeaderAction>
             </div>
         </PageHeader>

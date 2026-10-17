@@ -1,5 +1,7 @@
 /** Actions held for the user's approval before they run, one per chat at a time. */
 
+import {showPanelTab} from "./attention";
+
 export type ConfirmAnswer = "allow" | "allow-all" | "deny";
 
 export interface ActionConfirmation {
@@ -69,5 +71,6 @@ export function requestConfirmation(conversationId: string, request: ActionConfi
             },
         });
         notify();
+        showPanelTab();
     });
 }

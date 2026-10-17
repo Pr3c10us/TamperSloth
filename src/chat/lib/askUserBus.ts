@@ -1,3 +1,5 @@
+import {showPanelTab} from "./attention";
+
 export interface AskUserOption {
     label: string;
     emoji?: string;
@@ -40,6 +42,7 @@ export function getPendingAsk(conversationId: string): PendingAsk | null {
 export function setPendingAsk(conversationId: string, p: PendingAsk): void {
     pending.set(conversationId, p);
     notify();
+    showPanelTab();
 }
 
 export function answerPendingAsk(conversationId: string, answer: AskUserAnswer): void {

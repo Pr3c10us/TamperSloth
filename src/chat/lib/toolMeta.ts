@@ -212,6 +212,11 @@ const toolMeta: Record<string, ToolMeta> = {
         icon: Hourglass,
         category: 'utility',
     },
+    showTab: {
+        displayName: 'Show Tab',
+        icon: TabletSmartphone,
+        category: 'web',
+    },
     // ── Debugging ──
     getDebugInfo: {
         displayName: 'Get Debug Info',

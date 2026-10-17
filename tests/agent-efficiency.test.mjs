@@ -143,10 +143,11 @@ test('per-call token estimates fall back to characters for older records', async
 test('tools expand monotonically and group guidance is sent only once', async () => {
     const {load, tools} = fixture();
     const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(tools, {request: 'Summarize this article', findPrevious: () => undefined});
-    assert.equal(runtime.activeTools().length, 12);
+    assert.equal(runtime.activeTools().length, 13);
     assert.ok(runtime.activeTools().includes('annotatePage'));
     assert.ok(runtime.activeTools().includes('waitForUserAction'));
     assert.ok(runtime.activeTools().includes('wait'));
+    assert.ok(runtime.activeTools().includes('showTab'));
     assert.ok(!runtime.activeTools().includes('saveScript'));
     const first = (await invoke(runtime.tools, 'enableTools', {groups: ['scripting']})).output;
     assert.ok(first.guidance[0].includes('named function'));

@@ -33,7 +33,10 @@ async function openPanel(tab: chrome.tabs.Tab) {
         path: `index.html?tabId=${tab.id}`,
         enabled: true
     });
-    await chrome.sidePanel.open({tabId: tab.id, windowId: tab.windowId});
+    const opened = chrome.sidePanel.open({tabId: tab.id, windowId: tab.windowId});
+    // An already open panel doesn't remount, so ask it to show the chat and focus the input.
+    if (tab.id) void queuePanelRequest(tab.id, {kind: 'focus'});
+    await opened;
 }
 
 chrome.action.onClicked.addListener(openPanel);

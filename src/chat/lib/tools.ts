@@ -16,6 +16,7 @@ import {
 } from "./storage";
 import {isValidMatchPattern} from "./url";
 import {type AskUserAnswer, rejectPendingAsk, setPendingAsk,} from "./askUserBus";
+import {startUserWait} from "./userWaitBus";
 import {leaseTabTools} from "./tabLease";
 import { skills, type SkillId } from "./skills";
 
@@ -1998,7 +1999,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
         wait: tool({
             description:
                 "Pause while something outside your control happens: a support agent or chatbot replying, someone messaging back, a job finishing, an email arriving. " +
-                "By default returns early once page text (frames included) changes and then holds still for 2s. Read or screenshot the page afterward.",
+                "Returns early when the tab's URL changes and finishes loading (e.g. after the user logs in), or by default once page text (frames included) changes and then holds still for 2s. Read or screenshot the page afterward.",
             inputSchema: z.object({
                 seconds: z
                     .number()
@@ -2009,15 +2010,26 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     .boolean()
                     .optional()
                     .default(true)
-                    .describe("Return once the watched text changes and settles. false always waits the full time."),
+                    .describe("Return once the watched text changes and settles. false ignores text changes; a URL change still returns."),
                 selector: z
                     .string()
                     .optional()
                     .describe("Optional CSS selector to scope change detection, e.g. a chat message list. Checked in every frame; defaults to the whole page."),
+                tip: z
+                    .object({
+                        selector: z.string().describe("Unique CSS selector of what the user should act on, e.g. the sign-in form or its first field."),
+                        text: z.string().max(80).describe("Short instruction, 3–8 words, e.g. \"Sign in here, I'll continue after\"."),
+                    })
+                    .optional()
+                    .describe("While waiting for the user (e.g. to log in), the panel shows a waiting card with this text; its \"Show me where\" points Sloth's cursor at the field to fill. Removed when the wait ends."),
             }),
-            execute: async ({seconds, returnOnChange, selector}, {abortSignal}) => {
+            execute: async ({seconds, returnOnChange, selector, tip}, {abortSignal}) => {
                 if (selector) {
                     const invalid = selectorError(selector);
+                    if (invalid) return invalid;
+                }
+                if (tip) {
+                    const invalid = selectorError(tip.selector);
                     if (invalid) return invalid;
                 }
                 const signal = abortSignal ?? context.abortSignal;
@@ -2048,31 +2060,116 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     }
                 };
 
-                const start = Date.now();
-                const deadline = start + seconds * 1000;
-                const elapsed = () => Math.round((Date.now() - start) / 100) / 10;
-                let last = returnOnChange ? await fingerprint() : null;
-                if (last === null) {
-                    await sleep(Math.max(0, deadline - Date.now()));
-                    return {waitedSeconds: elapsed(), watched: false};
-                }
-                let changed = false;
-                while (Date.now() < deadline) {
-                    await sleep(Math.min(2000, deadline - Date.now()));
-                    const current = await fingerprint();
-                    if (current === null) continue;
-                    if (current !== last) {
-                        last = current;
-                        changed = true;
-                    } else if (changed) {
-                        return {waitedSeconds: elapsed(), changed: true, settled: true,
-                            hint: "Page text changed. Read or screenshot it to see what arrived."};
+                // The page tip is drawn only when the user asks "Show me where", and goes away however the wait ends.
+                const tipId = tip ? `wait-tip-${crypto.randomUUID()}` : '';
+                let tipShown = false;
+                const showTip = async () => {
+                    if (!tip) return;
+                    const tab = await chrome.tabs.update(tabId, {active: true});
+                    if (tab) await chrome.windows.update(tab.windowId, {focused: true});
+                    // Point at the field to fill, even when the selector names the whole form or misses.
+                    const [found] = await chrome.scripting.executeScript({
+                        target: {tabId},
+                        func: (sel: string, mark: string) => {
+                            const fields = 'input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button]):not([type=image]):not([type=reset]), textarea, select';
+                            const visible = (el: Element) => {
+                                const box = el.getBoundingClientRect(), style = getComputedStyle(el);
+                                return box.width > 0 && box.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+                            };
+                            const pick = (root: ParentNode) => {
+                                const all = [...root.querySelectorAll(fields)].filter(visible) as HTMLInputElement[];
+                                return all.find(el => !el.value) ?? all[0];
+                            };
+                            let root: Element | null = null;
+                            try { root = document.querySelector(sel); } catch { /* an invalid selector falls back to the page */ }
+                            const target = root && root.matches(fields) && visible(root) ? root
+                                : (root && pick(root)) ?? pick(document) ?? (root && visible(root) ? root : null);
+                            document.querySelectorAll('[data-tampersloth-tip]').forEach(el => el.removeAttribute('data-tampersloth-tip'));
+                            if (!target) return false;
+                            target.setAttribute('data-tampersloth-tip', mark);
+                            target.scrollIntoView({block: 'nearest', inline: 'nearest'});
+                            return true;
+                        },
+                        args: [tip.selector, tipId],
+                    });
+                    if (!found?.result) return;
+                    if (tipShown) await browserCall('guidance', {tabId, action: 'remove', id: tipId}).catch(() => {});
+                    await browserCall('guidance', {tabId, action: 'draw', id: tipId, kind: 'bracket',
+                        selector: `[data-tampersloth-tip="${tipId}"]`, label: tip.text});
+                    tipShown = true;
+                };
+                // The panel card says Sloth is waiting on the user.
+                const endCard = tip ? startUserWait(context.conversationId, {
+                    id: tipId, text: tip.text, tabId,
+                    host: await chrome.tabs.get(tabId).then(t => t.url ? new URL(t.url).hostname : undefined, () => undefined),
+                }, {
+                    show: () => { showTip().catch(error => console.warn('[Tampersloth] Could not show the tip:', error)); },
+                }) : () => {};
+                try {
+                    const start = Date.now();
+                    const deadline = start + seconds * 1000;
+                    const elapsed = () => Math.round((Date.now() - start) / 100) / 10;
+                    // A changed URL usually means the awaited step finished (e.g. a login redirect).
+                    const tabState = async () => {
+                        try {
+                            const tab = await chrome.tabs.get(tabId);
+                            return {url: tab.url ?? tab.pendingUrl ?? '', loading: tab.status !== 'complete'};
+                        } catch { return null; }
+                    };
+                    const startUrl = (await tabState())?.url ?? '';
+                    let navigatedUrl = '';
+                    const urlResult = () => ({waitedSeconds: elapsed(), urlChanged: true, from: startUrl, to: navigatedUrl,
+                        hint: "The page navigated. Read or screenshot it to confirm what happened (e.g. the user is now signed in)."});
+
+                    let last = returnOnChange ? await fingerprint() : null;
+                    let changed = false;
+                    while (Date.now() < deadline) {
+                        // Poll faster once navigation starts so redirect chains settle quickly.
+                        await sleep(Math.min(navigatedUrl ? 1000 : 2000, deadline - Date.now()));
+                        const state = await tabState();
+                        if (state && startUrl && state.url && state.url !== startUrl) {
+                            // Return once loading completes and the URL holds still for one poll.
+                            if (!state.loading && state.url === navigatedUrl) return urlResult();
+                            navigatedUrl = state.url;
+                            continue;
+                        }
+                        navigatedUrl = '';
+                        if (last === null) {
+                            if (returnOnChange) last = await fingerprint();
+                            continue;
+                        }
+                        const current = await fingerprint();
+                        if (current === null) continue;
+                        if (current !== last) {
+                            last = current;
+                            changed = true;
+                        } else if (changed) {
+                            return {waitedSeconds: elapsed(), changed: true, settled: true,
+                                hint: "Page text changed. Read or screenshot it to see what arrived."};
+                        }
                     }
+                    if (navigatedUrl) return urlResult();
+                    return {waitedSeconds: elapsed(), changed, settled: false,
+                        hint: changed
+                            ? "Page text is still changing. Read it now, or wait again briefly."
+                            : "No change. Wait again if a reply is still expected, otherwise report back."};
+                } finally {
+                    endCard();
+                    if (tipShown) void browserCall('guidance', {tabId, action: 'remove', id: tipId}).catch(() => {});
                 }
-                return {waitedSeconds: elapsed(), changed, settled: false,
-                    hint: changed
-                        ? "Page text is still changing. Read it now, or wait again briefly."
-                        : "No change. Wait again if a reply is still expected, otherwise report back."};
+            },
+        }),
+
+        showTab: tool({
+            description:
+                "Bring the user to the tab you are working in: activates it and focuses its window. Call it before asking the user to do something there " +
+                "(log in, solve a CAPTCHA, approve a prompt, check a result), so they see where their attention is needed. Does not change the target tab.",
+            inputSchema: z.object({}),
+            execute: async () => {
+                const tab = await chrome.tabs.update(tabId, {active: true});
+                if (!tab) throw new Error('Tab no longer exists');
+                await chrome.windows.update(tab.windowId, {focused: true});
+                return {shown: true, tabId: tab.id, url: tab.url, title: tab.title};
             },
         }),
 

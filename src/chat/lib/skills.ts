@@ -9,7 +9,7 @@ export interface Skill {description: string; content: string}
 export const skills: Record<SkillId, Skill> = {
     verify_before_acting: {
         description: "Live verification and source handling.",
-        content: `Verify web facts, selectors, URLs, and page behavior from live tools. Use observed links, user-provided URLs, or known entry points; never invent deep links. For historical designs inspect archived pages; for brand styling inspect representative live elements. Verify API details from official documentation. Reuse evidence while valid; re-inspect after relevant mutations/navigation. State uncertainty or access limitations. Keep source URLs with findings.`,
+        content: `Verify web facts, selectors, URLs, and page behavior from live tools. Navigate directly when the URL was seen on the page, given by the user, or is a well-known entry point (e.g. a site's homepage, login, settings, or search page); never guess unseen deep links. For historical designs inspect archived pages; for brand styling inspect representative live elements. Verify API details from official documentation. Reuse evidence while valid; re-inspect after relevant mutations/navigation. State uncertainty or access limitations. Keep source URLs with findings.`,
     },
     virtual_file_system: {
         description: "Virtual file conventions and surgical editing.",

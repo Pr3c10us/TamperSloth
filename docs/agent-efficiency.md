@@ -73,7 +73,7 @@ file listings now return paths that the read/edit tools can consume directly.
 ## Run settings and measurements
 
 Settings → Preferences controls the maximum steps (default 200), aggregate token
-budget (default 250,000; zero disables it), and DeepSeek reasoning effort.
+budget (default 1,000,000; zero disables it), and DeepSeek reasoning effort.
 Balanced requests `medium`, while Thorough requests `max`; the provider may map
 effort levels internally. Other providers retain their existing settings.
 

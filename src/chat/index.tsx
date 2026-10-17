@@ -111,6 +111,7 @@ function Chat() {
                 isLoading={isLoading}
                 onNewChat={handleNewChat}
                 onBack={() => navigate("/gallery")}
+                onOpenSettings={() => navigate("/settings")}
                 historyOpen={historyOpen}
                 onToggleHistory={() => setHistoryOpen((o) => !o)}
             />

@@ -18,7 +18,7 @@ export interface AgentSettings {
 }
 
 const KEY = "ts_agent_settings";
-export const DEFAULT_AGENT_SETTINGS: AgentSettings = {maxSteps: 200, tokenBudget: 250000, reasoning: "balanced",
+export const DEFAULT_AGENT_SETTINGS: AgentSettings = {maxSteps: 200, tokenBudget: 1000000, reasoning: "balanced",
     showRunTokens: false, showToolTokens: false, actionApproval: "auto"};
 
 export function runStopReason(settings: AgentSettings, steps: UsageRecord[], failure = ""): string {
@@ -32,7 +32,7 @@ export function runStopReason(settings: AgentSettings, steps: UsageRecord[], fai
 export function normalizeAgentSettings(value: Partial<AgentSettings> = {}): AgentSettings {
     return {
         maxSteps: Number.isFinite(value.maxSteps) ? Math.max(5, Math.min(200, Math.round(value.maxSteps!))) : 200,
-        tokenBudget: Number.isFinite(value.tokenBudget) ? Math.max(0, Math.round(value.tokenBudget!)) : 250000,
+        tokenBudget: Number.isFinite(value.tokenBudget) ? Math.max(0, Math.round(value.tokenBudget!)) : 1000000,
         reasoning: value.reasoning === "thorough" ? "thorough" : "balanced",
         showRunTokens: value.showRunTokens === true,
         showToolTokens: value.showToolTokens === true,

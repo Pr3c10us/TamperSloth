@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import {
-    CircleDot,
     CornerDownLeft,
     LoaderCircle,
     MousePointerClick,
@@ -41,6 +40,7 @@ import {
 } from "./AttachmentChip";
 import { AskUserOverlay } from "@/src/chat/components/askUser/askUserOverlay.tsx";
 import { ActionConfirmOverlay } from "./ActionConfirmOverlay";
+import { UserWaitNotice } from "./UserWaitNotice";
 import { TabWaitNotice } from "./TabWaitNotice";
 import { RateLimitNotice } from "./RateLimitNotice";
 
@@ -181,9 +181,19 @@ export function Composer({
         if (!await startDrawing()) setPageNotice("Can't draw on this page");
     };
 
-    // Requests from the page: "Ask Sloth" quotes, context-menu picks and drawings, and finished drawings.
+    // Requests from the page: opening the panel (focus the input), "Ask Sloth" quotes, context-menu picks and drawings, and finished drawings.
     usePanelRequests((request) => {
-        if (request.kind === "quote") {
+        if (request.kind === "focus") {
+            // The panel window may take focus a frame later, so focus again then.
+            const focus = () => {
+                const ta = textareaRef.current;
+                if (!ta || listening) return;
+                ta.focus({ preventScroll: true });
+                ta.setSelectionRange(ta.value.length, ta.value.length);
+            };
+            focus();
+            requestAnimationFrame(focus);
+        } else if (request.kind === "quote") {
             const { text, url, title } = request;
             setQuotes((prev) => (prev.some((q) => q.text === text) ? prev : [...prev, { text, url, title }]));
         } else if (request.kind === "image") {
@@ -343,6 +353,7 @@ export function Composer({
         <div ref={containerRef} className="fixed bottom-0 inset-x-0 z-20 flex shrink-0 flex-col bg-background">
             <RateLimitNotice conversationId={conversationId} />
             <TabWaitNotice conversationId={conversationId} />
+            <UserWaitNotice conversationId={conversationId} />
             <AskUserOverlay conversationId={conversationId} />
             <ActionConfirmOverlay conversationId={conversationId} />
             <div className="flex flex-col gap-1.5 px-3 pb-2 pt-2">
@@ -485,16 +496,18 @@ export function Composer({
                         )}
 
                         {isLoading ? (
-                            <Button
+                            <button
                                 type="button"
-                                variant="ghost"
-                                size="icon-sm"
                                 onClick={onCancel}
                                 aria-label="Stop"
-                                className="shrink-0 text-foreground"
+                                title="Stop"
+                                className="group flex size-7 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                             >
-                                <CircleDot strokeWidth={1.75} />
-                            </Button>
+                                {/* Same footprint as Send, so the input doesn't shift when a run starts. */}
+                                <span className="flex size-6 items-center justify-center rounded-full bg-foreground text-background transition-opacity group-hover:opacity-80">
+                                    <span aria-hidden className="size-2 rounded-[2px] bg-current" />
+                                </span>
+                            </button>
                         ) : (
                             <Button
                                 type="button"

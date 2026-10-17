@@ -10,6 +10,7 @@ export interface Quote {
  * overlay) to the chat open for a tab.
  */
 export type PanelRequest =
+    | { kind: "focus" }
     | { kind: "pick" }
     | { kind: "draw" }
     | { kind: "dictate" }
