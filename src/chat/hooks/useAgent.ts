@@ -4,6 +4,7 @@ import {formatModelName, getModel, MODELPROVIDERS, type ModelOptions, type Provi
 import {getApiKeys, VERTEX_PROJECT_KEY} from "../../settings/lib/storage";
 import {withRateLimits} from "../lib/rateLimit";
 import {createAgentTools} from "../lib/tools.ts";
+import {browserCall} from "../lib/browserTools";
 import {loadAttachment, loadStoredConversation, readFile, saveAttachments, saveConversation, type StoredConversation} from "../lib/storage.ts";
 import {seedAttachmentUrl} from "../lib/attachmentUrls";
 import {buildModelMessages} from "../lib/historyMessages";
@@ -292,9 +293,15 @@ export async function openConversation(id: string) {
     activate(id);
 }
 
+/** Closes the tabs a chat's task opened, except retained ones. Never touches tabs the user already had. */
+function finishTaskTabs(conversationId: string) {
+    return browserCall('tabs', {action: 'finish', conversationId}).catch(() => {});
+}
+
 /** Stops a chat and drops it from memory before it is deleted, so nothing re-saves it. */
 export function discardConversation(id: string) {
     runs.get(id)?.abort();
+    void finishTaskTabs(id);
     pendingSaves.delete(id);
     dirty.delete(id);
     clearDraft(id);
@@ -363,6 +370,7 @@ async function sendMessage(
     const resolvedModelId = modelId ?? MODELPROVIDERS.find(p => p.id === providerId)!.defaultModel;
     const abortController = new AbortController();
     runs.set(conversationId, abortController);
+    let failed = false;
     patchSession(conversationId, {error: null, isLoading: true});
     const modelOptions: ModelOptions = providerId === "vertex"
         ? {vertexProject: (await getApiKeys().catch((): Record<string, string> => ({})))[VERTEX_PROJECT_KEY]}
@@ -502,9 +510,13 @@ async function sendMessage(
             const tabId = Number(new URLSearchParams(window.location.search).get("tabId"));
             if (tabId > 0) {
                 const tab = await chrome.tabs.get(tabId);
-                tabContext = serialize({tabId, url: tab.url, title: tab.title});
+                tabContext = serialize({tabId, url: tab.url, title: tab.title}) + "\nThis is the working tab: make the user's requested result here (navigate it if the work belongs on another site), and keep other tabs for references.";
             }
         } catch { /* Browsing tools report actionable permission/tab errors. */ }
+        // A task paused for the user's answer resumes with the tabs, group and notes it already had.
+        const task = await browserCall('tabs', {action: 'list', conversationId}).then(r => r.task, () => undefined);
+        if (task) tabContext += `
+This task's tabs (open from earlier in this chat; reuse them, and finish when done): ${serialize(task)}`;
 
         const providerOptions = agentProviderOptions(providerId,
             sessions.get(conversationId)?.thinkingLevel ?? settings.thinkingLevel, resolvedModelId);
@@ -732,12 +744,15 @@ async function sendMessage(
             break;
         }
     } catch (err: any) {
+        failed = true;
         if (err.name === "AbortError" || abortController.signal.aborted) {
             // intentionally ignored
         } else {
             patchSession(conversationId, {error: err.message ?? "Something went wrong"});
         }
     } finally {
+        // A stopped or failed task can't finish its own tabs: close the disposable ones, keeping retained tabs.
+        if (failed || abortController.signal.aborted) await finishTaskTabs(conversationId);
         // Keep the cursor through idle tool pauses, then remove the run's decorations
         // before handing the tab to the next waiting chat. Cleanup is browser-wide,
         // so it is skipped while another chat still holds a tab.

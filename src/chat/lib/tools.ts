@@ -14,7 +14,7 @@ import {
     updateScriptStatus,
     writeFile,
 } from "./storage";
-import {isValidMatchPattern} from "./url";
+import {isNewTabPage, isValidMatchPattern} from "./url";
 import {type AskUserAnswer, rejectPendingAsk, setPendingAsk,} from "./askUserBus";
 import {startUserWait} from "./userWaitBus";
 import {leaseTabTools} from "./tabLease";
@@ -165,8 +165,10 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
         tabs: guardedAPI(globalThis.chrome.tabs, ['create', 'update', 'remove', 'reload', 'goBack', 'goForward']),
         windows: guardedAPI(globalThis.chrome.windows, ['update']),
     };
+    // Read before any tool can navigate it: a chat started on a new tab page uses that tab for the task.
+    const originBlank = Promise.resolve().then(async () => tabId > 0 && isNewTabPage((await globalThis.chrome.tabs.get(tabId)).url)).catch(() => false);
     return leaseTabTools({
-        ...createBrowserTools(() => tabId, id => { tabId = id; }, context.abortSignal),
+        ...createBrowserTools(() => tabId, id => { tabId = id; }, context.abortSignal, {conversationId: context.conversationId, originTabId: tabId > 0 ? tabId : undefined, originBlank}),
         // ═══════════════════════════════════════════════
         //  Skills
         // ═══════════════════════════════════════════════
@@ -372,12 +374,14 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     ),
                 responseFormat: responseFormatSchema,
                 maxNodes: z.number().int().min(20).max(1500).default(MAX_DOM_NODES),
+                tabId: z.number().int().positive().optional()
+                    .describe("Read another tab (e.g. a reference tab) without changing which tab page actions target. Omit for the target tab."),
             }),
-            execute: async ({selector, responseFormat, maxNodes}) => {
+            execute: async ({selector, responseFormat, maxNodes, tabId: readTabId}) => {
                 const invalid = selectorError(selector);
                 if (invalid) return invalid;
                 const [result] = await chrome.scripting.executeScript({
-                    target: {tabId},
+                    target: {tabId: readTabId ?? tabId},
                     func: (sel: string | null, format: string, maxNodes: number) => {
                         const root = sel ? document.querySelector(sel) : document.body;
                         if (!root) {
@@ -602,13 +606,15 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     .describe("Characters per page: default 3000 concise, 10000 detailed; maximum 20000."),
                 offset: z.number().int().min(0).default(0).describe('Character offset for the next page of text.'),
                 responseFormat: responseFormatSchema,
+                tabId: z.number().int().positive().optional()
+                    .describe("Read another tab (e.g. a reference tab) without changing which tab page actions target. Omit for the target tab."),
             }),
-            execute: async ({selector, maxLength, responseFormat, offset}) => {
+            execute: async ({selector, maxLength, responseFormat, offset, tabId: readTabId}) => {
                 const invalid = selectorError(selector);
                 if (invalid) return invalid;
                 const effectiveMax = maxLength ?? (responseFormat === "detailed" ? 10000 : 3000);
                 const [result] = await chrome.scripting.executeScript({
-                    target: {tabId},
+                    target: {tabId: readTabId ?? tabId},
                     func: (sel: string | null, max: number, format: string, start: number) => {
                         const concise = format === "concise";
                         let root: Element | null;

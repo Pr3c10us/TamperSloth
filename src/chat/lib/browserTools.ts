@@ -79,7 +79,10 @@ const gestureModelOutput = (output: any, postAction?: any) => output.screenshot
     ? browserImageOutput({...output, ...(postAction?.metadata?.cssRegion ? {screenshotRegion: postAction.metadata.cssRegion} : {})})
     : {type: 'text' as const, value: JSON.stringify(output)};
 
-export function createBrowserTools(getTabId: () => number, selectTab: (id: number) => void, abortSignal?: AbortSignal) {
+/** Identifies the chat's task so the browser service can group, guard and clean up the tabs it opens. */
+export interface TaskContext {conversationId: string; originTabId?: number; /** Whether the chat started on a new tab page, which then belongs to the task. */ originBlank?: Promise<boolean>}
+
+export function createBrowserTools(getTabId: () => number, selectTab: (id: number) => void, abortSignal?: AbortSignal, task?: TaskContext) {
     // Coordinate guidance cannot prove outcomes, so it unlocks only after selector-based guidance keeps failing.
     const FALLBACK_AFTER=2;
     let observerFailures=0;
@@ -106,12 +109,19 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
         throw last;
     };
     const make = <K extends BrowserOperation,>(operation: K, description: string) => tool({
-        description, inputSchema: (operation === 'store' ? storeToolSchema : browserSchemas[operation]) as z.ZodType<Record<string, unknown>>,
+        description, inputSchema: (operation === 'store' ? storeToolSchema : operation === 'tabs' ? browserSchemas.tabs.omit({conversationId: true, originTabId: true, originBlank: true})
+            : operation === 'tabGroups' ? browserSchemas.tabGroups.omit({conversationId: true}) : browserSchemas[operation]) as z.ZodType<Record<string, unknown>>,
         execute: async input => {
             const args = {...input} as Record<string, unknown>;
+            if (task && operation === 'tabs') Object.assign(args, {conversationId: task.conversationId, originTabId: task.originTabId, originBlank: await task.originBlank});
+            if (task && operation === 'tabGroups') args.conversationId = task.conversationId;
             if ('tabId' in browserSchemas[operation].shape && !args.tabId) args.tabId = getTabId();
             const result = await browserCall(operation, args);
-            if (operation === 'tabs' && ['select', 'create'].includes(String(args.action)) && result.tabId) selectTab(result.tabId);
+            if (operation === 'tabs' && ['select', 'create'].includes(String(args.action)) && result.tabId) {
+                selectTab(result.tabId);
+                // Away from the working tab, page actions now land elsewhere: say where to return for the main work.
+                if (task?.originTabId && result.tabId !== task.originTabId) return {...result, workingTabId: task.originTabId};
+            }
             return result;
         },
         ...(operation === 'perception' ? {toModelOutput: ({output}: {output: any}) => gestureModelOutput(output)} : {}),
@@ -272,7 +282,7 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
                 ...(output.screenshot ? {screenshot: output.screenshot} : {})}, output.postAction),
         }),
         takeMarkedScreenshot: make('perception', 'Screenshot with marks and full selector/role/name/bbox legend; marks include only visible, non-occluded interactables, capped at 50. Click via clickTarget target {mark,snapshotId}. For canvas use mode grid (100 CSS px cells), then region C4 with snapshotId, scale 3 and gridSize 10 for precision. crosshair {x,y} previews a proposed point. Metadata reports CSS/device/image pixels, DPR, scroll, viewport, frame offsets and crop transforms. mode contours emits unverified visual shape marks (no OCR).'),
-        browserTabs: make('tabs', 'List/create/select/close tabs, wait for a popup by openerTabId, move tabs (index, windowId), pin/unpin or mute/unmute them (tabId or tabIds). Select/create changes the target of ALL page tools for this run, except create with background true, which returns backgroundTabId and leaves the current target; waitPopup reports the latest live popup, then select it.'),
+        browserTabs: make('tabs', "List/create/select/close tabs, wait for a popup by openerTabId, move/pin/unpin/mute/unmute (tabId or tabIds), note what a tab is for and what it showed, and finish the task. create opens url (or urls concurrently) in this task's tab group (group names it on the first create) and reuses a task tab already at that URL. Select or a single foreground create changes the target of ALL page tools for this run; background or multi-url create returns opened tabIds and leaves the target. list includes task: the task's own and consulted tabs with purposes and notes. Tabs that were already open stay as they are (close/move/pin/mute refuse them unless userRequested). finish closes the task's tabs except retained/keepTabIds ones, which leave the group, and returns the noted findings."),
         browserTabGroups: make('tabGroups', 'List tab groups with their tabIds; group tabIds into a new group (or an existing groupId) with optional title/color/collapsed; update a group\'s title/color/collapsed; ungroup tabIds; or move a group to an index/window.'),
         evaluateJavaScript: make('evaluate', 'Execute a raw async JS body (use return) with structured per-frame results/errors. Default ISOLATED uses the separate user-script world and requires Allow User Scripts. MAIN explicitly accesses page globals. Frame IDs come from extension APIs; CDP uses separate session/context IDs. Timeout limits the wait, not code side effects.'),
         persistentStore: make('store', 'Get/set/delete/list persistent JSON values by namespace and key. For set, pass value as a JSON-encoded string; it is decoded before storage. Do not store credentials.'),

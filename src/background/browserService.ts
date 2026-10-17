@@ -2,6 +2,7 @@ import {browserSchemas, type BrowserOperation} from '../chat/lib/browserSchemas'
 import {CDPManager} from './cdp';
 import {VisualBrowser} from './visualBrowser';
 import {runPageGuidance} from './pageGuidance';
+import {assertTaskGroup, assertTaskTabs, describeTask, finishTask, noteTaskTab, openTaskTabs} from './taskTabs';
 
 export const cdp = new CDPManager();
 const visual = new VisualBrowser(cdp);
@@ -85,17 +86,31 @@ async function run(operation: BrowserOperation, input: unknown) {
         case 'gesture': requireValue(tabId, 'tabId'); return visual.gesture(a);
         case 'tabs': {
             await popupReady;
-            if (a.action === 'list') return {tabs: (await chrome.tabs.query({})).map(tabSummary), popups};
-            if (a.action === 'create') {
-                const url = requireValue(a.url, 'url') as string;
-                if (!/^https?:/.test(url)) throw new Error('Only HTTP(S) tab URLs are supported');
-                const tab = await chrome.tabs.create({url, active: !a.background, openerTabId: a.openerTabId});
-                // Background tabs report backgroundTabId so callers that retarget on `tabId` leave the current tab alone.
-                return a.background ? {backgroundTabId: tab.id, url: tab.pendingUrl ?? tab.url} : {tabId: tab.id, url: tab.url};
+            const conversationId: string | undefined = a.conversationId;
+            if (a.action === 'list') {
+                const task = conversationId ? await describeTask(conversationId) : undefined;
+                return {tabs: (await chrome.tabs.query({})).map(tabSummary), popups, ...(task ? {task} : {})};
             }
-            if (a.action === 'close') { await chrome.tabs.remove(requireValue(tabId, 'tabId')); return {closed: tabId}; }
-            if (['move', 'pin', 'unpin', 'mute', 'unmute'].includes(a.action)) {
+            if (a.action === 'create') {
+                const urls: string[] = a.urls ?? [requireValue(a.url, 'url or urls')];
+                if (urls.some(url => !/^https?:/.test(url))) throw new Error('Only HTTP(S) tab URLs are supported');
+                const background = a.background || urls.length > 1;
+                if (conversationId) {
+                    const {tabs, group} = await openTaskTabs(conversationId, a.originTabId, {urls, group: a.group, purpose: a.purpose, background, openerTabId: a.openerTabId, originBlank: a.originBlank});
+                    // Only a single foreground tab reports a top-level tabId, which callers treat as the new page tool target.
+                    return background ? {opened: tabs, group} : {...tabs[0], group};
+                }
+                const tabs = await Promise.all(urls.map(url => chrome.tabs.create({url, active: !background, openerTabId: a.openerTabId})));
+                return background ? {opened: tabs.map(tab => ({tabId: tab.id, url: tab.pendingUrl ?? tab.url}))} : {tabId: tabs[0].id, url: tabs[0].url};
+            }
+            if (a.action === 'note') {
+                return noteTaskTab(requireValue(conversationId, 'conversationId'), requireValue(tabId, 'tabId'), {purpose: a.purpose, note: a.note, retain: a.retain});
+            }
+            if (a.action === 'finish') return finishTask(requireValue(conversationId, 'conversationId'), a.keepTabIds);
+            if (['close', 'move', 'pin', 'unpin', 'mute', 'unmute'].includes(a.action)) {
                 const ids: number[] = a.tabIds ?? [requireValue(tabId, 'tabId or tabIds')];
+                await assertTaskTabs(conversationId, ids, a.userRequested);
+                if (a.action === 'close') { await chrome.tabs.remove(ids); return {closed: ids}; }
                 if (a.action === 'move') {
                     const moved = await chrome.tabs.move(ids, {index: a.index ?? -1, ...(a.windowId !== undefined ? {windowId: a.windowId} : {})});
                     return {tabs: (Array.isArray(moved) ? moved : [moved]).map(tabSummary)};
@@ -127,9 +142,11 @@ async function run(operation: BrowserOperation, input: unknown) {
                 return {groups: groups.map(g => ({...groupSummary(g), tabIds: tabs.filter(t => t.groupId === g.id).map(t => t.id)}))};
             }
             const style = {...(a.title !== undefined ? {title: a.title} : {}), ...(a.color ? {color: a.color} : {}), ...(a.collapsed !== undefined ? {collapsed: a.collapsed} : {})};
-            if (a.action === 'ungroup') { await chrome.tabs.ungroup(requireValue(a.tabIds, 'tabIds')); return {ungrouped: a.tabIds}; }
+            if (a.action === 'ungroup' || a.action === 'group') await assertTaskTabs(a.conversationId, requireValue(a.tabIds, 'tabIds'), a.userRequested);
+            if (a.action === 'ungroup') { await chrome.tabs.ungroup(a.tabIds); return {ungrouped: a.tabIds}; }
+            if (a.groupId !== undefined) await assertTaskGroup(a.conversationId, a.groupId, a.userRequested);
             if (a.action === 'group') {
-                const groupId = await chrome.tabs.group({tabIds: requireValue(a.tabIds, 'tabIds'), ...(a.groupId !== undefined ? {groupId: a.groupId} : {})});
+                const groupId = await chrome.tabs.group({tabIds: a.tabIds, ...(a.groupId !== undefined ? {groupId: a.groupId} : {})});
                 const group = Object.keys(style).length ? await chrome.tabGroups.update(groupId, style) : await chrome.tabGroups.get(groupId);
                 return {group: groupSummary(group!)};
             }

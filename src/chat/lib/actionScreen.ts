@@ -217,8 +217,13 @@ export function assessAction(name: string, input: Record<string, any>, targets: 
             return LOW;
         case "navigateTo":
             return assessUrl(stringOf(input.url), "Opening");
-        case "browserTabs":
-            return input.action === "create" && input.url ? assessUrl(stringOf(input.url), "Opening a tab at") : LOW;
+        case "browserTabs": {
+            if (input.action !== "create") return LOW;
+            const urls = [input.url, ...(Array.isArray(input.urls) ? input.urls : [])].map(stringOf).filter(Boolean);
+            if (!urls.length) return LOW;
+            const each = urls.map(url => assessUrl(url, "Opening a tab at"));
+            return each.find(a => a.risk === "high") ?? {...each[0], reasons: [...new Set(each.flatMap(a => a.reasons))], payload: each.flatMap(a => a.payload)};
+        }
         case "browserTabGroups":
             return LOW;
         case "browserDownload": {

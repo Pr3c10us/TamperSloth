@@ -17,6 +17,16 @@ The agent can enable the following tool groups with `enableTools`. Tools also ac
 | `visual`, `input` | `takeMarkedScreenshot` | Set-of-Mark legend, grid overlays, region zoom, crosshairs and contour candidates. |
 | `network` | `networkCapture`, `deepDOM` | Persistent capture, HTTP events, WebSocket frames, bounded response bodies, captured or explicit request replay. |
 
+## Multi-tab tasks
+
+Each chat keeps a task workspace in session storage (`src/background/taskTabs.ts`):
+
+- `browserTabs create` takes `url` or `urls` (loaded concurrently in the background) and puts every tab the task opens into one group, named by `group` on the first create. A task tab already at the same URL is reused. Tabs opened from a task tab (target=_blank links, popups) join the group.
+- `note` records a tab's purpose, findings (tied to its URL) and `retain`. Tabs the user already had are tracked as consulted, never owned.
+- `close`, `move`, `pin`, `mute` and `browserTabGroups` changes refuse tabs and groups the task did not open unless `userRequested` is set.
+- `finish` closes the task's tabs except retained ones or those in `keepTabIds`. Kept tabs are ungrouped first, so the temporary group disappears. It returns the noted findings. The original tab, the user's tabs and the user's groups are left alone.
+- A stopped or failed run, or a deleted chat, runs `finish` automatically. Runs that end normally keep the workspace, so a task waiting on the user's reply resumes with its tabs, which are listed in the run-start context.
+
 ## Browser controls
 
 Saved scripts run on matching pages according to each script's active or paused setting. Browser control messages are accepted only from the extension UI; user-script messages use their separate channel. The chat's Stop button cancels the current response without disabling saved scripts.

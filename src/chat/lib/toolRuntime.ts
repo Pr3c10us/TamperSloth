@@ -41,7 +41,7 @@ export function initialToolGroups(request: string): Group[] {
     if (/\b(click|fill|submit|scroll|select|search|browse|navigate|for me|do it|go ahead|yourself)\b/i.test(request)) groups.push("browsing");
     if (/\b(debug|error|broken|fails?|not working|console|network)\b/i.test(request)) groups.push("debugging");
     if (/\b(screenshot|layout|appearance|restyle|dark mode)\b/i.test(request)) groups.push("visual");
-    if (/\b(tabs?|popups?|accessibility|recipes?|persistent|evaluate|javascript)\b/i.test(request)) groups.push('browser');
+    if (/\b(tabs?|popups?|accessibility|recipes?|persistent|evaluate|javascript|compar(?:e|ing|ison)|inspiration|references|sources|across)\b/i.test(request)) groups.push('browser');
     if (/\b(hover|canvas|drag|touch|rich text|keyboard|shadow|iframe|cross-origin)\b/i.test(request)) groups.push('input');
     if (/\b(network|websocket|replay|requests?)\b/i.test(request)) groups.push('network');
     if (/\b(clipboard|downloads?|notifications?)\b/i.test(request)) groups.push('system');
