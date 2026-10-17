@@ -50,6 +50,7 @@ const toolMeta: Record<string, ToolMeta> = {
     browserGesture: {displayName: 'Browser gesture',icon: MousePointerClick, category: 'web'},
     takeMarkedScreenshot: {displayName: 'Marked screenshot',icon: Camera, category: 'media'},
     browserTabs: {displayName: 'Browser tabs',icon: TabletSmartphone, category: 'web'},
+    browserTabGroups: {displayName: 'Tab groups',icon: TabletSmartphone, category: 'web'},
     evaluateJavaScript: {displayName: 'Evaluate JavaScript',icon: SquareTerminal, category: 'compute'},
     persistentStore: {displayName: 'Persistent storage',icon: Database, category: 'data'},
     siteRecipes: {displayName: 'Site recipes',icon: BookOpen, category: 'data'},

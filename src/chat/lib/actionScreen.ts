@@ -219,6 +219,8 @@ export function assessAction(name: string, input: Record<string, any>, targets: 
             return assessUrl(stringOf(input.url), "Opening");
         case "browserTabs":
             return input.action === "create" && input.url ? assessUrl(stringOf(input.url), "Opening a tab at") : LOW;
+        case "browserTabGroups":
+            return LOW;
         case "browserDownload": {
             if (input.action !== "start") return LOW;
             const url = urlOf(input.url);

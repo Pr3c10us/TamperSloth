@@ -25,6 +25,9 @@ const requireValue = <T,>(value: T | undefined, name: string): T => {
     if (value === undefined) throw new Error(`${name} is required for this action`);
     return value;
 };
+const tabSummary = (t: chrome.tabs.Tab) => ({tabId: t.id, windowId: t.windowId, index: t.index, url: t.url, title: t.title, active: t.active,
+    openerTabId: t.openerTabId, pinned: t.pinned, muted: t.mutedInfo?.muted, audible: t.audible, groupId: t.groupId === -1 ? undefined : t.groupId});
+const groupSummary = (g: chrome.tabGroups.TabGroup) => ({groupId: g.id, windowId: g.windowId, title: g.title, color: g.color, collapsed: g.collapsed});
 let storageChain: Promise<unknown> = Promise.resolve();
 function storageTransaction<T>(fn: () => Promise<T>) {
     const task = storageChain.catch(() => {}).then(fn);
@@ -82,14 +85,24 @@ async function run(operation: BrowserOperation, input: unknown) {
         case 'gesture': requireValue(tabId, 'tabId'); return visual.gesture(a);
         case 'tabs': {
             await popupReady;
-            if (a.action === 'list') return {tabs: (await chrome.tabs.query({})).map(t => ({tabId: t.id, windowId: t.windowId, url: t.url, title: t.title, active: t.active, openerTabId: t.openerTabId})), popups};
+            if (a.action === 'list') return {tabs: (await chrome.tabs.query({})).map(tabSummary), popups};
             if (a.action === 'create') {
                 const url = requireValue(a.url, 'url') as string;
                 if (!/^https?:/.test(url)) throw new Error('Only HTTP(S) tab URLs are supported');
-                const tab = await chrome.tabs.create({url, active: true, openerTabId: a.openerTabId});
-                return {tabId: tab.id, url: tab.url};
+                const tab = await chrome.tabs.create({url, active: !a.background, openerTabId: a.openerTabId});
+                // Background tabs report backgroundTabId so callers that retarget on `tabId` leave the current tab alone.
+                return a.background ? {backgroundTabId: tab.id, url: tab.pendingUrl ?? tab.url} : {tabId: tab.id, url: tab.url};
             }
             if (a.action === 'close') { await chrome.tabs.remove(requireValue(tabId, 'tabId')); return {closed: tabId}; }
+            if (['move', 'pin', 'unpin', 'mute', 'unmute'].includes(a.action)) {
+                const ids: number[] = a.tabIds ?? [requireValue(tabId, 'tabId or tabIds')];
+                if (a.action === 'move') {
+                    const moved = await chrome.tabs.move(ids, {index: a.index ?? -1, ...(a.windowId !== undefined ? {windowId: a.windowId} : {})});
+                    return {tabs: (Array.isArray(moved) ? moved : [moved]).map(tabSummary)};
+                }
+                const change = a.action.endsWith('pin') ? {pinned: a.action === 'pin'} : {muted: a.action === 'mute'};
+                return {tabs: (await Promise.all(ids.map(id => chrome.tabs.update(id, change)))).filter(t => t).map(t => tabSummary(t!))};
+            }
             if (a.action === 'select') {
                 const tab = await chrome.tabs.update(requireValue(tabId, 'tabId'), {active: true});
                 if (!tab) throw new Error('Tab no longer exists');
@@ -107,6 +120,22 @@ async function run(operation: BrowserOperation, input: unknown) {
                 await new Promise(resolve => setTimeout(resolve, 100));
             }
             return {found: false, timedOut: true};
+        }
+        case 'tabGroups': {
+            if (a.action === 'list') {
+                const [groups, tabs] = await Promise.all([chrome.tabGroups.query({}), chrome.tabs.query({})]);
+                return {groups: groups.map(g => ({...groupSummary(g), tabIds: tabs.filter(t => t.groupId === g.id).map(t => t.id)}))};
+            }
+            const style = {...(a.title !== undefined ? {title: a.title} : {}), ...(a.color ? {color: a.color} : {}), ...(a.collapsed !== undefined ? {collapsed: a.collapsed} : {})};
+            if (a.action === 'ungroup') { await chrome.tabs.ungroup(requireValue(a.tabIds, 'tabIds')); return {ungrouped: a.tabIds}; }
+            if (a.action === 'group') {
+                const groupId = await chrome.tabs.group({tabIds: requireValue(a.tabIds, 'tabIds'), ...(a.groupId !== undefined ? {groupId: a.groupId} : {})});
+                const group = Object.keys(style).length ? await chrome.tabGroups.update(groupId, style) : await chrome.tabGroups.get(groupId);
+                return {group: groupSummary(group!)};
+            }
+            const groupId = requireValue(a.groupId, 'groupId') as number;
+            if (a.action === 'update') return {group: groupSummary((await chrome.tabGroups.update(groupId, style))!)};
+            return {group: groupSummary((await chrome.tabGroups.move(groupId, {index: a.index ?? -1, ...(a.windowId !== undefined ? {windowId: a.windowId} : {})}))!)};
         }
         case 'evaluate': {
             const target = {tabId: requireValue(tabId, 'tabId'), ...(a.frameIds ? {frameIds: a.frameIds} : {})};

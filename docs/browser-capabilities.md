@@ -6,7 +6,8 @@ The agent can enable the following tool groups with `enableTools`. Tools also ac
 
 | Group | Tools | Behavior |
 | --- | --- | --- |
-| `browser` | `browserTabs` | List, create, select, close and track popups by opener. Selecting or creating a tab changes every page tool's target for that run. Popup metadata survives service worker restarts in session storage. |
+| `browser` | `browserTabs` | List, create, select, close, move, pin/unpin, mute/unmute and track popups by opener. Selecting or creating a tab changes every page tool's target for that run, unless it is created with `background: true`. Popup metadata survives service worker restarts in session storage. |
+| `browser` | `browserTabGroups` | List groups with their tabs, group tabs into a new or existing group, set title/color/collapsed, ungroup tabs, and move groups. Requires the `tabGroups` permission. |
 | `browser` | `evaluateJavaScript` | Raw async function body, structured JSON returns, per-frame errors, timeout and explicit MAIN-world opt-in. |
 | `browser` | `persistentStore`, `siteRecipes` | Namespaced JSON values and reusable site instructions in local extension storage. Recipes do not execute automatically. |
 | `browser` | `accessibilityTree` | DOM-derived roles and names with plain scripting APIs, or Chrome's AX tree with CDP. |

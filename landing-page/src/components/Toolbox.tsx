@@ -310,6 +310,7 @@ const TOOLS = [
   "trustedInput",
   "deepDOM",
   "browserTabs",
+  "browserTabGroups",
   "takeMarkedScreenshot",
   "clipboard",
   "browserDownload",

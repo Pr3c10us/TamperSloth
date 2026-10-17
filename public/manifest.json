@@ -38,6 +38,7 @@
   "permissions": [
     "scripting",
     "tabs",
+    "tabGroups",
     "activeTab",
     "sidePanel",
     "storage",

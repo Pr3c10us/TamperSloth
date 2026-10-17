@@ -12,6 +12,7 @@ function eventBus() {
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 function fixture(seed = {}) {
     const saved = structuredClone(seed), session = {}, commands = [], downloads = [], tabs = new Map([[7, {id: 7, windowId: 1, url: 'https://example.com', title: 'Page'}]]);
+    const groups = new Map();
     const area = target => ({get: async key => key === null ? structuredClone(target) : Array.isArray(key)
             ? Object.fromEntries(key.filter(k => Object.hasOwn(target, k)).map(k => [k, structuredClone(target[k])]))
             : {[key]: structuredClone(target[key])}, getKeys: async () => Object.keys(target),
@@ -28,7 +29,17 @@ function fixture(seed = {}) {
                 if (options.active) for (const tab of tabs.values()) if (tab.windowId === tabs.get(id).windowId) tab.active = false;
                 Object.assign(tabs.get(id), options); return tabs.get(id);
             },
-            remove: async id => { tabs.delete(id); chrome.tabs.onRemoved.fire(id); }},
+            remove: async id => { tabs.delete(id); chrome.tabs.onRemoved.fire(id); },
+            move: async (ids, {index, windowId}) => ids.map(id => Object.assign(tabs.get(id), {index, ...(windowId !== undefined ? {windowId} : {})})),
+            group: async ({tabIds, groupId}) => {
+                const id = groupId ?? groups.size + 1;
+                if (!groups.has(id)) groups.set(id, {id, windowId: 1, title: '', color: 'grey', collapsed: false});
+                for (const tabId of tabIds) tabs.get(tabId).groupId = id;
+                return id;
+            },
+            ungroup: async ids => { for (const id of ids) tabs.get(id).groupId = -1; }},
+        tabGroups: {query: async () => [...groups.values()], get: async id => groups.get(id),
+            update: async (id, props) => Object.assign(groups.get(id), props), move: async (id, props) => Object.assign(groups.get(id), props)},
         windows: {update: async () => {}},
         debugger: {onEvent: eventBus(), onDetach: eventBus(), attach: async target => { commands.push({method: 'attach', target}); },
             detach: async target => { commands.push({method: 'detach', target}); chrome.debugger.onDetach.fire(target); },
@@ -116,6 +127,32 @@ test('tab selection retargets existing page tools and popups track their opener'
     await invoke(tools, 'browserTabs', {action: 'select', tabId: 7});
     assert.equal((await invoke(tools, 'getCurrentTab')).output.tabId, 7);
     await assert.rejects(f.run('tabs', {action: 'create', url: 'chrome://extensions'}), /HTTP/);
+});
+
+test('tabs open in the background, move, pin, mute and form labelled groups', async () => {
+    const f = fixture();
+    const tools = f.load('src/chat/lib/tools.ts').createAgentTools({conversationId: 'test'});
+    const opened = await invoke(tools, 'browserTabs', {action: 'create', url: 'https://example.com/later', background: true});
+    assert.equal(opened.output.backgroundTabId, 8);
+    assert.equal(f.tabs.get(8).active, false);
+    assert.equal((await invoke(tools, 'getCurrentTab')).output.tabId, 7, 'Background tabs leave the page tool target alone');
+    assert.equal((await f.run('tabs', {action: 'pin', tabIds: [7, 8]})).tabs.length, 2);
+    assert.equal(f.tabs.get(8).pinned, true);
+    await f.run('tabs', {action: 'mute', tabId: 8});
+    assert.equal(f.tabs.get(8).muted, true);
+    await f.run('tabs', {action: 'unpin', tabId: 7});
+    assert.equal(f.tabs.get(7).pinned, false);
+    assert.equal((await f.run('tabs', {action: 'move', tabId: 8, index: 0})).tabs[0].index, 0);
+    const grouped = await invoke(tools, 'browserTabGroups', {action: 'group', tabIds: [7, 8], title: 'Research', color: 'blue'});
+    assert.deepEqual(plain(grouped.output.group), {groupId: 1, windowId: 1, title: 'Research', color: 'blue', collapsed: false});
+    await f.run('tabGroups', {action: 'update', groupId: 1, collapsed: true});
+    const listed = await f.run('tabGroups', {action: 'list'});
+    assert.deepEqual(plain(listed.groups[0].tabIds), [7, 8]);
+    assert.equal(listed.groups[0].collapsed, true);
+    await f.run('tabGroups', {action: 'ungroup', tabIds: [8]});
+    assert.deepEqual(plain((await f.run('tabGroups', {action: 'list'})).groups[0].tabIds), [7]);
+    assert.equal((await f.run('tabs', {action: 'list'})).tabs.find(t => t.tabId === 7).groupId, 1);
+    await assert.rejects(f.run('tabGroups', {action: 'update', title: 'x'}), /groupId is required/);
 });
 
 test('raw JS uses isolated world, structured values and per-frame errors', async () => {
@@ -405,7 +442,7 @@ test('network capture stop releases raw held keys, mouse and touch before debugg
 
 test('manifest and build entries include all platform permissions and clipboard service', () => {
     const manifest = JSON.parse(fs.readFileSync('public/manifest.json', 'utf8'));
-    for (const permission of ['debugger', 'downloads', 'notifications', 'clipboardRead', 'clipboardWrite', 'offscreen']) assert.ok(manifest.permissions.includes(permission));
+    for (const permission of ['tabGroups', 'debugger', 'downloads', 'notifications', 'clipboardRead', 'clipboardWrite', 'offscreen']) assert.ok(manifest.permissions.includes(permission));
     assert.ok(fs.readFileSync('vite.config.ts', 'utf8').includes('clipboard.html'));
 });
 

@@ -11,7 +11,7 @@ export const TOOL_GROUPS = {
     scripting: ["viewCodeFiles", "createFileTool", "strReplaceTool", "deleteFileTool", "executeContentScript", "saveScript", "listScripts", "toggleScript", "removeScript", "reloadPage"],
     debugging: ["getDebugInfo", "getLocalStorage", "getCookies"],
     visual: ["takeScreenshot", "takeMarkedScreenshot"],
-    browser: ['browserTabs', 'accessibilityTree', 'persistentStore', 'siteRecipes', 'evaluateJavaScript'],
+    browser: ['browserTabs', 'browserTabGroups', 'accessibilityTree', 'persistentStore', 'siteRecipes', 'evaluateJavaScript'],
     input: ['clickTarget', 'browserGesture', 'trustedInput', 'deepDOM', 'takeMarkedScreenshot'],
     network: ['networkCapture', 'deepDOM'],
     system: ['clipboard', 'browserDownload', 'browserNotify'],
