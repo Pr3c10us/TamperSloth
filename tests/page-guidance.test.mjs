@@ -44,6 +44,22 @@ function fixture({animate=false,measurable=true,chrome}={}) {
     return {run,window,document,target,expected,elements,listeners,timers,intervals,frames,fire};
 }
 
+function timedToolFixture(poll, start={status:'waiting',ready:true}) {
+    let elapsed=0;const calls=[];
+    const chrome={runtime:{sendMessage:async msg=>{
+        calls.push(msg);
+        if(msg.operation==='guidance' && msg.input.action==='start') return start;
+        if(msg.operation==='guidance' && msg.input.action==='poll') return poll(elapsed);
+        if(msg.operation==='accessibility') return {nodes:[]};
+        if(msg.operation==='perception') return {screenshot:'data:image/png;base64,aW1hZ2U='};
+        return {ok:true};
+    }},tabs:{get:async()=>({url:'https://example.com',title:'Page'})}};
+    const load=createLoader({globals:{chrome,Date:class extends Date {static now(){return elapsed;}},
+        setTimeout:(fn,ms)=>{elapsed+=ms;queueMicrotask(fn);return 0;}}});
+    const tool=load('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{}).waitForUserAction;
+    return {tool,calls,elapsed:()=>elapsed,run:input=>tool.execute(tool.inputSchema.parse(input),{abortSignal:new AbortController().signal})};
+}
+
 test('annotations follow target geometry, keep text safe and never intercept page input',()=>{
     const f=fixture();
     f.run({action:'draw',kind:'highlight',selector:'#target',id:'a',label:'<button>Not HTML</button>'});
@@ -135,6 +151,26 @@ test('an unfinished completion condition still waits and verifies live state aft
     f.fire('click');assert.equal(f.run({action:'poll',id:'resume'}).status,'waiting');
     f.expected.attrs['aria-pressed']='true';for(const fn of f.intervals.values())fn();
     assert.equal(f.run({action:'poll',id:'resume'}).status,'completed');
+});
+
+test('a live completion condition finishes the step even when its action event was missed',()=>{
+    const f=fixture();f.elements.set('#expected',f.expected);
+    const completion={selector:'#expected',state:'pressed'};
+    f.run({action:'start',id:'missed',selector:'#target',event:'click',instruction:'Select Rectangle',completion,timeoutMs:20000});
+    for(const fn of f.intervals.values()) fn();
+    assert.equal(f.run({action:'poll',id:'missed'}).status,'waiting');
+    f.expected.attrs['aria-pressed']='true';
+    for(const fn of f.intervals.values()) fn();
+    const result=f.run({action:'poll',id:'missed'});
+    assert.equal(result.status,'completed');assert.equal(result.actionObserved,false);assert.deepEqual(result.proof,completion);
+    assert.equal(f.intervals.size,0);assert.equal(f.window.__tamperSlothGuidance.marks.size,0);
+});
+
+test('an expected selector alone cannot finish a step without an observed action',()=>{
+    const f=fixture();f.elements.set('#expected',f.expected);
+    f.run({action:'start',id:'unproven',selector:'#target',event:'click',instruction:'Continue',expectedSelector:'#expected',timeoutMs:20000});
+    for(const fn of f.intervals.values()) fn();
+    assert.equal(f.run({action:'poll',id:'unproven'}).status,'waiting');
 });
 
 test('observation failures return fresh evidence and recovery guidance instead of terminal errors',async()=>{
@@ -278,11 +314,13 @@ test('the guidance guard holds text-only fallbacks after an observer failure and
     // A fresh observed step releases the hold so the model can finish normally.
     guard.observe('waitForUserAction',{status:'completed'});
     assert.equal(guard.holding(),false);assert.equal(guard.resume(),false);
-    // The first idle round must re-wait; a later one may check in and end the turn.
+    // Legacy results without permission to check in still hold; a check-in releases immediately.
     guard.observe('waitForUserAction',{status:'needsReview',idle:true,checkInAllowed:false});
     assert.equal(guard.holding(),true);
     guard.observe('waitForUserAction',{status:'needsReview',idle:true,checkInAllowed:true});
     assert.equal(guard.holding(),false);
+    guard.observe('waitForUserAction',{status:'needsReview',observationPhase:'interactionPause',checkInAllowed:true});
+    assert.equal(guard.holding(),false);assert.equal(guard.resume(),false);
     // askUser about the stuck step is a legitimate way to end the turn.
     guard.observe('annotatePage',{status:'needsReview'});
     guard.observe('askUser',{answer:'x'});
@@ -303,6 +341,66 @@ test('an observed action disables the idle timeout',()=>{
     const idle=[...f.timers.values()].find(timer=>timer.ms===5000);
     idle?.fn();
     assert.equal(f.run({action:'poll',id:'acted'}).status,'waiting');
+});
+
+test('a held pointer keeps the step active until the user finishes or cancels the gesture',()=>{
+    const f=fixture();
+    f.run({action:'start',id:'drag',selector:'#target',event:'pointerup',instruction:'Draw a frame',timeoutMs:20000,idleTimeoutMs:10000});
+    f.fire('pointerdown',f.expected);
+    assert.equal(f.run({action:'poll',id:'drag'}).interactionActive,true);
+    assert.equal([...f.timers.values()].some(timer=>timer.ms===10000),false);
+    f.fire('pointerup',f.expected);
+    assert.equal(f.run({action:'poll',id:'drag'}).interactionActive,false);
+    assert.equal([...f.timers.values()].some(timer=>timer.ms===10000),true);
+    f.fire('pointerdown',f.expected);f.fire('pointercancel',f.expected);
+    assert.equal(f.run({action:'poll',id:'drag'}).interactionActive,false);
+    assert.equal([...f.timers.values()].some(timer=>timer.ms===10000),true);
+});
+
+test('the first idle timeout allows a check-in instead of another long wait',async()=>{
+    const f=timedToolFixture(()=>({status:'timeout',idle:true,actionObserved:false}));
+    const result=await f.run({selector:'#target',instruction:'Select Rectangle'});
+    const start=f.calls.find(call=>call.input.action==='start').input;
+    assert.equal(start.timeoutMs,20000);assert.equal(start.idleTimeoutMs,10000);
+    assert.equal(result.status,'needsReview');assert.equal(result.checkInAllowed,true);assert.equal(result.actionObserved,false);
+    assert.ok(result.screenshot);assert.ok(result.currentState);
+    assert.match(result.hint,/Do not silently start another wait/);assert.doesNotMatch(result.hint,/45000/);
+    const guard=createLoader()('src/chat/lib/guidanceGuard.ts').createGuidanceGuard();
+    guard.observe('waitForUserAction',result);
+    assert.equal(guard.holding(),false);assert.equal(guard.resume(),false);
+});
+
+test('a missed selector action checks progress promptly after the user pauses',async()=>{
+    const f=timedToolFixture(()=>({status:'waiting',ready:true,interactions:1,actionObserved:false}));
+    const result=await f.run({selector:'#target',instruction:'Select Rectangle'});
+    assert.equal(f.elapsed(),3000);assert.equal(result.status,'needsReview');assert.equal(result.observationPhase,'interactionPause');
+    assert.equal(result.actionObserved,false);assert.equal(result.checkInAllowed,true);assert.ok(result.screenshot);assert.ok(result.currentState);
+    assert.equal(f.calls.filter(call=>call.input.action==='start').length,1);
+    assert.equal(createLoader()('src/chat/lib/guidanceStatus.ts').guidanceStatusLabel(result),'Checking step progress');
+});
+
+test('progress checks wait for active typing and held pointer gestures to pause',async()=>{
+    for(const pointer of [false,true]) {
+        const f=timedToolFixture(now=>({status:'waiting',ready:true,actionObserved:false,
+            interactions:pointer ? (now<5000 ? 1 : 2) : Math.min(now/250+1,21),interactionActive:pointer && now<5000}));
+        const result=await f.run({selector:'#target',event:pointer ? 'pointerup' : 'change',instruction:'Finish this step'});
+        assert.equal(result.observationPhase,'interactionPause');assert.equal(f.elapsed(),6000);
+    }
+});
+
+test('progress checks start their clock after the guidance drawing is ready',async()=>{
+    const f=timedToolFixture(now=>({status:'waiting',ready:now>=7000,interactions:1,actionObserved:false}),{status:'waiting',ready:false});
+    const result=await f.run({selector:'#target',instruction:'Select Rectangle'});
+    assert.equal(result.observationPhase,'interactionPause');assert.equal(f.elapsed(),10000);
+});
+
+test('observed actions and state waits keep watching for their declared result',async()=>{
+    for(const event of ['click','state']) {
+        const f=timedToolFixture(now=>({status:now>=10000 ? 'completed' : 'waiting',ready:true,interactions:1,actionObserved:event==='click'}));
+        const result=await f.run({selector:'#target',event,expectedSelector:'#expected',instruction:'Wait for confirmation'});
+        assert.equal(result.status,'completed');assert.equal(f.elapsed(),10000);
+        assert.equal(f.calls.some(call=>call.operation==='perception'),false);
+    }
 });
 
 test('an untouched step reports no action and status labels never imply progress during recovery',()=>{
@@ -637,7 +735,7 @@ test('region steps draw at measured coordinates and observe presses inside them'
     f.fire('click',f.expected,true,{clientX:10,clientY:10});
     assert.equal(f.run({action:'poll',id:'frame'}).unexpectedActions,1);
     f.fire('pointerup',f.expected,true,{clientX:10,clientY:10});
-    assert.equal(f.run({action:'poll',id:'frame'}).interactions,1);
+    assert.equal(f.run({action:'poll',id:'frame'}).interactions,2);
     f.fire('pointerdown',f.expected,true,{clientX:320,clientY:215});
     const result=f.run({action:'poll',id:'frame'});
     assert.equal(result.status,'completed');assert.equal(result.verification,'visual');assert.equal(state.marks.size,0);

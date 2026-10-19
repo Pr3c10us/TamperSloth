@@ -3,6 +3,7 @@ export function guidanceStatusLabel(result: {status?:string;alreadySatisfied?:bo
     if(result?.status==='needsReview') {
         if(result.observationPhase==='navigated') return 'Step observed; page changed';
         if(result.observationPhase==='notStarted') return 'Could not watch this step';
+        if(result.observationPhase==='interactionPause') return 'Checking step progress';
         if(result.idle) return result.checkInAllowed ? 'No activity; checking in' : 'No activity yet; still watching';
         if(result.actionObserved===true) return 'Action detected; outcome unconfirmed';
         if(result.observationPhase==='timedOut' && result.actionObserved===false) return 'No action detected';

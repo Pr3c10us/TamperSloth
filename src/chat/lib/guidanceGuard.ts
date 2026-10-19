@@ -17,6 +17,7 @@ export function createGuidanceGuard() {
             if (!GUIDANCE_TOOLS.has(toolName) || !output || typeof output !== 'object') return;
             const status = output.status;
             if (status === 'needsReview') {
+                if (output.checkInAllowed) {pending = false; return;}
                 if (output.idle) {pending = !output.checkInAllowed; return;}
                 if (output.observationPhase !== 'navigated') failures++;
                 pending = true;

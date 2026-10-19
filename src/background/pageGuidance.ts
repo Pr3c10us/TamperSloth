@@ -2,9 +2,9 @@
 export function pageGuidance(args: any): any {
     const win = window as any;
     const actionTypes=['click','input','change','submit','focusin','pointerup','pointerdown'];
-    // Bump when the overlay's drawing changes. Its state, functions included, outlives an
+    // Bump when the overlay's behavior changes. Its state, functions included, outlives an
     // extension reload on the page; an older overlay is disposed and built afresh.
-    const VERSION=12;
+    const VERSION=14;
     let state = win.__tamperSlothGuidance;
     if (state && state.version!==VERSION) {
         state.version=VERSION;
@@ -215,7 +215,9 @@ export function pageGuidance(args: any): any {
         };
         state.park=(mark: any)=>{
             const b=mark.currentBox ?? mark.box;
-            const points=[{x:b.x+b.width+16,y:b.y},{x:b.x-30,y:b.y},{x:b.x,y:b.y-34},{x:b.x,y:b.y+b.height+16}];
+            const square=['rectangle','highlight','bracket'].includes(mark.kind);
+            const points=[...(square ? [{x:b.x+b.width+16,y:b.y+b.height}] : []),
+                {x:b.x+b.width+16,y:b.y},{x:b.x-30,y:b.y},{x:b.x,y:b.y-34},{x:b.x,y:b.y+b.height+16}];
             const p=points.find(p=>p.x>=0 && p.x<innerWidth-25 && p.y>=0 && p.y<innerHeight-30) ?? points[0];
             state.moveCursor(p,false,true);cursorName.textContent='Sloth';
         };
@@ -383,15 +385,19 @@ export function pageGuidance(args: any): any {
             const e=event as any;
             state.recent.push({type:event.type,path:event.composedPath(),x:e.clientX,y:e.clientY});
             if(state.recent.length>20) state.recent.shift();
-            // Coordinate-fallback steps cannot verify outcomes themselves; count interactions for a later screenshot check.
-            if(state.wait && !state.wait.result && ['pointerup','input','change','submit','keyup'].includes(event.type)) state.wait.interactions++;
+            if(state.wait && !state.wait.result) {
+                if(event.type==='pointerdown') state.wait.pointerActive=true;
+                if(event.type==='pointerup' || event.type==='pointercancel') state.wait.pointerActive=false;
+            }
+            // Count completed interactions so missed target events can trigger a prompt progress check.
+            if(state.wait && !state.wait.result && ['click','pointerup','input','change','submit','keyup'].includes(event.type)) state.wait.interactions++;
             // Any user activity means they are engaged, so restart the short idle window.
             if(state.wait && !state.wait.result) state.wait.armIdle?.();
         };
         state.inRegion=(p: any,box: any)=>Number.isFinite(p.x) && Number.isFinite(p.y) && p.x>=box.x-6 && p.x<=box.x+box.width+6 && p.y>=box.y-6 && p.y<=box.y+box.height+6;
         state.recentRegionHit=(box: any,wanted: string)=>state.recent.some((entry: any)=>state.sameAction(entry.type,wanted) && state.inRegion(entry,box));
         state.recentHit=(selector: string,el: Element | null,wanted: string)=>state.recent.some((entry: any)=>state.sameAction(entry.type,wanted) && state.hits({composedPath:()=>entry.path} as any,selector,el));
-        state.recordEvents=['pointerdown','click','input','change','submit','focusin','pointerup','keyup'];
+        state.recordEvents=['pointerdown','click','input','change','submit','focusin','pointerup','pointercancel','keyup'];
         for(const type of state.recordEvents) window.addEventListener(type,state.recordAction,{capture:true,passive:true});
         // Clean geometry: straight edges, rounded corners and true curves. Dashes come
         // from stroke-dasharray, and highlights are a translucent wash of the color.
@@ -661,7 +667,7 @@ export function pageGuidance(args: any): any {
             if (args.expectedState==='checked') return el.checked === true || el.getAttribute('aria-checked')==='true';
             const b=el.getBoundingClientRect(); return b.width>0 && b.height>0 && getComputedStyle(el).visibility!=='hidden';
         };
-        const w: any=state.wait={id:args.id,event:args.event,region,interactions:0,started:Date.now(),waitingForDraw:true,unexpected:0,acted:alreadyActed || args.event==='state',result:null,timer:null,check:null,listener:null};
+        const w: any=state.wait={id:args.id,event:args.event,region,interactions:0,pointerActive:false,started:Date.now(),waitingForDraw:true,unexpected:0,acted:alreadyActed || args.event==='state',result:null,timer:null,check:null,listener:null};
         // Persist the action so a poll after a full page load (link click) still knows the user acted.
         const markActed=()=>{w.acted=true;try{sessionStorage.setItem('__tamperSlothActed',w.id);}catch{}};
         if(alreadyActed){markActed();for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);}
@@ -686,7 +692,8 @@ export function pageGuidance(args: any): any {
             // Fall back to the window-level log when the page stops propagation before document listeners run.
             if(!w.acted && region && state.recentRegionHit(region,args.event)){markActed();for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);}
             if(!w.acted && args.selector && state.recentHit(args.selector,(()=>{try{return state.find(args.selector);}catch{return target;}})(),args.event)){markActed();for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);}
-            if(w.acted && matches()) state.finish({status:'completed'});
+            // A declared success condition proves completion even if the action event was missed.
+            if((w.acted || args.completion) && matches()) state.finish({status:'completed',...(args.completion ? {proof:args.completion} : {})});
         },200);
         w.armTimeout=()=>{
             if(w.result || w.timer) return;
@@ -697,7 +704,7 @@ export function pageGuidance(args: any): any {
         // Stop early when the user shows no activity at all, instead of holding the full timeout.
         w.armIdle=()=>{
             clearTimeout(w.idleTimer);
-            if(w.result || w.acted || w.waitingForDraw || !args.idleTimeoutMs) return;
+            if(w.result || w.acted || w.pointerActive || w.waitingForDraw || !args.idleTimeoutMs) return;
             w.idleTimer=setTimeout(()=>{if(!w.acted) state.finish({status:'timeout',idle:true,hint:'No user activity was seen on the page. Check in with the user briefly instead of waiting longer.'});},args.idleTimeoutMs);
         };
         state.message(alreadyActed ? 'Checking the page' : 'Your turn',alreadyActed ? 'Waiting for the expected change' : 'Use the marked control · Escape to pause');
@@ -718,7 +725,7 @@ export function pageGuidance(args: any): any {
     if (args.action === 'poll' || args.action === 'cancel') {
         if (!state.wait || state.wait.id!==args.id) return {status:'lost',hint:'This step was replaced or the page navigated. Inspect the current page.'};
         if(args.action==='cancel') state.finish({status:'cancelled',hint:'Guidance cancelled.'});
-        return state.wait.result ?? {status:'waiting',ready:!state.wait.waitingForDraw,actionObserved:state.wait.acted && state.wait.event!=='state',unexpectedActions:state.wait.unexpected,interactions:state.wait.interactions};
+        return state.wait.result ?? {status:'waiting',ready:!state.wait.waitingForDraw,actionObserved:state.wait.acted && state.wait.event!=='state',unexpectedActions:state.wait.unexpected,interactions:state.wait.interactions,interactionActive:state.wait.pointerActive};
     }
     throw new Error('Unknown guidance action');
 }

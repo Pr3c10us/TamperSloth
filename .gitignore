@@ -33,3 +33,7 @@ extension
 # Cloudflare
 .wrangler
 /store-assets/
+/launch-video/
+/design-reference/
+tampersloth-ui-showcase.html
+tampersloth-design-reference.html

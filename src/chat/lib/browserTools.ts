@@ -91,8 +91,6 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
     // Coordinate guidance cannot prove outcomes, so it unlocks only after selector-based guidance keeps failing.
     const FALLBACK_AFTER=2;
     let observerFailures=0;
-    // Consecutive idle waits; the first re-waits with the overlay up, later ones may end the turn.
-    let idleRounds=0;
     const fallbackHint=()=>observerFailures>=FALLBACK_AFTER ? ` Selector-based guidance has failed ${observerFailures} times; you may fall back to coordinates: measure the target's viewport CSS box from a screenshot (takeMarkedScreenshot grid/plain metadata), then call waitForUserAction with region instead of selector.` : '';
     const retryGuidance=async(input: Record<string,unknown>,signal?: AbortSignal)=>{
         const args: Record<string,unknown>={...input,id:input.id ?? crypto.randomUUID()};
@@ -152,9 +150,9 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
             },
         }),
         waitForUserAction: tool({
-            description:'Atomically draw one brief target tip and wait for user click/input/change/submit/focus, pointerup for drawing/dragging, or event state. completion {selector,state:visible|absent|checked|selected|pressed} proves success and skips an already-finished step before waiting. Choose a success condition, not button visibility. expectedSelector requires a resulting change after action. annotationIds retains intentional drawings until action. Observation failures return needsReview with fresh DOM/screenshot: inspect progress and resume at the first unfinished step, preserving visual guidance. Fallback only after repeated selector failures: region (viewport CSS box measured from a screenshot) replaces selector; it draws there, then returns visualCheck with a fresh screenshot after a press inside the region or after the user interacts and pauses (checkAfterMs). Judge visualCheck from the screenshot. Never collect field values. Escape or Stop cancels.',
+            description:'Atomically draw one brief target tip and wait for user click/input/change/submit/focus, pointerup for drawing/dragging, or event state. completion {selector,state:visible|absent|checked|selected|pressed} proves success even if the action event is missed and skips an already-finished step before waiting. Choose a success condition, not button visibility. expectedSelector requires a resulting change after action. annotationIds retains intentional drawings until action. Observation failures return needsReview with fresh DOM/screenshot. Missed actions trigger an early progress check after interaction pauses (checkAfterMs); checkInAllowed means check in about this step if completion is unproven, instead of silently waiting again. Fallback only after repeated selector failures: region (viewport CSS box measured from a screenshot) replaces selector; it draws there, then returns visualCheck with a fresh screenshot after a press inside the region or after the user interacts and pauses. Judge visualCheck from the screenshot. Never collect field values. Escape or Stop cancels.',
             inputSchema: browserSchemas.guidance.pick({tabId:true,completion:true,annotationIds:true,selector:true,region:true,instruction:true,event:true,expectedSelector:true,expectedState:true,timeoutMs:true,idleTimeoutMs:true}).extend({instruction:z.string().min(1).max(300),
-                checkAfterMs:z.number().int().min(3000).max(60000).default(10000).describe('Region fallback only: after this long, a pause following user interaction triggers a screenshot check.')}),
+                checkAfterMs:z.number().int().min(3000).max(60000).default(3000).describe('After this long watching the step, a pause following user interaction triggers a progress check if the expected action was not detected.')}),
             execute: async (input, options) => {
                 const tabId=input.tabId ?? getTabId(), id=crypto.randomUUID();
                 const signal=abortSignal ?? options.abortSignal;
@@ -168,8 +166,7 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
                     if(signal?.aborted) throw new DOMException('Aborted','AbortError');
                     // An idle user or a navigation the user caused is not a selector failure, so it must not unlock coordinate fallback.
                     if(!region && !observation.idle && phase!=='navigated') observerFailures++;
-                    idleRounds=observation.idle ? idleRounds+1 : 0;
-                    const checkInAllowed=!!observation.idle && idleRounds>=2;
+                    const checkInAllowed=!!observation.idle || phase==='interactionPause' || (phase==='timedOut' && observation.actionObserved===false);
                     await browserCall('guidance',{tabId,id,action:'cancel'}).catch(()=>{});
                     const [dom,image]=await Promise.allSettled([
                         browserCall('accessibility',{tabId,mode:'dom',maxNodes:80}),
@@ -177,17 +174,17 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
                     ]);
                     if(signal?.aborted) throw new DOMException('Aborted','AbortError');
                     return {...observation,status:'needsReview',recoverable:true,reason,observationPhase:phase,
-                        ...(observation.idle ? {idleRounds,checkInAllowed} : {}),
+                        ...(checkInAllowed ? {checkInAllowed:true} : {}),
                         actionObserved:observation.actionObserved ?? null,page:await page(),
                         instruction:input.instruction,completion:input.completion,
                         ...(dom.status==='fulfilled' ? {currentState:dom.value} : {inspectionIssue:String(dom.reason)}),
                         ...(image.status==='fulfilled' ? image.value : {}),
                         hint:(phase==='navigated' ? 'The user acted on the marked control and the page navigated, which ended observation. Verify the new page from the fresh DOM/screenshot below, then guide the next unfinished step. ' : '')+
-                            (observation.idle ? (checkInAllowed
-                                ? 'The user is still inactive. Send one short check-in about this current step only (where the control is, or offer help) and end the turn. Never list later steps in chat. '
-                                : 'The user showed no page activity yet. In this same response, write at most one short line in chat about this current step, then call waitForUserAction again for the same step with idleTimeoutMs 45000 so the highlight stays up. Never list later steps in chat. ') : '')+
+                            (observation.idle ? 'No page activity was observed. ' : phase==='interactionPause' ? 'The user interacted with the page and paused, but the expected action was not detected. ' : '')+
                             (observation.actionObserved===false ?'No expected user action was detected. Keep guidance on this step; do not advance or ask whether a later task is finished. ' : observation.actionObserved===true ? 'The expected action was detected, but its outcome remains unverified. ' : 'Action observation is unavailable; do not claim the user acted or made progress. ')+
-                            'Inspect the fresh DOM/screenshot against completed steps. Resume visual guidance at the first unfinished step with current selectors. Do not repeat finished actions or abandon highlighting because observation failed. After two recovery attempts without new evidence, ask whether the user needs help with this specific step.'+(region ? '' : fallbackHint())};
+                            'Inspect the fresh DOM/screenshot against completed steps. Do not repeat finished actions or claim progress without evidence. '+
+                            (checkInAllowed ? 'If completion is not proven, send one brief check-in about this current step and wait for the user\'s reply; use askUser when a response is needed. Do not silently start another wait or list later steps in chat. '
+                                : 'Resume visual guidance at the first unfinished step with current selectors. Do not abandon highlighting because observation failed. After two recovery attempts without new evidence, ask whether the user needs help with this specific step. ')+(region ? '' : fallbackHint())};
                 };
                 // Region steps cannot inspect the DOM for success, so hand the model a fresh screenshot to judge.
                 const visualCheck=async(trigger: 'regionAction'|'interactionPause', observation: any)=>{
@@ -205,7 +202,7 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
                 catch(error){return recover(error instanceof Error ? error.message : String(error),{},'notStarted');}
                 if(started.status!=='waiting') {
                     if(region && started.status==='completed' && !started.alreadySatisfied) return visualCheck('regionAction',started);
-                    if(!region && started.status==='completed') {observerFailures=0;idleRounds=0;}
+                    if(!region && started.status==='completed') observerFailures=0;
                     return {...started,page:await page()};
                 }
                 const startUrl=(await page()).url;
@@ -229,7 +226,7 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
                 signal?.addEventListener('abort',cancel,{once:true});
                 let ready=started.ready===true;
                 let deadline=Date.now()+input.timeoutMs+(ready ? 1000 : 8000);
-                const startedAt=Date.now();let interactions=0,lastInteractionAt=0,acted=false;
+                let readyAt=ready ? Date.now() : undefined,interactions=0,lastInteractionAt=0,acted=false;
                 try {
                     while (true) {
                         if(signal?.aborted) throw new DOMException('Aborted','AbortError');
@@ -241,13 +238,14 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
                             if(result.status==='lost') return await lost(result,acted);
                             if(result.status==='timeout') return await recover(result.hint ?? result.status,result,'timedOut');
                             if(region && result.status==='completed') return await visualCheck('regionAction',result);
-                            if(!region && result.status==='completed') {observerFailures=0;idleRounds=0;}
+                            if(!region && result.status==='completed') observerFailures=0;
                             return {...result,page:await page(),hint:result.hint ?? 'Read the updated DOM or screenshot to verify the outcome before the next instruction.'};
                         }
-                        if(result.ready===true && !ready){ready=true;deadline=Date.now()+input.timeoutMs+1000;}
-                        if(region) {
-                            if((result.interactions ?? 0)>interactions){interactions=result.interactions;lastInteractionAt=Date.now();}
-                            if(interactions>0 && Date.now()-startedAt>=input.checkAfterMs && Date.now()-lastInteractionAt>=800) return await visualCheck('interactionPause',result);
+                        if(result.ready===true && !ready){ready=true;readyAt=Date.now();deadline=readyAt+input.timeoutMs+1000;}
+                        if((result.interactions ?? 0)>interactions){interactions=result.interactions;lastInteractionAt=Date.now();}
+                        if(readyAt!==undefined && !result.interactionActive && interactions>0 && Date.now()-readyAt>=input.checkAfterMs && Date.now()-lastInteractionAt>=800) {
+                            if(region) return await visualCheck('interactionPause',result);
+                            if(!acted && input.event!=='state') return await recover('Page activity was observed without the expected action.',result,'interactionPause');
                         }
                         if(Date.now()>=deadline) return await recover('The page stopped reporting progress.',result,'timedOut');
                         await new Promise<void>(resolve=>setTimeout(resolve,250));
