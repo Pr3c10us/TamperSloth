@@ -9,7 +9,7 @@ const apiError = (statusCode, body) => new APICallError({
     message: body?.message ?? 'nope', url: 'https://api.tampersloth.test', requestBodyValues: {}, statusCode,
     responseBody: body ? JSON.stringify(body) : undefined,
 });
-const SPENT = {statusCode: 402, message: "You've used this month's $1 of Free credit. It renews on the 1st.", code: 'CREDITS_EXHAUSTED'};
+const SPENT = {statusCode: 402, message: "You've used this month's 10 Free credits. They renew on the 1st.", code: 'CREDITS_EXHAUSTED'};
 
 test('a 402 for spent credit is recognised, even inside a RetryError', () => {
     const {creditsExhaustedError} = fresh();

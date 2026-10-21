@@ -9,7 +9,7 @@ import {Button} from "@/components/ui/button";
 import {cn} from "@/lib/utils";
 import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
 import {formatElapsedTime} from "../lib/efficiency";
-import {estimateRunCost, formatCost} from "../lib/pricing";
+import {estimateRunCost, formatCost, isCreditBilled} from "../lib/pricing";
 import {formatModelName} from "../lib/provider";
 
 type Block = ChatMessage["blocks"][number];
@@ -99,6 +99,10 @@ interface AssistantMessageProps {
 export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, isLast, showRunTokens, showToolTokens}: AssistantMessageProps) {
     const [showCost, setShowCost] = useState(false);
     const cost = showCost && msg.runMetrics ? estimateRunCost(msg.runMetrics) : undefined;
+    // Each run is priced in its own unit, so a chat that switches models mid-way mixes credits and dollars.
+    const credits = isCreditBilled(msg.runMetrics?.providerId);
+    const totalCost = cost?.input !== undefined && cost.output !== undefined ? cost.input + cost.output : undefined;
+    const costToggleLabel = showCost ? "Show token counts" : `Show estimated cost in ${credits ? "credits" : "USD"}`;
     // Cache reads are part of input tokens, billed at a fraction of the input rate.
     const cachedInput = msg.runMetrics?.total?.cacheRead
         ?? (msg.runMetrics?.steps.some(step => step.cacheRead !== undefined)
@@ -153,14 +157,17 @@ export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, 
                         <MetricChip value={formatElapsedTime(msg.runMetrics.elapsedMs)} label="Time to complete"/>
                     )}
                     {/* Token and cost chips sit closer together than the surrounding actions. */}
-                    {showRunTokens && total && <div className="flex items-center">{showCost ? (
+                    {showRunTokens && total && <div className="flex items-center">{showCost ? (credits ? (
+                        <MetricChip className="px-0.5" icon={Sigma} value={formatCost(totalCost, "credits")}
+                            label={`Credits used · ${modelLabel}`}/>
+                    ) : (
                         <>
                             <MetricChip className="px-0.5" icon={ArrowUp} value={formatCost(cost?.input)} label={`Input cost · ${modelLabel}`}/>
                             <MetricChip className="px-0.5" icon={ArrowDown} value={formatCost(cost?.output)} label={`Output cost · ${modelLabel}`}/>
                             <MetricChip className="px-0.5" icon={Sigma} label="Total estimated cost at standard API rates"
-                                value={formatCost(cost?.input !== undefined && cost.output !== undefined ? cost.input + cost.output : undefined)}/>
+                                value={formatCost(totalCost)}/>
                         </>
-                    ) : (
+                    )) : (
                         <>
                             {total.input !== undefined && <MetricChip className="px-0.5" icon={ArrowUp} value={compactNumber.format(total.input)}
                                 label={`${total.input.toLocaleString()} input tokens`}/>}
@@ -174,12 +181,12 @@ export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, 
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button variant="ghost" size="icon-xs" onClick={() => setShowCost(previous => !previous)}
-                                    aria-pressed={showCost} aria-label={showCost ? "Show token counts" : "Show estimated cost in USD"}
+                                    aria-pressed={showCost} aria-label={costToggleLabel}
                                     className="text-muted-foreground hover:text-foreground">
                                     {showCost ? <Hash className="size-3.5"/> : <Coins className="size-3.5"/>}
                                 </Button>
                             </TooltipTrigger>
-                            <TooltipContent side="bottom">{showCost ? "Show token counts" : "Show estimated cost in USD"}</TooltipContent>
+                            <TooltipContent side="bottom">{costToggleLabel}</TooltipContent>
                         </Tooltip>
                     )}
                 </div>

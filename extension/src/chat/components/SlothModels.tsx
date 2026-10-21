@@ -5,6 +5,7 @@ import {cn} from "@/lib/utils";
 import {ProviderLogo} from "./ProviderLogo";
 import {signIn, type Account, type SlothModelInfo} from "@/src/settings/lib/account";
 import {reconcileSelectedModel} from "../lib/modelFallback";
+import {formatCredits, usdToCredits} from "../lib/pricing";
 
 /** Shown before the account response arrives (first open, offline). */
 const FALLBACK: Record<string, Pick<SlothModelInfo, "name" | "tagline">> = {
@@ -42,10 +43,6 @@ export function TierGlyph({modelId, className}: { modelId: string; className?: s
             ))}
         </span>
     );
-}
-
-export function formatUsd(usd: number): string {
-    return `$${usd.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 }
 
 /** One Sloth model in the picker list. */
@@ -104,7 +101,7 @@ export function SlothUsageMeter({account, className}: { account: Account; classN
         <div className={className}>
             <div className="flex items-baseline justify-between gap-2 text-[11px]">
                 <span className="text-muted-foreground">
-                    <span className="tabular-nums text-foreground">{formatUsd(spentUsd)}</span> of {formatUsd(creditUsd)} used
+                    <span className="tabular-nums text-foreground">{usdToCredits(spentUsd).toLocaleString("en-US", {maximumFractionDigits: 2})}</span> of {formatCredits(creditUsd)} used
                 </span>
                 <span className="font-mono text-[9.5px] uppercase tracking-[.1em] text-muted-foreground">Renews {renews}</span>
             </div>
@@ -112,8 +109,8 @@ export function SlothUsageMeter({account, className}: { account: Account; classN
                 role="meter"
                 aria-label="Monthly credit used"
                 aria-valuemin={0}
-                aria-valuemax={creditUsd}
-                aria-valuenow={Math.min(spentUsd, creditUsd)}
+                aria-valuemax={usdToCredits(creditUsd)}
+                aria-valuenow={usdToCredits(Math.min(spentUsd, creditUsd))}
                 className="mt-1.5 h-1 overflow-hidden rounded-full bg-border"
             >
                 <div

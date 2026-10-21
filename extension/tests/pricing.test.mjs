@@ -79,5 +79,9 @@ test('unknown legacy models and missing usage never masquerade as free', () => {
     assert.equal(formatCost(0), '$0.00');
     assert.equal(formatCost(.000001), '<$0.0001');
     assert.equal(formatCost(.01234), '$0.0123');
+    assert.equal(formatCost(0, 'credits'), '0 credits');
+    assert.equal(formatCost(.000001, 'credits'), '<0.001 credits');
+    assert.equal(formatCost(.01234, 'credits'), '0.123 credits');
+    assert.equal(formatCost(.1, 'credits'), '1 credit');
     assert.equal(estimateUsageCost('openai', 'gpt-6.1-sol', {input: NaN}, sunday).input, undefined);
 });

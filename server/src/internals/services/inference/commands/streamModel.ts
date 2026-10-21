@@ -4,7 +4,7 @@ import type {User} from "../../../domain/user";
 import {costMicros, findSlothModel, type SlothModel, type TokenUsage} from "../../../domain/model";
 import type {ModelProviders, RateLimiter} from "../../../domain/model/provider.ts";
 import type {UsageRepository, UsageStatus} from "../../../domain/usage";
-import {billingPeriod, planFor} from "../../../domain/plan";
+import {billingPeriod, CREDITS_PER_USD, planFor} from "../../../domain/plan";
 import {
     BadRequestError,
     ForbiddenError,
@@ -47,7 +47,7 @@ export default class StreamModel {
         const spent = await this.usageRepository.spentSince(user.id, billingPeriod().start)
         if (spent >= plan.monthlyCreditUsd * 1e6) {
             throw new PaymentRequiredError(
-                `You've used this month's $${plan.monthlyCreditUsd} of ${plan.name} credit. It renews on the 1st.`,
+                `You've used this month's ${plan.monthlyCreditUsd * CREDITS_PER_USD} ${plan.name} credits. They renew on the 1st.`,
                 "CREDITS_EXHAUSTED",
             )
         }

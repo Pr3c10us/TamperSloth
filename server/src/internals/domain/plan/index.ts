@@ -8,6 +8,9 @@ export type Plan = {
     defaultModel: string
 }
 
+/** Users see credits, never dollars: one US dollar buys this many. */
+export const CREDITS_PER_USD = 10
+
 export const PLANS: Record<string, Plan> = {
     free: {
         id: "free",

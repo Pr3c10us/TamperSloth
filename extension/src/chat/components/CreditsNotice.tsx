@@ -3,7 +3,7 @@ import { ArrowUpRight, KeyRound, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UPGRADE_URL, useAccount } from "@/src/settings/lib/account";
 import { useCreditsExhausted } from "../lib/credits";
-import { formatUsd } from "./SlothModels";
+import { formatCredits } from "../lib/pricing";
 import { Eyebrow, CARD_DUR, CARD_EASE } from "./askUser/shared";
 
 /** Shown when this chat's Sloth run was refused because the month's credit is spent. */
@@ -37,8 +37,8 @@ export function CreditsNotice({ conversationId }: { conversationId: string }) {
                     {account ? (
                         <>
                             You've used this month's{" "}
-                            <span className="font-medium text-foreground">{formatUsd(account.usage.creditUsd)}</span> of{" "}
-                            {account.plan.name} credit. {canUpgrade ? "Upgrade for more, or" : "Until it renews,"} switch
+                            <span className="font-medium text-foreground">{formatCredits(account.usage.creditUsd)}</span> on the{" "}
+                            {account.plan.name} plan. {canUpgrade ? "Upgrade for more, or" : "Until it renews,"} switch
                             to a model on your own API key.
                         </>
                     ) : exhausted.message}

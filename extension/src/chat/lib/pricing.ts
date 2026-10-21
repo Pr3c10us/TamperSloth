@@ -160,8 +160,32 @@ export function estimateRunCost(metrics: RunMetrics): EstimatedCost | undefined 
     };
 }
 
-export function formatCost(cost: number | undefined): string {
+/** Users see credits, never dollars: one US dollar buys this many. */
+export const CREDITS_PER_USD = 10;
+
+export function usdToCredits(usd: number): number {
+    return usd * CREDITS_PER_USD;
+}
+
+/** A dollar amount shown as credits, e.g. "12.5 credits". */
+export function formatCredits(usd: number, maximumFractionDigits = 2): string {
+    const credits = usdToCredits(usd);
+    const value = credits.toLocaleString("en-US", {maximumFractionDigits});
+    return `${value} ${value === "1" ? "credit" : "credits"}`;
+}
+
+/** Sloth runs are billed against the plan's credit; runs on the user's own keys cost dollars. */
+export function isCreditBilled(providerId: string | undefined): boolean {
+    return providerId === "tampersloth";
+}
+
+/** A run's estimated cost: credits for Sloth runs, dollars otherwise. */
+export function formatCost(cost: number | undefined, unit: "usd" | "credits" = "usd"): string {
     if (cost === undefined || !Number.isFinite(cost) || cost < 0) return "unavailable";
+    if (unit === "credits") {
+        if (cost > 0 && usdToCredits(cost) < .001) return "<0.001 credits";
+        return formatCredits(cost, 3);
+    }
     if (cost > 0 && cost < .0001) return "<$0.0001";
     return `$${cost.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 4})}`;
 }
