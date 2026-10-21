@@ -1,0 +1,465 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {generateText, streamText, tool, isStepCount} from 'ai';
+import {z} from 'zod';
+import {createLoader} from './load-ts.mjs';
+
+const load = createLoader();
+const {getModel, MODELPROVIDERS} = load('src/chat/lib/provider.ts');
+const {VERTEX_PARTNER_MODELS, vertexProtocol} = load('src/chat/lib/vertexModels.ts');
+// The wire protocol a model speaks. Vertex serves Gemini in Gemini's own and
+// partner and open models in their publisher's (or Chat Completions).
+const wireOf = (provider, model) => provider === 'google' ? 'gemini'
+    : provider === 'vertex' ? {gemini: 'gemini', anthropic: 'anthropic', openapi: 'chat', mistral: 'chat'}[vertexProtocol(model)]
+        : provider === 'anthropic' ? 'anthropic'
+            : provider === 'deepseek' || provider === 'kimi' ? 'chat' : 'responses';
+const isGemini = (provider, model) => wireOf(provider, model) === 'gemini';
+const {agentProviderOptions, thinkingLevelsFor, resolveThinkingLevel} = load('src/chat/lib/providerCompatibility.ts');
+const {createStepMessagePreparer} = load('src/chat/lib/efficiency.ts');
+const {createToolRuntime} = load('src/chat/lib/toolRuntime.ts');
+
+test('Gemini: production tools expose nonrecursive store values and decode JSON before execution', async () => {
+    const messages = [];
+    const browserLoad = createLoader({globals: {chrome: {runtime: {sendMessage: async message => {
+        messages.push(message);
+        return {ok: true};
+    }}}}});
+    const tools = browserLoad('src/chat/lib/tools.ts').createAgentTools({conversationId: 'gemini-store'});
+    const modelId = MODELPROVIDERS.find(p => p.id === 'google').defaultModel;
+    const value = {nested: {items: [1, false, null, {text: 'hello'}]}};
+    let requests = 0;
+    const transport = async (_url, init) => {
+        const body = JSON.parse(init.body);
+        const declarations = body.tools.flatMap(t => t.functionDeclarations ?? []);
+        const schema = declarations.find(t => t.name === 'persistentStore').parametersJsonSchema;
+        assert.equal(schema.properties.value.type, 'string');
+        assert.ok(!JSON.stringify(schema).includes('$ref'), 'Store schema must not expose recursive JSON references');
+        assert.ok(!schema.required.includes('value'), 'Read/list/delete do not need a value');
+        const calls = requests++ === 0 ? [{name: 'persistentStore', input: {
+            action: 'set', namespace: 'test', key: 'nested', value: JSON.stringify(value),
+        }}] : [];
+        return new Response(JSON.stringify(response('google', modelId, requests - 1, calls)),
+            {headers: {'content-type': 'application/json'}});
+    };
+    const result = await generateText({model: getModel('google', 'test-key', modelId, transport),
+        prompt: 'Store the nested JSON value', tools, stopWhen: isStepCount(3)});
+    assert.equal(result.text, 'Done');
+    assert.equal(requests, 2);
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].operation, 'store');
+    assert.deepEqual(messages[0].input.value, value);
+    const storeSchema = tools.persistentStore.inputSchema;
+    for (const sample of [false, 0, 'hello', [], {}]) {
+        assert.deepEqual(storeSchema.parse({action: 'set', namespace: 'test', value: JSON.stringify(sample)}).value, sample);
+    }
+    assert.throws(() => storeSchema.parse({action: 'set', namespace: 'test', value: '{broken'}), /valid JSON/);
+    assert.throws(() => storeSchema.parse({action: 'set', namespace: 'test', value: '1e999'}));
+});
+
+test('vertex: express-mode key goes in x-goog-api-key and thoughts are requested under the vertex options key', async () => {
+    let seen;
+    const transport = async (url, init) => {
+        seen = {url: String(url), headers: new Headers(init.headers), body: JSON.parse(init.body)};
+        return new Response(JSON.stringify(response('vertex', 'gemini-4-argon', 0, [])),
+            {headers: {'content-type': 'application/json'}});
+    };
+    const result = await generateText({model: getModel('vertex', 'vertex-key', 'gemini-3.8-flash', transport),
+        prompt: 'Hello', providerOptions: agentProviderOptions('vertex', 'high')});
+    assert.equal(result.text, 'Done');
+    assert.ok(seen.url.startsWith('https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.8-flash'), seen.url);
+    assert.equal(seen.headers.get('x-goog-api-key'), 'vertex-key');
+    assert.equal(seen.body.generationConfig.thinkingConfig.includeThoughts, true);
+});
+
+test('vertex: gemini-4-argon is sent to the project-scoped global location, and needs a project', async () => {
+    let url;
+    const transport = async (requestUrl, init) => {
+        url = String(requestUrl);
+        return new Response(JSON.stringify(response('vertex', 'gemini-4-argon', 0, [])),
+            {headers: {'content-type': 'application/json'}});
+    };
+    assert.throws(() => getModel('vertex', 'vertex-key', 'gemini-4-argon', transport), /Project ID/);
+    const result = await generateText({prompt: 'Hello',
+        model: getModel('vertex', 'vertex-key', 'gemini-4-argon', transport, {vertexProject: ' my-project '})});
+    assert.equal(result.text, 'Done');
+    assert.ok(url.startsWith('https://aiplatform.googleapis.com/v1beta1/projects/my-project/locations/global/publishers/google/models/gemini-4-argon'), url);
+});
+
+for (const provider of ['openai', 'anthropic', 'google', 'vertex', 'deepseek', 'kimi', 'grok']) {
+    test(`${provider}: canonical image files reach the provider without losing media data`, async () => {
+        let request;
+        const modelId = MODELPROVIDERS.find(p => p.id === provider).defaultModel;
+        const transport = async (_url, init) => {
+            request = JSON.parse(init.body);
+            const payload = provider === 'anthropic'
+                ? {id: 'msg-image', type: 'message', role: 'assistant', model: modelId,
+                    content: [{type: 'text', text: 'Done'}], stop_reason: 'end_turn', stop_sequence: null,
+                    usage: {input_tokens: 10, output_tokens: 1}}
+                : response(provider, modelId, 0, []);
+            return new Response(JSON.stringify(payload), {headers: {'content-type': 'application/json'}});
+        };
+        const result = await generateText({model: getModel(provider, 'test-key', modelId, transport),
+            messages: [{role: 'user', content: [{type: 'text', text: 'Inspect this image'},
+                {type: 'file', data: 'data:image/png;base64,YQ==', mediaType: 'image/png'}]}]});
+        assert.equal(result.text, 'Done');
+        const serialized = JSON.stringify(request);
+        assert.ok(serialized.includes('YQ=='), 'Provider must receive the original image bytes');
+        assert.ok(serialized.includes('image/png'), 'Provider must receive the image media type');
+    });
+}
+
+function response(provider, model, step, calls) {
+    const wire = wireOf(provider, model);
+    if (wire === 'gemini') {
+        return {candidates: [{content: {role: 'model', parts: [
+            {text: 'Plan ' + step, thought: true, thoughtSignature: 'reasoning-' + step},
+            ...(calls.length ? calls.map((call, i) => ({functionCall: {name: call.name, args: call.input},
+                ...(i === 0 ? {thoughtSignature: 'call-' + step} : {})})) : [{text: 'Done', thoughtSignature: 'final-signature'}]),
+        ]}, finishReason: 'STOP'}], usageMetadata: {promptTokenCount: 100, candidatesTokenCount: 20, totalTokenCount: 120}};
+    }
+    if (wire === 'anthropic') {
+        return {id: 'msg-' + step, type: 'message', role: 'assistant', model, stop_sequence: null,
+            stop_reason: calls.length ? 'tool_use' : 'end_turn',
+            content: [{type: 'thinking', thinking: 'Plan ' + step, signature: 'signature-' + step},
+                ...(calls.length ? calls.map(call => ({type: 'tool_use', id: call.id, name: call.name, input: call.input}))
+                    : [{type: 'text', text: 'Done'}])],
+            usage: {input_tokens: 100, output_tokens: 20}};
+    }
+    if (wire === 'chat') {
+        return {id: 'completion-' + step, object: 'chat.completion', created: 0, model,
+            choices: [{index: 0, finish_reason: calls.length ? 'tool_calls' : 'stop', message: {
+                role: 'assistant', content: calls.length ? '' : 'Done',
+                ...(step !== 3 ? {reasoning_content: 'Plan ' + step} : {}),
+                ...(calls.length ? {tool_calls: calls.map(call => ({id: call.id, type: 'function',
+                    function: {name: call.name, arguments: JSON.stringify(call.input)}}))} : {}),
+            }}], usage: {prompt_tokens: 100, completion_tokens: 20, total_tokens: 120}};
+    }
+    return {id: 'response-' + step, object: 'response', model, created_at: 0, status: 'completed',
+        output: [{type: 'reasoning', id: 'rs-' + step, status: 'completed', encrypted_content: 'encrypted-' + step,
+            summary: [{type: 'summary_text', text: 'Plan ' + step}]},
+        ...(calls.length ? calls.map(call => ({type: 'function_call', id: 'fc-' + call.id, call_id: call.id,
+            name: call.name, arguments: JSON.stringify(call.input)}))
+            : [{type: 'message', id: 'msg-' + step, role: 'assistant', phase: 'final_answer', status: 'completed',
+                content: [{type: 'output_text', text: 'Done', annotations: []}]}])],
+        usage: {input_tokens: 100, output_tokens: 20, total_tokens: 120}};
+}
+
+function toolHistory(provider, body, model) {
+    const wire = wireOf(provider, model);
+    if (wire === 'gemini') {
+        return {calls: body.contents.flatMap(m => m.parts.filter(p => p.functionCall).map(p => p.functionCall.name)),
+            results: body.contents.flatMap(m => m.parts.filter(p => p.functionResponse).map(p => p.functionResponse.name))};
+    }
+    if (wire === 'anthropic') {
+        const parts = role => body.messages.filter(m => m.role === role && Array.isArray(m.content)).flatMap(m => m.content);
+        return {calls: parts('assistant').filter(p => p.type === 'tool_use').map(p => p.id),
+            results: parts('user').filter(p => p.type === 'tool_result').map(p => p.tool_use_id)};
+    }
+    if (wire === 'chat') {
+        return {calls: body.messages.flatMap(m => (m.tool_calls ?? []).map(p => p.id)),
+            results: body.messages.filter(m => m.role === 'tool').map(m => m.tool_call_id)};
+    }
+    return {calls: body.input.filter(p => p.type === 'function_call').map(p => p.call_id),
+        results: body.input.filter(p => p.type === 'function_call_output').map(p => p.call_id)};
+}
+
+// Exercise the production factory, request options, preparer, runtime, and actual
+// SDK serializers for every picker model. The transport is the only mock.
+// TamperSloth speaks its own wire format to our server; tests/sloth-model.test.mjs covers it.
+for (const config of MODELPROVIDERS.filter(p => p.id !== 'anthropic' && p.id !== 'tampersloth')) {
+    for (const modelId of config.models) {
+        test(`${config.id}/${modelId}: tool expansion, parallel calls and compaction preserve protocol history`, async () => {
+            const provider = config.id;
+            const archived = new Set();
+            const wire = wireOf(provider, modelId);
+            const prepare = createStepMessagePreparer(provider, archived, modelId);
+            const runtime = createToolRuntime({
+                askUser: tool({inputSchema: z.object({}), execute: async () => ({answer: 'Yes, send as drafted'})}),
+                getPageText: tool({inputSchema: z.object({page: z.number()}), execute: async input => ({page: input.page, text: 'x'.repeat(5500)})}),
+                listScripts: tool({inputSchema: z.object({}), execute: async () => ({scripts: []})}),
+            }, {request: '', findPrevious: () => undefined});
+            const requests = [];
+            const transport = async (_url, init) => {
+                const body = JSON.parse(init.body);
+                const step = requests.length;
+                requests.push(body);
+                // Vertex's Chat Completions endpoint takes publisher-prefixed IDs.
+                assert.equal(body.model ?? modelId, provider === 'vertex' ? VERTEX_PARTNER_MODELS[modelId]?.id ?? modelId : modelId);
+                const history = toolHistory(provider, body, modelId);
+                assert.deepEqual(history.results, history.calls);
+                if (wire === 'anthropic') {
+                    assert.equal(body.anthropic_version, 'vertex-2023-10-16');
+                    assert.equal(body.thinking.type, 'adaptive');
+                    assert.equal(body.output_config.effort, 'high');
+                } else if (provider === 'vertex' && wire === 'chat') {
+                    // No effort setting is common to Vertex's open models.
+                    assert.equal(body.reasoning_effort, undefined);
+                    assert.equal(body.thinkingConfig, undefined);
+                } else if (provider === 'deepseek') {
+                    assert.equal(body.thinking.type, 'enabled');
+                    for (const message of body.messages.filter(m => m.role === 'assistant')) {
+                        assert.equal(typeof message.reasoning_content, 'string');
+                        for (const call of message.tool_calls ?? []) {
+                            const originalStep = Number(call.id.split('-')[1]);
+                            assert.equal(message.reasoning_content, originalStep === 3 ? '' : 'Plan ' + originalStep);
+                        }
+                    }
+                } else if (provider === 'kimi') {
+                    // Only K3 takes an effort; the SDK drops it for older Kimi models.
+                    assert.equal(body.reasoning_effort, modelId === 'kimi-k3' ? 'high' : undefined);
+                } else if (wire === 'gemini') {
+                    const turns = body.contents.filter(m => m.role === 'model');
+                    const signatures = turns.flatMap(m => m.parts.filter(p => p.functionCall && p.thoughtSignature).map(p => p.thoughtSignature));
+                    assert.deepEqual(signatures, Array.from({length: step}, (_, i) => 'call-' + i));
+                    for (const turn of turns.filter(m => m.parts.some(p => p.functionCall))) {
+                        assert.match(turn.parts.find(p => p.functionCall).thoughtSignature, /^call-/);
+                        assert.ok(turn.parts.some(p => p.thought === true && p.thoughtSignature?.startsWith('reasoning-')));
+                    }
+                } else {
+                    assert.equal(body.store, false);
+                    assert.ok(body.include.includes('reasoning.encrypted_content'));
+                    assert.ok(body.input.every(item => item.type !== 'item_reference'));
+                    assert.deepEqual(body.input.filter(p => p.type === 'reasoning').map(p => p.encrypted_content),
+                        Array.from({length: step}, (_, i) => 'encrypted-' + i));
+                }
+                const calls = step === 0 ? [{id: 'call-0', name: 'enableTools', input: {groups: ['scripting']}}]
+                    : step === 1 ? [{id: 'call-1', name: 'askUser', input: {}}]
+                        : step < 11 ? [{id: 'call-' + step, name: 'getPageText', input: {page: step}},
+                            ...(step === 2 ? [{id: 'parallel-2', name: 'getPageText', input: {page: 99}}] : [])] : [];
+                return new Response(JSON.stringify(response(provider, modelId, step, calls)), {headers: {'content-type': 'application/json'}});
+            };
+            const result = await generateText({model: getModel(provider, 'test-key', modelId, transport, {vertexProject: 'test-project'}),
+                messages: [{role: 'user', content: 'Earlier request'}, {role: 'assistant', content: 'Earlier answer'},
+                    {role: 'user', content: 'Inspect the approved draft'}],
+                tools: runtime.tools, providerOptions: agentProviderOptions(provider, 'high', modelId),
+                prepareStep: ({initialMessages, responseMessages}) => {
+                const messages = [...initialMessages, ...responseMessages];
+                    const activeTools = runtime.activeTools();
+                    return {messages: prepare(messages, activeTools), activeTools};
+                }, stopWhen: isStepCount(15)});
+            assert.equal(result.text, 'Done');
+            assert.equal(requests.length, 12);
+            assert.ok(archived.size > 0, 'The fixture must actually compact tool history');
+            assert.ok(JSON.stringify(requests.at(-1)).includes('Yes, send as drafted'));
+            assert.ok(!JSON.stringify(requests[0].tools).includes('listScripts'));
+            assert.ok(JSON.stringify(requests[1].tools).includes('listScripts'));
+        });
+    }
+}
+
+
+function streamingResponse(provider, model, step, calls) {
+    let events;
+    if (isGemini(provider, model)) {
+        events = [response(provider, model, step, calls)];
+    } else if (wireOf(provider, model) === 'chat') {
+        events = [{id: 'chunk-' + step, object: 'chat.completion.chunk', created: 0, model, choices: [{index: 0, delta: {
+            role: 'assistant', ...(step === 0 ? {reasoning_content: 'Plan'} : {}),
+            ...(calls.length ? {tool_calls: calls.map((call, index) => ({index, id: call.id, type: 'function',
+                function: {name: call.name, arguments: JSON.stringify(call.input)}}))} : {content: 'Done'}),
+        }, finish_reason: null}]}, {id: 'chunk-' + step, object: 'chat.completion.chunk', created: 0, model,
+            choices: [{index: 0, delta: {}, finish_reason: calls.length ? 'tool_calls' : 'stop'}],
+            usage: {prompt_tokens: 100, completion_tokens: 20, total_tokens: 120}}];
+    } else {
+        events = [{type: 'response.created', response: {id: 'response-' + step, object: 'response', created_at: 0, model, output: []}},
+            {type: 'response.output_item.added', output_index: 0,
+                item: {type: 'reasoning', id: 'rs-' + step, status: 'in_progress', summary: [], encrypted_content: 'partial'}},
+            {type: 'response.reasoning_summary_part.added', item_id: 'rs-' + step, output_index: 0, summary_index: 0,
+                part: {type: 'summary_text', text: ''}},
+            {type: 'response.reasoning_summary_text.delta', item_id: 'rs-' + step, output_index: 0, summary_index: 0, delta: 'Plan'},
+            {type: 'response.output_item.done', output_index: 0,
+                item: {type: 'reasoning', id: 'rs-' + step, status: 'completed', summary: [], encrypted_content: 'complete-' + step}},
+        ];
+        for (const call of calls) {
+            const item = {type: 'function_call', id: 'fc-' + call.id, call_id: call.id, name: call.name,
+                arguments: JSON.stringify(call.input), status: 'completed'};
+            events.push({type: 'response.output_item.added', output_index: 1, item: {...item, arguments: ''}},
+                {type: 'response.function_call_arguments.delta', item_id: item.id, output_index: 1, delta: item.arguments},
+                {type: 'response.output_item.done', output_index: 1, item});
+        }
+        if (!calls.length) events.push({type: 'response.output_item.added', output_index: 1,
+            item: {type: 'message', id: 'msg-' + step, role: 'assistant', content: [], status: 'in_progress', phase: 'final_answer'}},
+        {type: 'response.output_text.delta', item_id: 'msg-' + step, output_index: 1, content_index: 0, delta: 'Done'});
+        events.push({type: 'response.completed', response: {object: 'response', status: 'completed', output: [], usage: {input_tokens: 100, output_tokens: 20}}});
+    }
+    return new Response(events.map(event => 'data: ' + JSON.stringify(event) + '\n\n').join(''),
+        {headers: {'content-type': 'text/event-stream'}});
+}
+
+for (const provider of ['openai', 'google', 'vertex', 'deepseek', 'kimi', 'grok']) {
+    test(`${provider}: streaming completes reasoning metadata before the next tool step`, async () => {
+        const modelId = MODELPROVIDERS.find(p => p.id === provider).defaultModel;
+        const requests = [];
+        const runtime = createToolRuntime({
+            getPageText: tool({inputSchema: z.object({}), execute: async () => ({text: 'Page'})}),
+            listScripts: tool({inputSchema: z.object({}), execute: async () => ({scripts: []})}),
+        }, {request: '', findPrevious: () => undefined});
+        const prepare = createStepMessagePreparer(provider, new Set());
+        const transport = async (_url, init) => {
+            const body = JSON.parse(init.body);
+            const step = requests.length;
+            requests.push(body);
+            assert.equal(body.stream ?? true, true);
+            const history = toolHistory(provider, body);
+            assert.deepEqual(history.results, history.calls);
+            if (isGemini(provider)) {
+                assert.deepEqual(body.contents.flatMap(m => m.parts.filter(p => p.functionCall && p.thoughtSignature).map(p => p.thoughtSignature)),
+                    Array.from({length: step}, (_, i) => 'call-' + i));
+            } else if (provider === 'openai' || provider === 'grok') {
+                assert.equal(body.store, false);
+                assert.deepEqual(body.input.filter(p => p.type === 'reasoning').map(p => p.encrypted_content),
+                    Array.from({length: step}, (_, i) => 'complete-' + i));
+                assert.ok(body.input.every(p => p.type !== 'item_reference'));
+            } else {
+                const turns = body.messages.filter(m => m.role === 'assistant');
+                // DeepSeek's SDK fills a missing reasoning_content with ''; Kimi's leaves it unset.
+                assert.deepEqual(turns.map(m => m.reasoning_content), ['Plan', provider === 'kimi' ? undefined : ''].slice(0, step));
+            }
+            const calls = step === 0 ? [{id: 'enable', name: 'enableTools', input: {groups: ['scripting']}}]
+                : step === 1 ? [{id: 'read', name: 'getPageText', input: {}}] : [];
+            return streamingResponse(provider, modelId, step, calls);
+        };
+        const result = streamText({model: getModel(provider, 'test-key', modelId, transport), prompt: 'Inspect the page',
+            tools: runtime.tools, providerOptions: agentProviderOptions(provider, 'high'),
+            prepareStep: ({initialMessages, responseMessages}) => {
+                const messages = [...initialMessages, ...responseMessages];
+                const activeTools = runtime.activeTools();
+                return {messages: prepare(messages, activeTools), activeTools};
+            }, stopWhen: isStepCount(5)});
+        for await (const event of result.stream) if (event.type === 'error') throw event.error;
+        assert.equal(await result.text, 'Done');
+        assert.equal(requests.length, 3);
+    });
+}
+
+test('vertex: partner and open models reach their API at the project endpoint with the key header', async () => {
+    const project = 'https://aiplatform.googleapis.com/v1/projects/my-project/locations/global';
+    const cases = [
+        ['claude-opus-5-5', `${project}/publishers/anthropic/models/claude-opus-5-5:rawPredict`, undefined],
+        ['grok-4.7', `${project}/endpoints/openapi/chat/completions`, 'xai/grok-4.7'],
+        ['minimax-m2', `${project}/endpoints/openapi/chat/completions`, 'minimaxai/minimax-m2-maas'],
+        ['llama-4-maverick', 'https://us-east5-aiplatform.googleapis.com/v1/projects/my-project/locations/us-east5/endpoints/openapi/chat/completions',
+            'meta/llama-4-maverick-17b-128e-instruct-maas'],
+        ['mistral-small-3.1', 'https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/mistralai/models/mistral-small-2503:rawPredict',
+            'mistral-small-2503'],
+    ];
+    for (const [modelId, url, bodyModel] of cases) {
+        let seen;
+        const transport = async (requestUrl, init) => {
+            seen = {url: String(requestUrl), headers: new Headers(init.headers), body: JSON.parse(init.body)};
+            return new Response(JSON.stringify(response('vertex', modelId, 0, [])), {headers: {'content-type': 'application/json'}});
+        };
+        const result = await generateText({model: getModel('vertex', 'vertex-key', modelId, transport, {vertexProject: ' my-project '}),
+            prompt: 'Hello', providerOptions: agentProviderOptions('vertex', 'high', modelId)});
+        assert.equal(result.text, 'Done', modelId);
+        assert.equal(seen.url, url, modelId);
+        assert.equal(seen.headers.get('x-goog-api-key'), 'vertex-key', modelId);
+        assert.equal(seen.headers.get('authorization'), null, modelId);
+        assert.equal(seen.body.model, bodyModel, modelId);
+        assert.throws(() => getModel('vertex', 'vertex-key', modelId, transport), /Project ID/);
+    }
+});
+
+test('vertex: Mistral streams from streamRawPredict', async () => {
+    let url;
+    const transport = async (requestUrl) => {
+        url = String(requestUrl);
+        return streamingResponse('vertex', 'mistral-medium-3', 0, []);
+    };
+    const result = streamText({model: getModel('vertex', 'vertex-key', 'mistral-medium-3', transport, {vertexProject: 'p'}), prompt: 'Hello'});
+    assert.equal(await result.text, 'Done');
+    assert.equal(url, 'https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/publishers/mistralai/models/mistral-medium-3:streamRawPredict');
+});
+
+test('kimi: K3 goes to the Moonshot chat endpoint with the requested reasoning effort', async () => {
+    let seen;
+    const transport = async (url, init) => {
+        seen = {url: String(url), headers: new Headers(init.headers), body: JSON.parse(init.body)};
+        return new Response(JSON.stringify({id: 'kimi-1', object: 'chat.completion', created: 0, model: 'kimi-k3',
+            choices: [{index: 0, finish_reason: 'stop', message: {role: 'assistant', content: 'Done', reasoning_content: 'Plan'}}],
+            usage: {prompt_tokens: 100, completion_tokens: 20, total_tokens: 120}}),
+        {headers: {'content-type': 'application/json'}});
+    };
+    const result = await generateText({model: getModel('kimi', 'kimi-key', 'kimi-k3', transport), prompt: 'Hello',
+        providerOptions: agentProviderOptions('kimi', 'max')});
+    assert.equal(result.text, 'Done');
+    assert.equal(seen.url, 'https://api.moonshot.ai/v1/chat/completions');
+    assert.equal(seen.headers.get('authorization'), 'Bearer kimi-key');
+    assert.equal(seen.body.model, 'kimi-k3');
+    assert.equal(seen.body.reasoning_effort, 'max');
+});
+
+test('grok: 4.7 goes to the xAI responses endpoint and replays encrypted reasoning', async () => {
+    let seen;
+    const transport = async (url, init) => {
+        seen = {url: String(url), headers: new Headers(init.headers), body: JSON.parse(init.body)};
+        return new Response(JSON.stringify({id: 'resp-1', object: 'response', created_at: 0, status: 'completed', model: 'grok-4.7',
+            output: [{type: 'message', id: 'msg-1', role: 'assistant', status: 'completed',
+                content: [{type: 'output_text', text: 'Done', annotations: []}]}],
+            usage: {input_tokens: 100, output_tokens: 20, total_tokens: 120}}),
+        {headers: {'content-type': 'application/json'}});
+    };
+    const result = await generateText({model: getModel('grok', 'xai-key', 'grok-4.7', transport), prompt: 'Hello',
+        providerOptions: agentProviderOptions('grok', 'high')});
+    assert.equal(result.text, 'Done');
+    assert.equal(seen.url, 'https://api.x.ai/v1/responses');
+    assert.equal(seen.headers.get('authorization'), 'Bearer xai-key');
+    assert.equal(seen.body.model, 'grok-4.7');
+    assert.equal(seen.body.reasoning.effort, 'high');
+    assert.ok(seen.body.include.includes('reasoning.encrypted_content'));
+});
+
+test('thinking levels reach every provider as its own effort setting', async () => {
+    const expected = {
+        anthropic: {low: 'low', medium: 'medium', high: 'high', max: 'max'},
+        openai: {low: 'low', medium: 'medium', high: 'high', max: 'max'},
+        grok: {low: 'low', medium: 'medium', high: 'high', max: 'xhigh'},
+        deepseek: {low: 'low', medium: 'high', high: 'high', max: 'max'},
+        kimi: {low: 'low', medium: 'high', high: 'high', max: 'max'},
+        google: {low: 'low', medium: 'medium', high: 'high', max: 'high'},
+        vertex: {low: 'low', medium: 'medium', high: 'high', max: 'high'},
+    };
+    const effortOf = (provider, body) => provider === 'anthropic' ? body.output_config?.effort
+        : provider === 'openai' || provider === 'grok' ? body.reasoning?.effort
+            : isGemini(provider) ? body.generationConfig.thinkingConfig.thinkingLevel
+                : body.reasoning_effort;
+    for (const [provider, levels] of Object.entries(expected)) {
+        const modelId = MODELPROVIDERS.find(p => p.id === provider).defaultModel;
+        for (const [level, effort] of Object.entries(levels)) {
+            let body;
+            const transport = async (_url, init) => {
+                body = JSON.parse(init.body);
+                const reply = provider === 'anthropic'
+                    ? {id: 'msg-1', type: 'message', role: 'assistant', model: modelId, stop_reason: 'end_turn',
+                        content: [{type: 'text', text: 'Done'}], usage: {input_tokens: 100, output_tokens: 20}}
+                    : response(provider, modelId, 0, []);
+                return new Response(JSON.stringify(reply), {headers: {'content-type': 'application/json'}});
+            };
+            const result = await generateText({model: getModel(provider, 'test-key', modelId, transport), prompt: 'Hello',
+                providerOptions: agentProviderOptions(provider, level)});
+            assert.equal(result.text, 'Done');
+            assert.equal(effortOf(provider, body), effort, `${provider} ${level}`);
+        }
+    }
+});
+
+test('the picker offers only the levels each provider documents', () => {
+    const levels = (provider, model) => [...thinkingLevelsFor(provider, model)];
+    assert.deepEqual(levels('anthropic'), ['low', 'medium', 'high', 'max']);
+    assert.deepEqual(levels('openai'), ['low', 'medium', 'high', 'max']);
+    assert.deepEqual(levels('grok'), ['low', 'medium', 'high', 'max']);
+    assert.deepEqual(levels('google'), ['low', 'medium', 'high']);
+    assert.deepEqual(levels('vertex'), ['low', 'medium', 'high']);
+    assert.deepEqual(levels('vertex', 'claude-opus-5-5'), ['low', 'medium', 'high', 'max']);
+    assert.deepEqual(levels('vertex', 'grok-4.7'), []);
+    assert.deepEqual(levels('vertex', 'deepseek-v4.1-flash'), []);
+    assert.deepEqual(levels('deepseek'), ['low', 'high', 'max']);
+    assert.deepEqual(levels('kimi', 'kimi-k3'), ['low', 'high', 'max']);
+    assert.deepEqual(levels('kimi', 'kimi-k2.6'), []);
+    // An unoffered choice runs as the nearest offered level, deeper on a tie.
+    assert.equal(resolveThinkingLevel('max', 'google'), 'high');
+    assert.equal(resolveThinkingLevel('medium', 'deepseek'), 'high');
+    assert.equal(resolveThinkingLevel('low', 'deepseek'), 'low');
+    assert.equal(resolveThinkingLevel('high', 'kimi', 'kimi-k2.6'), undefined);
+    assert.equal(agentProviderOptions('kimi', 'max', 'kimi-k2.6').moonshotai.reasoningEffort, undefined);
+});

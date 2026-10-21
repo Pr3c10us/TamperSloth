@@ -1,0 +1,364 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource/instrument-serif/400.css";
+@import "@fontsource/instrument-serif/400-italic.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: "Instrument Serif", serif;
+    --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+    /* Tampersloth brand palette */
+    --ink: #0f0f0e;
+    --paper: #f6f4ef;
+    --cream: #faf8f2;
+    --bark: #3a2e26;
+    --dust: #e5dfd3;
+    --sand: #c9c2b0;
+    --stone: #7a7368;
+    --moss: #3f4a2a;
+    --moss-soft: #6b7a4f;
+
+    /* Light theme: cool neutrals on the dark theme's green-grey hue, not warm paper. */
+    --background: #f3f4f2;
+    --foreground: #141513;
+    --card: #ffffff;
+    --card-foreground: #141513;
+    --popover: #ffffff;
+    --popover-foreground: #141513;
+    --primary: #141513;
+    --primary-foreground: #ffffff;
+    --secondary: #e8eae6;
+    --secondary-foreground: #141513;
+    --muted: #e8eae6;
+    --muted-foreground: #5d6359;
+    --accent: #4e6a32;
+    --accent-foreground: #ffffff;
+    --destructive: oklch(0.55 0.2 25);
+    --border: #d9ddd5;
+    --input: #cfd4cb;
+    --ring: var(--accent);
+    --chart-1: #141513;
+    --chart-2: #4e6a32;
+    --chart-3: #5d6359;
+    --chart-4: #a3aa9e;
+    --chart-5: #d9ddd5;
+    --radius: 0.5rem;
+    --sidebar: #ffffff;
+    --sidebar-foreground: #141513;
+    --sidebar-primary: #141513;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #e8eae6;
+    --sidebar-accent-foreground: #141513;
+    --sidebar-border: #d9ddd5;
+    --sidebar-ring: var(--accent);
+    --placeholder-a: #dfe2dc;
+    --placeholder-b: #eceee9;
+
+    /* Type scale — editorial */
+    --fs-display: clamp(56px, 9vw, 128px);
+    --fs-h1: clamp(40px, 5.5vw, 72px);
+    --fs-h2: clamp(32px, 4vw, 48px);
+    --fs-h3: 28px;
+    --fs-h4: 22px;
+    --fs-body-lg: 19px;
+    --fs-body: 17px;
+    --fs-body-sm: 15px;
+    --fs-caption: 13px;
+    --fs-eyebrow: 12px;
+
+    --lh-tight: 1.05;
+    --lh-snug: 1.2;
+    --lh-normal: 1.55;
+    --lh-loose: 1.7;
+
+    --tracking-tight: -0.02em;
+    --tracking-wide: 0.12em;
+
+    --divider: var(--border);
+    --link: var(--accent);
+    --link-hover: #6b8a4a;
+
+    --dur-fast: 160ms;
+    --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.dark {
+    --background: #141513;
+    --foreground: var(--paper);
+    --card: #1d1f1b;
+    --card-foreground: var(--paper);
+    --popover: #22251f;
+    --popover-foreground: var(--paper);
+    --primary: var(--paper);
+    --primary-foreground: var(--ink);
+    --secondary: #2b2e26;
+    --secondary-foreground: var(--paper);
+    --muted: #272a23;
+    --muted-foreground: #aaa99f;
+    --accent: #a8bd85;
+    --accent-foreground: var(--ink);
+    --destructive: oklch(0.7 0.19 22);
+    --border: oklch(1 0 0 / 12%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: var(--accent);
+    --chart-1: var(--paper);
+    --chart-2: var(--sand);
+    --chart-3: var(--stone);
+    --chart-4: var(--bark);
+    --chart-5: var(--ink);
+    --sidebar: var(--card);
+    --sidebar-foreground: var(--paper);
+    --sidebar-primary: var(--paper);
+    --sidebar-primary-foreground: var(--ink);
+    --sidebar-accent: var(--accent);
+    --sidebar-accent-foreground: var(--ink);
+    --sidebar-border: oklch(1 0 0 / 12%);
+    --sidebar-ring: var(--accent);
+    --divider: var(--border);
+    --link: var(--accent);
+    --link-hover: #c4d5a7;
+    --placeholder-a: var(--sand);
+    --placeholder-b: var(--dust);
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+    html, body, #root {
+        height: 100%;
+    }
+    html {
+        @apply font-sans;
+        color-scheme: light;
+    }
+    .dark {
+        color-scheme: dark;
+    }
+    body {
+        @apply bg-background text-foreground;
+        font-size: var(--fs-body);
+        line-height: var(--lh-normal);
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4 {
+        font-family: var(--font-heading);
+        font-weight: 400;
+        line-height: var(--lh-tight);
+        letter-spacing: var(--tracking-tight);
+        color: var(--foreground);
+        text-wrap: balance;
+    }
+    h1 {
+        font-size: var(--fs-h1);
+    }
+    h2 {
+        font-size: var(--fs-h2);
+    }
+    h3 {
+        font-size: var(--fs-h3);
+        line-height: var(--lh-snug);
+    }
+    h4 {
+        font-size: var(--fs-h4);
+        line-height: var(--lh-snug);
+    }
+
+    .display {
+        font-family: var(--font-heading);
+        font-size: var(--fs-display);
+        line-height: var(--lh-tight);
+        letter-spacing: var(--tracking-tight);
+        font-weight: 400;
+    }
+
+    .eyebrow {
+        font-family: var(--font-mono);
+        font-size: var(--fs-eyebrow);
+        letter-spacing: var(--tracking-wide);
+        text-transform: uppercase;
+        color: var(--muted-foreground);
+    }
+
+    p {
+        font-size: var(--fs-body);
+        line-height: var(--lh-normal);
+        color: var(--foreground);
+        text-wrap: pretty;
+    }
+    p.lead {
+        font-size: var(--fs-body-lg);
+        line-height: var(--lh-loose);
+        color: var(--muted-foreground);
+    }
+
+    small,
+    .caption {
+        font-size: var(--fs-caption);
+        color: var(--muted-foreground);
+    }
+
+    a {
+        color: var(--link);
+        text-decoration: underline;
+        text-decoration-thickness: 1px;
+        text-underline-offset: 3px;
+        transition: color var(--dur-fast) var(--ease-out);
+    }
+    a:hover {
+        color: var(--link-hover);
+    }
+
+    code,
+    pre,
+    kbd {
+        font-family: var(--font-mono);
+        font-size: 0.92em;
+    }
+    code {
+        background: var(--muted);
+        padding: 0.1em 0.4em;
+        border-radius: calc(var(--radius) * 0.25);
+    }
+
+    hr {
+        border: 0;
+        border-top: 1px solid var(--divider);
+        margin: 3rem 0;
+    }
+
+    ::selection {
+        background: var(--accent);
+        color: var(--accent-foreground);
+    }
+
+    :focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 2px;
+    }
+}
+
+/* ── Agent trace: thinking and tool steps ── */
+@keyframes ts-shimmer {
+    from { background-position: 100% 0; }
+    to { background-position: -100% 0; }
+}
+.ts-shimmer {
+    background-image: linear-gradient(90deg,
+        var(--muted-foreground) 0%, var(--muted-foreground) 38%,
+        var(--foreground) 50%,
+        var(--muted-foreground) 62%, var(--muted-foreground) 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: ts-shimmer 2.4s linear infinite;
+}
+@keyframes ts-ring {
+    0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 45%, transparent); }
+    70%, 100% { box-shadow: 0 0 0 5px color-mix(in oklab, var(--accent) 0%, transparent); }
+}
+.ts-ring {
+    animation: ts-ring 1.8s var(--ease-out) infinite;
+}
+@keyframes ts-enter {
+    from { opacity: 0; transform: translateY(2px); }
+    to { opacity: 1; transform: none; }
+}
+.ts-enter {
+    animation: ts-enter 240ms var(--ease-out) both;
+}
+/* Height animation without measuring: grid rows interpolate 0fr ↔ 1fr. */
+.ts-collapse {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition: grid-template-rows 280ms var(--ease-out), opacity 200ms var(--ease-out);
+}
+.ts-collapse[data-open="true"] {
+    grid-template-rows: 1fr;
+    opacity: 1;
+}
+/* The padding gives the active node's ring (ts-ring, 5px spread) room inside the
+   clip; the equal negative margin keeps layout and collapse height unchanged. */
+.ts-collapse > * {
+    min-height: 0;
+    overflow: hidden;
+    padding: 6px;
+    margin: -6px;
+}
+.ts-fade-top {
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 2.5rem);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 2.5rem);
+}
+/* Reduced-motion stand-in for the living dots: a slow, calm pulse. */
+@keyframes ts-calm-pulse {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 0.9; }
+}
+.ts-calm-pulse {
+    animation: ts-calm-pulse 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    .ts-shimmer {
+        animation: none;
+        background: none;
+        color: var(--muted-foreground);
+    }
+    .ts-ring, .ts-enter {
+        animation: none;
+    }
+    .ts-collapse {
+        transition: none;
+    }
+}

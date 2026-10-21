@@ -1,0 +1,13 @@
+.idea
+.claude
+.agents
+
+# Shared across all packages
+node_modules
+dist
+dist-ssr
+*.local
+logs
+*.log
+.DS_Store
+.wrangler
