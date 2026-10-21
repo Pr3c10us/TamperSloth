@@ -26,14 +26,11 @@ dist-ssr
 extension
 /extension.zip
 /.agents/
-/claude-launce-video/
-/claude-sonnet-launce-video/
-/sol-launce-video/
 
 # Cloudflare
 .wrangler
 /store-assets/
-/launch-video/
 /design-reference/
 tampersloth-ui-showcase.html
 tampersloth-design-reference.html
+/film/
