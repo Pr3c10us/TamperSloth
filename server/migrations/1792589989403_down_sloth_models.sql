@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS model_usage;
+DROP TABLE IF EXISTS users;

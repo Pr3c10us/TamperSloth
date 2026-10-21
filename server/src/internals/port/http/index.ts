@@ -6,13 +6,16 @@ import cors from 'cors'
 import MorganMiddleware from "./middlewares/morgan.ts";
 import ErrorHandlerMiddleware from "./middlewares/errorHandler.ts";
 import Route404 from "./middlewares/invalidRoute.ts";
-import passport from "passport";
 import type Services from "../../services";
 import http from "http";
 import {WebSocketServer} from "ws";
 import type Adapters from "../../adapters";
 import {rateLimit} from 'express-rate-limit';
 import AuthenticationHandler from "./authentication/handler.ts";
+import InferenceHandler from "./inference/handler.ts";
+
+// Agent requests carry screenshots and long tool histories.
+const MODEL_REQUEST_BODY_LIMIT = "32mb"
 
 export default class ExpressHTTP {
     appSecrets: AppSecrets
@@ -34,6 +37,7 @@ export default class ExpressHTTP {
 
         // Middlewares
         this.server.set('trust proxy', 1)
+        this.server.use("/api/v1/models", express.json({limit: MODEL_REQUEST_BODY_LIMIT}));
         this.server.use(express.json());
         this.server.use(express.urlencoded({extended: true}));
         this.server.use(helmet())
@@ -46,7 +50,7 @@ export default class ExpressHTTP {
         }))
         const corsOptions = {
             origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-                if (!origin || this.appSecrets.clientOrigins.includes(origin)) {
+                if (!origin || this.appSecrets.clientOrigins.includes(origin) || this.isAllowedExtensionOrigin(origin)) {
                     callback(null, true);
                 } else {
                     callback(new Error(`Origin "${origin}" is not allowed by CORS`));
@@ -60,16 +64,16 @@ export default class ExpressHTTP {
                 'X-Requested-With',
                 'ngrok-skip-browser-warning'
             ],
+            exposedHeaders: ['Retry-After'],
         };
         this.server.use(cors(corsOptions));
         let morganMiddleware = new MorganMiddleware()
         this.server.use(morganMiddleware.middleware)
 
-        // Passport
-        this.server.use(passport.initialize());
 
         this.health()
         this.authentication()
+        this.inference()
 
         this.server.use(`/api/v1`, this.router);
 
@@ -84,9 +88,21 @@ export default class ExpressHTTP {
     }
 
     authentication = () => {
-        const router = new AuthenticationHandler(this.services.authenticationService, this.appSecrets);
+        const router = new AuthenticationHandler(this.services.authenticationService);
         this.server.use("/auth", router.router);
     };
+
+    inference = () => {
+        const handler = new InferenceHandler(this.services.inferenceService, this.services.authenticationService);
+        this.router.use(handler.router);
+    };
+
+    /** chrome-extension://<id>, for the IDs in EXTENSION_IDS (any ID when it is empty). */
+    isAllowedExtensionOrigin(origin: string): boolean {
+        const match = /^chrome-extension:\/\/([a-p]{32})$/.exec(origin);
+        if (!match) return false;
+        return this.appSecrets.extensionIds.length === 0 || this.appSecrets.extensionIds.includes(match[1]!);
+    }
 
     health() {
         this.server.get('/health', async (req, res) => {

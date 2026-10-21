@@ -12,6 +12,8 @@ export class SafeError extends Error {
 export class ApiError extends SafeError {
     statusCode: number;
     code?: string;
+    /** Extra response headers, such as Retry-After on a 429. */
+    headers?: Record<string, string>;
 
     constructor(message: string) {
         super(message);
@@ -52,6 +54,31 @@ export class AIRateLimitError extends ApiError {
         super(message);
         this.statusCode = StatusCodes.FORBIDDEN;
         this.code = "AI_RATE_LIMIT";
+    }
+}
+
+export class PaymentRequiredError extends ApiError {
+    constructor(message: string, code: string) {
+        super(message);
+        this.statusCode = StatusCodes.PAYMENT_REQUIRED;
+        this.code = code;
+    }
+}
+
+export class TooManyRequestsError extends ApiError {
+    constructor(message: string, retryAfterSeconds: number) {
+        super(message);
+        this.statusCode = StatusCodes.TOO_MANY_REQUESTS;
+        this.code = "RATE_LIMITED";
+        this.headers = {"Retry-After": String(Math.max(1, Math.ceil(retryAfterSeconds)))};
+    }
+}
+
+export class ServiceUnavailableError extends ApiError {
+    constructor(message: string) {
+        super(message);
+        this.statusCode = StatusCodes.SERVICE_UNAVAILABLE;
+        this.code = "PROVIDER_UNAVAILABLE";
     }
 }
 

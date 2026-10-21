@@ -1,7 +1,7 @@
 services:
   backend:
     build: .
-    container_name: fazerlane_backend
+    container_name: tampersloth_backend
     restart: unless-stopped
     environment:
       - TEST_SECRET:${TEST_SECRET}
@@ -30,12 +30,12 @@ services:
       - REDIS_HOST:${REDIS_HOST}
       - REDIS_PORT:${REDIS_PORT}
 
-      - GOOGLE_CLIENT_ID:${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET:${GOOGLE_CLIENT_SECRET}
-      - GOOGLE_CLIENT_CALLBACK_URL:${GOOGLE_CLIENT_CALLBACK_URL}
 
       - GEMINI_API_KEY:${GEMINI_API_KEY}
       - GEMINI_MODEL:${GEMINI_MODEL}
+      - ANTHROPIC_API_KEY:${ANTHROPIC_API_KEY}
+      - EXTENSION_IDS:${EXTENSION_IDS}
+      - GOOGLE_EXTENSION_CLIENT_ID:${GOOGLE_EXTENSION_CLIENT_ID}
 
       - MAX_VIDEO_LENGTH:${MAX_VIDEO_LENGTH}
       - MAX_YOUTUBE_LENGTH:${MAX_YOUTUBE_LENGTH}
@@ -50,8 +50,6 @@ services:
 
       - VERIFICATION_EMAIL_URL:${VERIFICATION_EMAIL_URL}
       - RESET_PASSWORD_EMAIL_URL:${RESET_PASSWORD_EMAIL_URL}
-      - UI_LOGIN_URL:${UI_LOGIN_URL}
-      - UI_DASHBOARD_URL:${UI_DASHBOARD_URL}
       - LOGO_URL:${LOGO_URL}
 
       - STORAGE_ACCOUNT_ID:${STORAGE_ACCOUNT_ID}
@@ -65,28 +63,28 @@ services:
     ports:
       - "5000:5000"
     networks:
-      - fazerlane_network
+      - tampersloth_network
 
-  #stgres:
-  #image: ankane/pgvector
-  #container_name: postgres_db
-  #restart: unless-stopped
-  #environment:
-  #  POSTGRES_DB: ${POSTGRES_DB}
-  #  POSTGRES_USER: ${POSTGRES_USER}
-  #  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-  #ports:
-  #  - "5433:5433"
-  #volumes:
-  #  - postgres_data:/var/lib/postgresql/data
-  #networks:
-  #  - fazerlane_network
-  #healthcheck:
-  #  test: ["CMD-SHELL", "pg_isready -U postgres -d myapp"]
-  #  interval: 30s
-  #  timeout: 10s
-  #  retries: 3
-  #  start_period: 60s
+  postgres:
+    image: ankane/pgvector
+    container_name: postgres_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5433:5433"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - tampersloth_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d myapp"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   redis:
     image: redis:latest
@@ -101,7 +99,7 @@ services:
     volumes:
       - redisData:/data
     networks:
-      - fazerlane_network
+      - tampersloth_network
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 1s
@@ -122,7 +120,7 @@ services:
     volumes:
       - qdrant_storage:/qdrant/storage
     networks:
-      - fazerlane_network
+      - tampersloth_network
 
 volumes:
   postgres_data:
@@ -130,5 +128,5 @@ volumes:
   qdrant_storage:
 
 networks:
-  fazerlane_network:
+  tampersloth_network:
     driver: bridge

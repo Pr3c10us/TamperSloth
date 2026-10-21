@@ -21,6 +21,7 @@ const ErrorHandlerMiddleware: ErrorRequestHandler = async (
         });
     }
     if (err instanceof ApiError) {
+        if (err.headers) res.set(err.headers);
         return new ErrorResponse(res, err.message, err.statusCode, undefined, err.code).send();
     }
 

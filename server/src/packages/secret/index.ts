@@ -7,14 +7,8 @@ export type PostgresCredentials = {
     ssl: boolean
 }
 
-export type GoogleOAuthCredentials = {
-    id: string
-    secret: string
-    callbackUrl: string
-}
-export type Urls = {
-    uiDashboard: string
-    uiLogin: string
+export type ModelProviderKeys = {
+    anthropic: string
 }
 
 export default class AppSecrets {
@@ -26,12 +20,15 @@ export default class AppSecrets {
     refreshJWTSecret: string
     wsUrl: string
     postgresCredentials: PostgresCredentials
-    googleOAuthCredentials: GoogleOAuthCredentials
     googleAPIKey: string
     maxYoutubeLength: number
     maxVideoLength: number
     baseYoutubeApiUrl: string
-    urls: Urls
+    modelProviderKeys: ModelProviderKeys
+    /** Chrome extension IDs allowed to call the API; empty allows any (development only). */
+    extensionIds: string[]
+    /** OAuth client IDs (type "Chrome extension") whose Google tokens may sign in. */
+    googleExtensionClientIds: string[]
 
     constructor() {
         this.port = this.getEnvironmentVariableAsNumber("PORT", 5000);
@@ -54,17 +51,20 @@ export default class AppSecrets {
             ssl: this.getEnvironmentVariableAsBool("POSTGRES_SSL", false)
         }
 
-        this.googleOAuthCredentials = {
-            id: this.getEnvironmentVariable("GOOGLE_CLIENT_ID"),
-            secret: this.getEnvironmentVariable("GOOGLE_CLIENT_SECRET"),
-            callbackUrl: this.getEnvironmentVariable("GOOGLE_CLIENT_CALLBACK_URL"),
-        }
-        this.urls = {
-            uiDashboard: this.getEnvironmentVariable("UI_DASHBOARD_URL"),
-            uiLogin: this.getEnvironmentVariable("UI_LOGIN_URL")
-        }
-
         this.googleAPIKey = this.getEnvironmentVariable("GOOGLE_API_KEY")
+
+        // Optional so the server boots without one: Sloth models answer 503 until it is set.
+        this.modelProviderKeys = {
+            anthropic: this.getEnvironmentVariableOrFallback("ANTHROPIC_API_KEY", ""),
+        }
+        this.extensionIds = this.getEnvironmentVariableOrFallback("EXTENSION_IDS", "")
+            .split(",")
+            .map(id => id.trim())
+            .filter(id => id.length > 0)
+        this.googleExtensionClientIds = this.getEnvironmentVariableOrFallback("GOOGLE_EXTENSION_CLIENT_ID", "")
+            .split(",")
+            .map(id => id.trim())
+            .filter(id => id.length > 0)
 
         this.maxYoutubeLength = this.getEnvironmentVariableAsNumber("MAX_YOUTUBE_LENGTH", 3000)
         this.maxVideoLength = this.getEnvironmentVariableAsNumber("MAX_VIDEO_LENGTH", 120)
