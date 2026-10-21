@@ -1,0 +1,26 @@
+diff --git a/node_modules/sql-migrations/.bun-tag-185179fe7790571d b/.bun-tag-185179fe7790571d
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/adapters/pg.js b/adapters/pg.js
+index 46599d130b4a9f141e072fc1ab785b482dd1233d..5a3d338e6eefc883dae69391bfd4f1bba282ef89 100644
+--- a/adapters/pg.js
++++ b/adapters/pg.js
+@@ -7,7 +7,7 @@ module.exports = function (config, logger) {
+         database: config.db,
+         user: config.user,
+         password: config.password,
+-        ssl: false
++        ssl: config.ssl || false
+     });
+ 
+     function exec(query, values) {
+diff --git a/commands/run-migrations-command.js b/commands/run-migrations-command.js
+index f521cba0a53f65928d6d1772eb536aa92431c6dc..3d5775b0f66ada635ef922c4f65facceb27323db 100644
+--- a/commands/run-migrations-command.js
++++ b/commands/run-migrations-command.js
+@@ -1,4 +1,4 @@
+-var chalk = require('chalk');
++var chalk = { green: function (s) { return s; } };
+ 
+ module.exports = function (migrationProvider, adapter, minMigrationTime, logger) {
+     return adapter.appliedMigrations()

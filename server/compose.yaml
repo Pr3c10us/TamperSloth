@@ -1,0 +1,134 @@
+services:
+  backend:
+    build: .
+    container_name: fazerlane_backend
+    restart: unless-stopped
+    environment:
+      - TEST_SECRET:${TEST_SECRET}
+      - PORT:${PORT}
+      - CLIENT_ORIGIN:${CLIENT_ORIGIN}
+      - COOKIE_EXPIRES:${COOKIE_EXPIRES}
+      - COOKIE_SECRET:${COOKIE_SECRET}
+      - EMAIL_JWT_EXPIRES:${EMAIL_JWT_EXPIRES}
+      - EMAIL_JWT_SECRET:${EMAIL_JWT_SECRET}
+      - JWT_EXPIRES:${JWT_EXPIRES}
+      - JWT_SECRET:${JWT_SECRET}
+      - REFRESH_JWT_EXPIRES:${REFRESH_JWT_EXPIRES}
+      - REFRESH_JWT_SECRET:${REFRESH_JWT_SECRET}
+      - WS_URL:${WS_URL}
+
+      - POSTGRES_HOST:${POSTGRES_HOST}
+      - POSTGRES_DB:${POSTGRES_DB}
+      - POSTGRES_USER:${POSTGRES_USER}
+      - POSTGRES_PASSWORD:${POSTGRES_PASSWORD}
+      - POSTGRES_PORT:${POSTGRES_PORT}
+      - POSTGRES_SSL:${POSTGRES_SSL}
+      - POSTGRES_URL:${POSTGRES_URL}
+
+      - REDIS_USER:${REDIS_USER}
+      - REDIS_PASSWORD:${REDIS_PASSWORD}
+      - REDIS_HOST:${REDIS_HOST}
+      - REDIS_PORT:${REDIS_PORT}
+
+      - GOOGLE_CLIENT_ID:${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET:${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_CLIENT_CALLBACK_URL:${GOOGLE_CLIENT_CALLBACK_URL}
+
+      - GEMINI_API_KEY:${GEMINI_API_KEY}
+      - GEMINI_MODEL:${GEMINI_MODEL}
+
+      - MAX_VIDEO_LENGTH:${MAX_VIDEO_LENGTH}
+      - MAX_YOUTUBE_LENGTH:${MAX_YOUTUBE_LENGTH}
+      - BASE_YOUTUBE_API_URL:${BASE_YOUTUBE_API_URL}
+      - GOOGLE_API_KEY:${GOOGLE_API_KEY}
+
+      - SMTP_FROM_ADDRESS:${SMTP_FROM_ADDRESS}
+      - SMTP_HOST:${SMTP_HOST}
+      - SMTP_PASSWORD:${SMTP_PASSWORD}
+      - SMTP_PORT:${SMTP_PORT}
+      - SMTP_USERNAME:${SMTP_USERNAME}
+
+      - VERIFICATION_EMAIL_URL:${VERIFICATION_EMAIL_URL}
+      - RESET_PASSWORD_EMAIL_URL:${RESET_PASSWORD_EMAIL_URL}
+      - UI_LOGIN_URL:${UI_LOGIN_URL}
+      - UI_DASHBOARD_URL:${UI_DASHBOARD_URL}
+      - LOGO_URL:${LOGO_URL}
+
+      - STORAGE_ACCOUNT_ID:${STORAGE_ACCOUNT_ID}
+      - STORAGE_ACCESS_KEY_ID:${STORAGE_ACCESS_KEY_ID}
+      - STORAGE_SECRET_ACCESS_KEY:${STORAGE_SECRET_ACCESS_KEY}
+      - STORAGE_BUCKET_NAME:${STORAGE_BUCKET_NAME}
+      - STORAGE_BUCKET_PUBLIC_DOMAIN:${STORAGE_BUCKET_PUBLIC_DOMAIN}
+
+      - QDRANT_PORT:${QDRANT_PORT}
+      - QDRANT_HOST:${QDRANT_HOST}
+    ports:
+      - "5000:5000"
+    networks:
+      - fazerlane_network
+
+  #stgres:
+  #image: ankane/pgvector
+  #container_name: postgres_db
+  #restart: unless-stopped
+  #environment:
+  #  POSTGRES_DB: ${POSTGRES_DB}
+  #  POSTGRES_USER: ${POSTGRES_USER}
+  #  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  #ports:
+  #  - "5433:5433"
+  #volumes:
+  #  - postgres_data:/var/lib/postgresql/data
+  #networks:
+  #  - fazerlane_network
+  #healthcheck:
+  #  test: ["CMD-SHELL", "pg_isready -U postgres -d myapp"]
+  #  interval: 30s
+  #  timeout: 10s
+  #  retries: 3
+  #  start_period: 60s
+
+  redis:
+    image: redis:latest
+    container_name: redis_cache
+    restart: unless-stopped
+    ports:
+      - ${REDIS_PORT}:6379
+    command: redis-server --save 20 1 --loglevel warning --requirepass ${REDIS_PASSWORD}
+    environment:
+      - REDIS_REPLICATION_MODE=master
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - redisData:/data
+    networks:
+      - fazerlane_network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 1s
+      timeout: 2s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant_vector_db
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__LOG_LEVEL=${QDRANT_LOG_LEVEL:-INFO}
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    networks:
+      - fazerlane_network
+
+volumes:
+  postgres_data:
+  redisData:
+  qdrant_storage:
+
+networks:
+  fazerlane_network:
+    driver: bridge
