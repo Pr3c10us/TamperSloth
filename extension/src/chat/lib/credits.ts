@@ -1,16 +1,28 @@
 import {useSyncExternalStore} from "react";
 
 /**
- * A Sloth run refused because the plan's monthly credit is spent. Unlike a
- * rate limit, waiting won't clear it before the period renews, so the chat
- * offers the two ways on instead of an error line: upgrade, or a model on
- * the user's own key.
+ * A Sloth run stopped by a plan limit: the month's credit is spent, or one
+ * run used the plan's token budget. Unlike a rate limit, these don't clear by
+ * waiting, so the chat offers the ways on instead of an error line: upgrade,
+ * a model on the user's own key, or (for a run budget) another message.
+ * "userBudget" is the user's own run budget from Preferences, on any model.
  */
 
+export type PlanLimit = "credits" | "runBudget" | "runTooLong" | "userBudget";
+
 export interface CreditsExhausted {
+    limit: PlanLimit;
     /** The server's own wording, for when the account hasn't loaded. */
     message: string;
+    /** The token budget the run stopped at, for "userBudget". */
+    budget?: number;
 }
+
+const CODES: Record<string, PlanLimit> = {
+    CREDITS_EXHAUSTED: "credits",
+    RUN_BUDGET_EXHAUSTED: "runBudget",
+    RUN_TOO_LONG: "runTooLong",
+};
 
 const exhausted = new Map<string, CreditsExhausted>();
 const listeners = new Set<() => void>();
@@ -26,7 +38,7 @@ function subscribe(fn: () => void) {
     };
 }
 
-/** Set while this chat's last Sloth run was refused for credit; null otherwise. */
+/** Set while this chat's last Sloth run was stopped by a plan limit; null otherwise. */
 export function useCreditsExhausted(conversationId: string): CreditsExhausted | null {
     return useSyncExternalStore(subscribe, () => exhausted.get(conversationId) ?? null);
 }
@@ -37,7 +49,7 @@ export function setCreditsExhausted(conversationId: string, value: CreditsExhaus
     notify();
 }
 
-/** The server answers 402 with code CREDITS_EXHAUSTED; the SDK may wrap it in a RetryError. */
+/** The server answers 402 with a plan-limit code; the SDK may wrap it in a RetryError. */
 export function creditsExhaustedError(error: unknown): CreditsExhausted | null {
     const e = error as any;
     if (!e || typeof e !== "object") return null;
@@ -47,6 +59,7 @@ export function creditsExhaustedError(error: unknown): CreditsExhausted | null {
     try {
         code = JSON.parse(e.responseBody ?? "")?.code;
     } catch { /* Not JSON. */ }
-    if (code && code !== "CREDITS_EXHAUSTED") return null;
-    return {message: typeof e.message === "string" && e.message ? e.message : "You've used this month's credit."};
+    if (code && !CODES[code]) return null;
+    return {limit: code ? CODES[code] : "credits",
+        message: typeof e.message === "string" && e.message ? e.message : "You've used this month's credit."};
 }

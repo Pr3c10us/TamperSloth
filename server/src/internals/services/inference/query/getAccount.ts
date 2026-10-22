@@ -2,6 +2,7 @@ import type {User} from "../../../domain/user";
 import type {UsageRepository} from "../../../domain/usage";
 import {billingPeriod, planFor} from "../../../domain/plan";
 import {SLOTH_MODELS} from "../../../domain/model";
+import type {RunTokenBudgets} from "../../../../packages/secret";
 
 export type AccountModel = {
     id: string
@@ -18,13 +19,18 @@ export type AccountModel = {
 
 export type Account = {
     user: { id: string, email: string }
-    plan: { id: string, name: string, monthlyCreditUsd: number, requestsPerMinute: number, defaultModel: string }
-    usage: { spentUsd: number, creditUsd: number, periodStart: string, periodEnd: string }
+    plan: { id: string, name: string, monthlyCreditUsd: number, requestsPerMinute: number, runTokenBudget: number, defaultModel: string }
+    /** creditsPerUsd: how many credits one US dollar buys; users see credits, never dollars. */
+    usage: { spentUsd: number, creditUsd: number, creditsPerUsd: number, periodStart: string, periodEnd: string }
     models: AccountModel[]
 }
 
 export default class GetAccount {
-    constructor(private usageRepository: UsageRepository) {
+    constructor(
+        private usageRepository: UsageRepository,
+        private runTokenBudgets: RunTokenBudgets,
+        private creditsPerUsd: number,
+    ) {
     }
 
     async handle(user: User): Promise<Account> {
@@ -38,11 +44,13 @@ export default class GetAccount {
                 name: plan.name,
                 monthlyCreditUsd: plan.monthlyCreditUsd,
                 requestsPerMinute: plan.requestsPerMinute,
+                runTokenBudget: this.runTokenBudgets[plan.id] ?? 0,
                 defaultModel: plan.defaultModel,
             },
             usage: {
                 spentUsd: spentMicros / 1e6,
                 creditUsd: plan.monthlyCreditUsd,
+                creditsPerUsd: this.creditsPerUsd,
                 periodStart: period.start.toISOString(),
                 periodEnd: period.end.toISOString(),
             },

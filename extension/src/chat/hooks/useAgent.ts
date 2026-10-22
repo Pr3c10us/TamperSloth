@@ -4,7 +4,8 @@ import {formatModelName, getModel, MODELPROVIDERS, type ModelOptions, type Provi
 import {getApiKeys, VERTEX_PROJECT_KEY} from "../../settings/lib/storage";
 import {withRateLimits} from "../lib/rateLimit";
 import {creditsExhaustedError, setCreditsExhausted} from "../lib/credits";
-import {refreshAccount} from "../../settings/lib/account";
+import {getAccount, refreshAccount} from "../../settings/lib/account";
+import {RUN_HEADER} from "../lib/slothModel";
 import {createAgentTools} from "../lib/tools.ts";
 import {browserCall, setTaskStatus} from "../lib/browserTools";
 import {deleteAttachments, loadAttachment, loadStoredConversation, readFile, saveAttachments, saveConversation, type StoredConversation} from "../lib/storage.ts";
@@ -19,7 +20,7 @@ import type {Quote} from "../lib/panelRequests";
 import {createToolRuntime} from "../lib/toolRuntime";
 import {clip, createStepMessagePreparer, isFailed, serialize, summarizeSelectedElement, sumUsage, usageRecord, type RunMetrics, type UsageRecord} from "../lib/efficiency";
 import {createGuidanceGuard, GUIDANCE_RESUME_NOTE} from "../lib/guidanceGuard";
-import {loadAgentSettings, runStopReason, saveLastThinkingLevel} from "../lib/agentSettings";
+import {loadAgentSettings, runStopReason, saveLastThinkingLevel, withPlanRunBudget} from "../lib/agentSettings";
 import {isThinkingLevel, type ThinkingLevel} from "../lib/thinkingLevel";
 import {agentProviderOptions} from "../lib/providerCompatibility";
 import {createReasoningNormalizer, type NormalizedEvent, type ThinkingContent} from "../lib/reasoning";
@@ -609,7 +610,15 @@ async function sendMessage(
     try {
         const model = withRateLimits(getModel(providerId, apiKey, resolvedModelId, undefined, modelOptions),
             {conversationId, modelName: formatModelName(resolvedModelId)});
-        const settings = await loadAgentSettings();
+        const sloth = providerId === "tampersloth";
+        // The server holds each Sloth run to the plan's budget; stopping at it here ends the run cleanly.
+        const planBudget = sloth ? (await getAccount().catch(() => null))?.plan.runTokenBudget : undefined;
+        const settings = withPlanRunBudget(await loadAgentSettings(), planBudget);
+        // Stopped by the plan's budget rather than the user's own: the plan-limit notice says so instead of an error line.
+        const budgetStopped = () => Boolean(stopReason) && stopReason === runStopReason(settings, metrics.steps);
+        const planStopped = () => Boolean(planBudget) && settings.tokenBudget === planBudget && budgetStopped();
+        // Every model call of this run, screening included, counts toward that budget.
+        const runHeaders = sloth ? {[RUN_HEADER]: crypto.randomUUID()} : undefined;
         const archived = new Set<string>();
         const prepareMessages = createStepMessagePreparer(providerId, archived, resolvedModelId);
         let stopReason = "";
@@ -648,7 +657,7 @@ async function sendMessage(
                 request: () => userRequest,
                 mode: settings.actionApproval,
                 screen: async (instructions, prompt, signal) => (await generateText({
-                    model, instructions, prompt, abortSignal: signal, maxRetries: 1,
+                    model, instructions, prompt, abortSignal: signal, maxRetries: 1, headers: runHeaders,
                     providerOptions: titleProviderOptions(providerId, resolvedModelId),
                 })).text,
                 onSafety: reportSafety,
@@ -759,6 +768,7 @@ This task's tabs (open from earlier in this chat; reuse them, and finish when do
                 tools: runtime.tools,
                 stopWhen: [isStepCount(settings.maxSteps), () => Boolean(stopReason)],
                 abortSignal: abortController.signal,
+                headers: runHeaders,
                 prepareStep: async ({initialMessages, responseMessages}) => {
                     await readQueued(responseMessages.length);
                     // Rebuild from the original transcript: v7 otherwise carries
@@ -918,7 +928,12 @@ This task's tabs (open from earlier in this chat; reuse them, and finish when do
                     }
                     // Anything but "stop" means the run was cut short. Without
                     // this the message just ends mid-task and looks finished.
-                    if (part.finishReason === "tool-calls") {
+                    if (part.finishReason === "tool-calls" && planStopped()) {
+                        setCreditsExhausted(conversationId, {limit: "runBudget", message: "This reply reached your plan's limit for one run. Send a message to continue."});
+                    } else if (part.finishReason === "tool-calls" && budgetStopped()) {
+                        // The user's own budget: a setting they chose, so a note with the way to change it, not an error.
+                        setCreditsExhausted(conversationId, {limit: "userBudget", message: stopReason, budget: settings.tokenBudget});
+                    } else if (part.finishReason === "tool-calls") {
                         patchSession(conversationId, {
                             error: `${stopReason || `Reached the ${settings.maxSteps}-step limit.`} Work may be incomplete. Send another message to continue.`,
                         });

@@ -24,3 +24,11 @@ test('other errors are not out-of-credit', () => {
     assert.equal(creditsExhaustedError(apiError(402, {message: 'other', code: 'SOMETHING_ELSE'})), null);
     assert.equal(creditsExhaustedError(new Error('boom')), null);
 });
+
+test('run-budget refusals are plan limits too, each with its own kind', () => {
+    const {creditsExhaustedError} = fresh();
+    assert.equal(creditsExhaustedError(apiError(402, SPENT))?.limit, 'credits');
+    const run = creditsExhaustedError(apiError(402, {message: "This reply reached the Free plan's limit.", code: 'RUN_BUDGET_EXHAUSTED'}));
+    assert.deepEqual({...run}, {limit: 'runBudget', message: "This reply reached the Free plan's limit."});
+    assert.equal(creditsExhaustedError(apiError(402, {message: 'too long', code: 'RUN_TOO_LONG'}))?.limit, 'runTooLong');
+});

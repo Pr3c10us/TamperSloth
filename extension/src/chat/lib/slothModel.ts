@@ -20,6 +20,14 @@ import {accountFetch, SLOTH_API_URL} from "../../settings/lib/account";
  * NDJSON. Billing, plan limits and the provider's key all live server-side.
  */
 
+/** Names the agent run a request is a step of, so the server can hold each run to the plan's token budget. */
+export const RUN_HEADER = "X-Sloth-Run";
+
+/** The run id from call headers, which the SDK passes on lowercased. */
+function runIdFrom(headers: Record<string, string | undefined> | undefined): string | undefined {
+    return Object.entries(headers ?? {}).find(([name]) => name.toLowerCase() === RUN_HEADER.toLowerCase())?.[1];
+}
+
 function toBase64(bytes: Uint8Array): string {
     let binary = "";
     for (let i = 0; i < bytes.length; i += 0x8000) {
@@ -116,11 +124,12 @@ export class SlothLanguageModel implements LanguageModelV4 {
     }
 
     async doStream(options: LanguageModelV4CallOptions): Promise<LanguageModelV4StreamResult> {
-        const {abortSignal, headers: _headers, ...callOptions} = options;
+        const {abortSignal, headers, ...callOptions} = options;
         const path = `/api/v1/models/${encodeURIComponent(this.modelId)}/stream`;
+        const runId = runIdFrom(headers);
         const response = await accountFetch(path, {
             method: "POST",
-            headers: {"Content-Type": "application/json"},
+            headers: {"Content-Type": "application/json", ...(runId && {[RUN_HEADER]: runId})},
             body: JSON.stringify({options: encode(callOptions)}),
             signal: abortSignal,
         }, this.transport);

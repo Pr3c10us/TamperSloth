@@ -378,8 +378,8 @@ export function Composer({
         <div ref={containerRef} className="fixed bottom-0 inset-x-0 z-20 flex shrink-0 flex-col bg-background">
             <TaskTabsCard conversationId={conversationId} />
             <RateLimitNotice conversationId={conversationId} />
-            {/* Picking a model on the user's own key is one way on, so the notice goes with it. */}
-            {selectedModel?.providerId === "tampersloth" && <CreditsNotice conversationId={conversationId} />}
+            {/* Picking a model on the user's own key is one way past a plan limit, so those notices go with it. */}
+            <CreditsNotice conversationId={conversationId} sloth={selectedModel?.providerId === "tampersloth"} />
             <TabWaitNotice conversationId={conversationId} />
             <UserWaitNotice conversationId={conversationId} />
             <AskUserOverlay conversationId={conversationId} />

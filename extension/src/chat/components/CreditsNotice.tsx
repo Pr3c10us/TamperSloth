@@ -1,22 +1,91 @@
 import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, KeyRound, Wallet } from "lucide-react";
+import { ArrowUpRight, Gauge, KeyRound, SlidersHorizontal, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UPGRADE_URL, useAccount } from "@/src/settings/lib/account";
 import { useCreditsExhausted } from "../lib/credits";
 import { formatCredits } from "../lib/pricing";
 import { Eyebrow, CARD_DUR, CARD_EASE } from "./askUser/shared";
 
-/** Shown when this chat's Sloth run was refused because the month's credit is spent. */
-export function CreditsNotice({ conversationId }: { conversationId: string }) {
+const compactTokens = new Intl.NumberFormat("en-US", { notation: "compact" });
+
+/**
+ * Shown when this chat's run was stopped by a limit: a Sloth plan's monthly credit or per-run
+ * token budget, or the user's own run budget from Preferences (on any model).
+ */
+export function CreditsNotice({ conversationId, sloth }: { conversationId: string; sloth: boolean }) {
     const exhausted = useCreditsExhausted(conversationId);
     const { account } = useAccount();
     const navigate = useNavigate();
 
     if (!exhausted) return null;
+    if (exhausted.limit === "userBudget") return (
+        <NoticeCard icon={SlidersHorizontal} title="Token budget reached">
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+                Stopped at your{exhausted.budget ? <> <span className="font-medium text-foreground">{compactTokens.format(exhausted.budget)}</span>-token</> : ""} run
+                budget. Send a message to continue.
+            </p>
+            <div className="flex gap-1.5">
+                <Button variant="outline" size="xs" onClick={() => navigate("/settings?tab=preferences")}>
+                    <SlidersHorizontal strokeWidth={1.75} />
+                    Change budget
+                </Button>
+            </div>
+        </NoticeCard>
+    );
+    if (!sloth) return null;
     const renews = account && new Date(account.usage.periodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric" });
     // Pro is the top plan, so there is nothing to upgrade to.
     const canUpgrade = !account || account.plan.id === "free";
+    const credits = exhausted.limit === "credits";
+    const Icon = credits ? Wallet : Gauge;
+    const title = credits ? "Out of credits" : exhausted.limit === "runBudget" ? "Run limit reached" : "Chat too long";
+    // Sloth runs are metered in credits, so the run-limit cards never quote token counts.
+    const aside = credits ? renews && `Renews ${renews}` : undefined;
 
+    return (
+        <NoticeCard icon={Icon} title={title} aside={aside || undefined}>
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+                {!account ? exhausted.message : exhausted.limit === "runBudget" ? (
+                    <>
+                        This reply reached the {account.plan.name} plan's limit for one run. Send a message to pick up
+                        where it stopped{canUpgrade ? ", or upgrade for longer runs." : "."}
+                    </>
+                ) : exhausted.limit === "runTooLong" ? (
+                    <>
+                        This chat is now longer than one run allows on the {account.plan.name} plan. Start a new
+                        chat, {canUpgrade ? "upgrade, " : ""}or switch to a model on your own API key.
+                    </>
+                ) : (
+                    <>
+                        You've used this month's{" "}
+                        <span className="font-medium text-foreground">{formatCredits(account.usage.creditUsd)}</span> on the{" "}
+                        {account.plan.name} plan. {canUpgrade ? "Upgrade for more, or" : "Until it renews,"} switch
+                        to a model on your own API key.
+                    </>
+                )}
+            </p>
+            <div className="flex gap-1.5">
+                {canUpgrade && (
+                    <Button size="xs" onClick={() => window.open(UPGRADE_URL, "_blank", "noopener")}>
+                        Upgrade
+                        <ArrowUpRight strokeWidth={1.75} />
+                    </Button>
+                )}
+                <Button variant="outline" size="xs" onClick={() => navigate("/settings?tab=connections")}>
+                    <KeyRound strokeWidth={1.75} />
+                    Use your own key
+                </Button>
+            </div>
+        </NoticeCard>
+    );
+}
+
+function NoticeCard({ icon: Icon, title, aside, children }: {
+    icon: typeof Wallet;
+    title: string;
+    aside?: string;
+    children: React.ReactNode;
+}) {
     return (
         <div
             className="border-t border-muted bg-card/95 backdrop-blur-sm"
@@ -25,36 +94,15 @@ export function CreditsNotice({ conversationId }: { conversationId: string }) {
         >
             <div className="flex flex-col gap-2 px-3 py-3">
                 <header className="flex items-center gap-2">
-                    <Wallet className="size-3.5 text-muted-foreground" strokeWidth={1.75} />
-                    <Eyebrow>Out of credits</Eyebrow>
-                    {renews && (
+                    <Icon className="size-3.5 text-muted-foreground" strokeWidth={1.75} />
+                    <Eyebrow>{title}</Eyebrow>
+                    {aside && (
                         <span className="ml-auto font-mono text-[10px] uppercase tracking-[.1em] text-muted-foreground">
-                            Renews {renews}
+                            {aside}
                         </span>
                     )}
                 </header>
-                <p className="text-[13px] leading-relaxed text-muted-foreground">
-                    {account ? (
-                        <>
-                            You've used this month's{" "}
-                            <span className="font-medium text-foreground">{formatCredits(account.usage.creditUsd)}</span> on the{" "}
-                            {account.plan.name} plan. {canUpgrade ? "Upgrade for more, or" : "Until it renews,"} switch
-                            to a model on your own API key.
-                        </>
-                    ) : exhausted.message}
-                </p>
-                <div className="flex gap-1.5">
-                    {canUpgrade && (
-                        <Button size="xs" onClick={() => window.open(UPGRADE_URL, "_blank", "noopener")}>
-                            Upgrade
-                            <ArrowUpRight strokeWidth={1.75} />
-                        </Button>
-                    )}
-                    <Button variant="outline" size="xs" onClick={() => navigate("/settings?tab=connections")}>
-                        <KeyRound strokeWidth={1.75} />
-                        Use your own key
-                    </Button>
-                </div>
+                {children}
             </div>
         </div>
     );

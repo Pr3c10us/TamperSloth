@@ -96,6 +96,35 @@ test('a Sloth tool loop sends sanitizable options and replays reasoning signatur
     assert.equal(result.totalUsage.inputTokens, 250);
 });
 
+test('every step of a run names the run, so the server can hold it to the plan budget', async () => {
+    const {getModel} = loadProvider();
+    const headers = [];
+    const transport = async (url, init) => {
+        headers.push(init.headers);
+        return ndjson(headers.length === 1 ? toolStep() : textStep());
+    };
+    const model = getModel('tampersloth', '', 'sloth-pro', transport);
+    await generateText({
+        model, prompt: 'Read it', headers: {'X-Sloth-Run': 'run-0001'}, stopWhen: isStepCount(5),
+        tools: {getPageText: tool({inputSchema: z.object({page: z.number()}), execute: async () => 'Hello'})},
+    });
+    assert.deepEqual(headers.map(h => h['X-Sloth-Run']), ['run-0001', 'run-0001']);
+    // Other call headers stay on the client; a call outside a run names none.
+    assert.equal(Object.keys(headers[0]).some(name => /user-agent/i.test(name)), false);
+    await generateText({model, prompt: 'Title this'});
+    assert.equal('X-Sloth-Run' in headers[2], false);
+});
+
+test('a Sloth plan run budget caps the user setting, whichever is lower', () => {
+    const load = createLoader();
+    const {withPlanRunBudget, DEFAULT_AGENT_SETTINGS} = load('src/chat/lib/agentSettings.ts');
+    assert.equal(withPlanRunBudget({...DEFAULT_AGENT_SETTINGS, tokenBudget: 1_000_000}, 500_000).tokenBudget, 500_000);
+    assert.equal(withPlanRunBudget({...DEFAULT_AGENT_SETTINGS, tokenBudget: 200_000}, 500_000).tokenBudget, 200_000);
+    assert.equal(withPlanRunBudget({...DEFAULT_AGENT_SETTINGS, tokenBudget: 0}, 500_000).tokenBudget, 500_000);
+    assert.equal(withPlanRunBudget({...DEFAULT_AGENT_SETTINGS, tokenBudget: 0}, 0).tokenBudget, 0);
+    assert.equal(withPlanRunBudget({...DEFAULT_AGENT_SETTINGS, tokenBudget: 300}, undefined).tokenBudget, 300);
+});
+
 test('streaming reads NDJSON split across arbitrary chunk boundaries', async () => {
     const {getModel} = loadProvider();
     const body = textStep('Hello there').map(p => JSON.stringify(p)).join('\n') + '\n';

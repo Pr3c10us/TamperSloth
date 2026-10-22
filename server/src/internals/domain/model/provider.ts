@@ -15,5 +15,5 @@ export interface ModelProviders {
 }
 
 export interface RateLimiter {
-    acquire: (userId: string, limits: { requestsPerMinute: number, maxConcurrent: number }) => () => void
+    acquire: (userId: string, limits: { requestsPerMinute: number, maxConcurrent: number }) => Promise<() => void>
 }

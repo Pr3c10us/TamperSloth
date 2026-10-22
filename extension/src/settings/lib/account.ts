@@ -1,4 +1,5 @@
 import {useSyncExternalStore} from "react";
+import {setCreditsPerUsd} from "../../chat/lib/pricing";
 
 /**
  * The TamperSloth account: a session from Google sign-in on our server, which
@@ -43,10 +44,13 @@ export interface Account {
         name: string;
         monthlyCreditUsd: number;
         requestsPerMinute: number;
+        /** Most tokens one agent run may use on Sloth models; 0 means no limit. Enforced by the server. */
+        runTokenBudget?: number;
         /** The Sloth model a new sign-in starts on. */
         defaultModel: string;
     };
-    usage: { spentUsd: number; creditUsd: number; periodStart: string; periodEnd: string };
+    /** creditsPerUsd: how many credits one US dollar buys; missing from servers older than the setting. */
+    usage: { spentUsd: number; creditUsd: number; creditsPerUsd?: number; periodStart: string; periodEnd: string };
     models: SlothModelInfo[];
 }
 
@@ -85,6 +89,8 @@ const listeners = new Set<() => void>();
 
 function setState(next: Partial<AccountState>) {
     state = {...state, ...next};
+    // Credit amounts everywhere convert at the account's rate, set before listeners redraw.
+    if (next.account) setCreditsPerUsd(next.account.usage.creditsPerUsd);
     for (const fn of listeners) fn();
 }
 

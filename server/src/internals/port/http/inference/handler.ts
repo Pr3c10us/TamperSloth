@@ -29,7 +29,7 @@ export default class InferenceHandler {
         })
 
         const {model, stream} = await this.inferenceService.commands.streamModel.handle(
-            req.user as User, String(req.params.modelId), req.body, abort.signal,
+            req.user as User, String(req.params.modelId), req.body, abort.signal, req.get("X-Sloth-Run") || undefined,
         )
 
         res.status(200)

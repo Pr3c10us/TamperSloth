@@ -12,6 +12,7 @@ export default class UsageRepositoryPG implements UsageRepository {
         await this.sql`
             INSERT INTO model_usage ${this.sql({
                 user_id: usage.userId,
+                run_id: usage.runId ?? null,
                 model_id: usage.modelId,
                 provider: usage.provider,
                 provider_model: usage.providerModel,
@@ -33,5 +34,15 @@ export default class UsageRepositoryPG implements UsageRepository {
               AND created_at >= ${since}
         `
         return Number(row?.spent ?? 0)
+    }
+
+    async runTokens(userId: string, runId: string): Promise<number | null> {
+        const [row] = await this.sql`
+            SELECT COUNT(*)::int AS steps, COALESCE(SUM(input_tokens + output_tokens), 0)::bigint AS tokens
+            FROM model_usage
+            WHERE user_id = ${userId}
+              AND run_id = ${runId}
+        `
+        return row?.steps ? Number(row.tokens) : null
     }
 }

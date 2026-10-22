@@ -4,7 +4,7 @@ import type {User} from "../../../domain/user";
 import {costMicros, findSlothModel, type SlothModel, type TokenUsage} from "../../../domain/model";
 import type {ModelProviders, RateLimiter} from "../../../domain/model/provider.ts";
 import type {UsageRepository, UsageStatus} from "../../../domain/usage";
-import {billingPeriod, CREDITS_PER_USD, planFor} from "../../../domain/plan";
+import {billingPeriod, type Plan, planFor} from "../../../domain/plan";
 import {
     BadRequestError,
     ForbiddenError,
@@ -13,22 +13,29 @@ import {
     ServiceUnavailableError,
     TooManyRequestsError,
 } from "../../../../packages/errors";
-import {parseModelRequest} from "../../../../packages/utils/modelWire.ts";
+import {type ModelRequest, parseModelRequest} from "../../../../packages/utils/modelWire.ts";
+import type {RunTokenBudgets} from "../../../../packages/secret";
 
 export type StreamModelResult = {
     model: SlothModel
     stream: ReadableStream<LanguageModelV4StreamPart>
 }
 
+const RUN_ID = /^[A-Za-z0-9_-]{8,64}$/
+
 export default class StreamModel {
     constructor(
         private providers: ModelProviders,
         private usageRepository: UsageRepository,
         private rateLimiter: RateLimiter,
+        private runTokenBudgets: RunTokenBudgets,
+        private creditsPerUsd: number,
     ) {
     }
 
-    async handle(user: User, modelId: string, body: unknown, signal: AbortSignal): Promise<StreamModelResult> {
+    async handle(user: User, modelId: string, body: unknown, signal: AbortSignal, runId?: string): Promise<StreamModelResult> {
+        if (runId !== undefined && !RUN_ID.test(runId)) throw new BadRequestError("invalid run id")
+
         const model = findSlothModel(modelId)
         if (!model) throw new NotFoundError(`model "${modelId}" does not exist`)
 
@@ -47,12 +54,13 @@ export default class StreamModel {
         const spent = await this.usageRepository.spentSince(user.id, billingPeriod().start)
         if (spent >= plan.monthlyCreditUsd * 1e6) {
             throw new PaymentRequiredError(
-                `You've used this month's ${plan.monthlyCreditUsd * CREDITS_PER_USD} ${plan.name} credits. They renew on the 1st.`,
+                `You've used this month's ${plan.monthlyCreditUsd * this.creditsPerUsd} ${plan.name} credits. They renew on the 1st.`,
                 "CREDITS_EXHAUSTED",
             )
         }
+        await this.checkRunBudget(user.id, plan, runId, request)
 
-        const release = this.rateLimiter.acquire(user.id, plan)
+        const release = await this.rateLimiter.acquire(user.id, plan)
         let result
         try {
             result = await provider.languageModel(model.target.modelId).doStream({
@@ -70,8 +78,9 @@ export default class StreamModel {
             release()
             const usage = meter.usage()
             const finalStatus = meter.reported ? "completed" : status
-            void this.usageRepository.record({
+            return this.usageRepository.record({
                 userId: user.id,
+                runId,
                 modelId: model.id,
                 provider: provider.id,
                 providerModel: model.target.modelId,
@@ -82,24 +91,57 @@ export default class StreamModel {
         }
 
         let settled = false
-        const settle = (status: UsageStatus) => {
+        const settle = async (status: UsageStatus) => {
             if (settled) return
             settled = true
-            record(status)
+            await record(status)
         }
         const stream = result.stream.pipeThrough(new TransformStream<LanguageModelV4StreamPart, LanguageModelV4StreamPart>({
             transform(part, controller) {
                 meter.observe(part)
                 controller.enqueue(part)
             },
+            // The response ends only once usage is saved, so the run's next step is measured against it.
             flush() {
-                settle(signal.aborted ? "aborted" : "failed")
+                return settle(signal.aborted ? "aborted" : "failed")
             },
         }))
 
-        signal.addEventListener("abort", () => settle("aborted"), {once: true})
+        signal.addEventListener("abort", () => void settle("aborted"), {once: true})
 
         return {model, stream}
+    }
+
+    /**
+     * Refuses a step once its run has used the plan's run budget. The last step
+     * may go over, as in the extension: a step is never cut off mid-answer.
+     */
+    private async checkRunBudget(userId: string, plan: Plan, runId: string | undefined, request: ModelRequest) {
+        const budget = this.runTokenBudgets[plan.id] ?? 0
+        if (budget <= 0) return
+        const upgrade = plan.id === "free" ? ", or upgrade to Pro for longer runs" : ""
+        // One step whose prompt alone is over the budget would spend it before anything was recorded.
+        if (request.estimatedInputTokens > budget) {
+            throw new PaymentRequiredError(
+                `This chat is too long for one run on the ${plan.name} plan. Start a new chat to keep going${upgrade}.`,
+                "RUN_TOO_LONG",
+            )
+        }
+        const used = runId ? await this.usageRepository.runTokens(userId, runId) : null
+        if (used === null) {
+            // A run starts on the user's message; a prompt ending in tool results continues one,
+            // so it can't skip the budget by leaving out the run id or sending a new one.
+            if (request.options.prompt.at(-1)?.role === "tool") {
+                throw new BadRequestError("This step isn't part of a run TamperSloth started. Update the extension and try again.")
+            }
+            return
+        }
+        if (used >= budget) {
+            throw new PaymentRequiredError(
+                `This reply reached the ${plan.name} plan's limit for one run. Send a message to keep going${upgrade}.`,
+                "RUN_BUDGET_EXHAUSTED",
+            )
+        }
     }
 
     private clientError(error: unknown, model: SlothModel): Error {

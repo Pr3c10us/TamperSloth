@@ -7,9 +7,20 @@ export type PostgresCredentials = {
     ssl: boolean
 }
 
+export type RedisCredentials = {
+    user: string
+    password: string
+    host: string
+    port: number
+    tls: boolean
+}
+
 export type ModelProviderKeys = {
     anthropic: string
 }
+
+/** Most input plus output tokens one agent run may use, per plan id; 0 means no limit. */
+export type RunTokenBudgets = Record<string, number>
 
 export default class AppSecrets {
     port: number;
@@ -18,16 +29,12 @@ export default class AppSecrets {
     jwtSecret: string
     refreshJWTExpires: number
     refreshJWTSecret: string
-    wsUrl: string
     postgresCredentials: PostgresCredentials
-    googleAPIKey: string
-    maxYoutubeLength: number
-    maxVideoLength: number
-    baseYoutubeApiUrl: string
+    redisCredentials: RedisCredentials
     modelProviderKeys: ModelProviderKeys
-    /** Chrome extension IDs allowed to call the API; empty allows any (development only). */
+    runTokenBudgets: RunTokenBudgets
+    creditsPerUsd: number
     extensionIds: string[]
-    /** OAuth client IDs (type "Chrome extension") whose Google tokens may sign in. */
     googleExtensionClientIds: string[]
 
     constructor() {
@@ -40,7 +47,6 @@ export default class AppSecrets {
         this.jwtSecret = this.getEnvironmentVariable("JWT_SECRET");
         this.refreshJWTExpires = this.getEnvironmentVariableAsNumber("REFRESH_JWT_EXPIRES", 2592000);
         this.refreshJWTSecret = this.getEnvironmentVariable("REFRESH_JWT_SECRET");
-        this.wsUrl = this.getEnvironmentVariableOrFallback("WS_URL", "ws://localhost:1364");
 
         this.postgresCredentials = {
             user: this.getEnvironmentVariable("POSTGRES_USER"),
@@ -51,24 +57,30 @@ export default class AppSecrets {
             ssl: this.getEnvironmentVariableAsBool("POSTGRES_SSL", false)
         }
 
-        this.googleAPIKey = this.getEnvironmentVariable("GOOGLE_API_KEY")
+        this.redisCredentials = {
+            user: this.getEnvironmentVariableOrFallback("REDIS_USER", ""),
+            password: this.getEnvironmentVariableOrFallback("REDIS_PASSWORD", ""),
+            host: this.getEnvironmentVariable("REDIS_HOST"),
+            port: this.getEnvironmentVariableAsNumber("REDIS_PORT", 6379),
+            tls: this.getEnvironmentVariableAsBool("REDIS_TLS", false)
+        }
 
-        // Optional so the server boots without one: Sloth models answer 503 until it is set.
         this.modelProviderKeys = {
             anthropic: this.getEnvironmentVariableOrFallback("ANTHROPIC_API_KEY", ""),
         }
-        this.extensionIds = this.getEnvironmentVariableOrFallback("EXTENSION_IDS", "")
+        this.runTokenBudgets = {
+            free: this.getEnvironmentVariableAsNumber("FREE_RUN_TOKEN_BUDGET", 500_000),
+            pro: this.getEnvironmentVariableAsNumber("PRO_RUN_TOKEN_BUDGET", 0),
+        }
+        this.creditsPerUsd = this.getEnvironmentVariableAsNumber("CREDITS_PER_USD", 10)
+        this.extensionIds = this.getEnvironmentVariable("EXTENSION_IDS")
             .split(",")
             .map(id => id.trim())
             .filter(id => id.length > 0)
-        this.googleExtensionClientIds = this.getEnvironmentVariableOrFallback("GOOGLE_EXTENSION_CLIENT_ID", "")
+        this.googleExtensionClientIds = this.getEnvironmentVariable("GOOGLE_EXTENSION_CLIENT_ID")
             .split(",")
             .map(id => id.trim())
             .filter(id => id.length > 0)
-
-        this.maxYoutubeLength = this.getEnvironmentVariableAsNumber("MAX_YOUTUBE_LENGTH", 3000)
-        this.maxVideoLength = this.getEnvironmentVariableAsNumber("MAX_VIDEO_LENGTH", 120)
-        this.baseYoutubeApiUrl = this.getEnvironmentVariableOrFallback("BASE_YOUTUBE_API_URL", "https://www.googleapis.com/youtube/v3/videos")
     }
 
     getEnvironmentVariable(key: string): string {

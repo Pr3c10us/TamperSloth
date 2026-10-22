@@ -62,7 +62,8 @@ export default class ExpressHTTP {
                 'Content-Type',
                 'Authorization',
                 'X-Requested-With',
-                'ngrok-skip-browser-warning'
+                'ngrok-skip-browser-warning',
+                'X-Sloth-Run',
             ],
             exposedHeaders: ['Retry-After'],
         };

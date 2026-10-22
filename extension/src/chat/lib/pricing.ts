@@ -160,11 +160,16 @@ export function estimateRunCost(metrics: RunMetrics): EstimatedCost | undefined 
     };
 }
 
-/** Users see credits, never dollars: one US dollar buys this many. */
-export const CREDITS_PER_USD = 10;
+/** Users see credits, never dollars: one US dollar buys this many. The server sets it; this is the rate until the account loads. */
+let creditsPerUsd = 10;
+
+/** Takes the rate from the account, so the server can change it without a release. */
+export function setCreditsPerUsd(rate: number | undefined) {
+    if (typeof rate === "number" && Number.isFinite(rate) && rate > 0) creditsPerUsd = rate;
+}
 
 export function usdToCredits(usd: number): number {
-    return usd * CREDITS_PER_USD;
+    return usd * creditsPerUsd;
 }
 
 /** A dollar amount shown as credits, e.g. "12.5 credits". */

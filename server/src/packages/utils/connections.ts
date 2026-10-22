@@ -1,5 +1,6 @@
 import {SQL} from "bun";
-import type {PostgresCredentials} from "../secret";
+import Redis from "ioredis";
+import type {PostgresCredentials, RedisCredentials} from "../secret";
 
 export const bunPostgresClientConnection = (credentials: PostgresCredentials) => {
     return new SQL({
@@ -15,4 +16,16 @@ export const bunPostgresClientConnection = (credentials: PostgresCredentials) =>
         onclose: client => {
         },
     });
+}
+
+export const redisClientConnection = (credentials: RedisCredentials) => {
+    const client = new Redis({
+        host: credentials.host,
+        port: credentials.port,
+        username: credentials.user || undefined,
+        password: credentials.password || undefined,
+        tls: credentials.tls ? {servername: credentials.host} : undefined,
+    });
+    client.on("error", error => console.error("redis connection error", error.message));
+    return client;
 }

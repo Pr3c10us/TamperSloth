@@ -1,4 +1,5 @@
 import {SQL} from "bun";
+import type Redis from "ioredis";
 import AppSecrets from "../../packages/secret";
 import type UserRepository from "../domain/user/repository.ts";
 import UserRepositoryPG from "./user";
@@ -6,12 +7,13 @@ import type {UsageRepository} from "../domain/usage";
 import UsageRepositoryPG from "./usage";
 import type {ModelProviders, RateLimiter} from "../domain/model/provider.ts";
 import ModelProviderRegistry from "./llm";
-import MemoryRateLimiter from "./ratelimit/memory.ts";
+import RedisRateLimiter from "./ratelimit/redis.ts";
 import type {GoogleTokenVerifier} from "../domain/user/googleIdentity.ts";
 import GoogleTokenVerifierHTTP from "./google";
 
 export type AdapterParameters = {
     postgresClient: SQL
+    redisClient: Redis
     appSecrets: AppSecrets
 }
 
@@ -28,7 +30,7 @@ export default class Adapters {
         this.userRepository = new UserRepositoryPG(parameters.postgresClient)
         this.usageRepository = new UsageRepositoryPG(parameters.postgresClient)
         this.modelProviders = new ModelProviderRegistry(parameters.appSecrets)
-        this.rateLimiter = new MemoryRateLimiter()
+        this.rateLimiter = new RedisRateLimiter(parameters.redisClient)
         this.googleTokenVerifier = new GoogleTokenVerifierHTTP(parameters.appSecrets.googleExtensionClientIds)
     }
 }

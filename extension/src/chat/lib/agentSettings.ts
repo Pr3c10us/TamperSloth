@@ -33,6 +33,13 @@ export function runStopReason(settings: AgentSettings, steps: UsageRecord[], fai
         ? `Reached the ${settings.tokenBudget.toLocaleString()}-token run budget.` : "";
 }
 
+/** A Sloth plan's run budget caps the user's own: whichever is lower applies (0 means no limit). */
+export function withPlanRunBudget(settings: AgentSettings, planBudget: number | undefined): AgentSettings {
+    if (!planBudget || planBudget <= 0) return settings;
+    const tokenBudget = settings.tokenBudget > 0 ? Math.min(settings.tokenBudget, planBudget) : planBudget;
+    return {...settings, tokenBudget};
+}
+
 /** Settings saved before thinking levels had a DeepSeek-only `reasoning` mode instead. */
 type SavedAgentSettings = Partial<AgentSettings> & {reasoning?: "balanced" | "thorough"};
 

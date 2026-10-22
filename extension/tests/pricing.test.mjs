@@ -85,3 +85,13 @@ test('unknown legacy models and missing usage never masquerade as free', () => {
     assert.equal(formatCost(.1, 'credits'), '1 credit');
     assert.equal(estimateUsageCost('openai', 'gpt-6.1-sol', {input: NaN}, sunday).input, undefined);
 });
+
+test('credits convert at the rate the account sets, ignoring bad values', () => {
+    const {formatCredits, setCreditsPerUsd} = createLoader()('src/chat/lib/pricing.ts');
+    assert.equal(formatCredits(1), '10 credits');
+    setCreditsPerUsd(100);
+    assert.equal(formatCredits(1), '100 credits');
+    setCreditsPerUsd(0);
+    setCreditsPerUsd(undefined);
+    assert.equal(formatCredits(.5), '50 credits');
+});
