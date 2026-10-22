@@ -87,3 +87,39 @@ export const verifyRefreshToken = (token: string) => {
         }
     }
 };
+
+const BILLING_AUDIENCE = "billing";
+// Long enough to read the pricing page and finish checkout.
+const BILLING_TOKEN_SECONDS = 30 * 60;
+
+/**
+ * A short-lived token the extension hands to the pricing page. It is signed
+ * with its own secret, so it can only reach the billing routes.
+ */
+export const generateBillingToken = (payload: object): string => {
+    const environmentVariables = new AppSecrets();
+    return jwt.sign(payload, environmentVariables.billingTokenSecret, {
+        expiresIn: BILLING_TOKEN_SECONDS,
+        audience: BILLING_AUDIENCE,
+    });
+};
+
+export const isBillingToken = (token: string): boolean => {
+    const decoded = jwt.decode(token);
+    return typeof decoded === "object" && decoded?.aud === BILLING_AUDIENCE;
+};
+
+export const verifyBillingToken = (token: string) => {
+    const environmentVariables = new AppSecrets();
+    try {
+        return jwt.verify(token, environmentVariables.billingTokenSecret, {audience: BILLING_AUDIENCE});
+    } catch (error) {
+        if (error instanceof jwt.TokenExpiredError) {
+            throw new ForbiddenError("session has expired");
+        } else if (error instanceof jwt.JsonWebTokenError) {
+            throw new ForbiddenError("invalid token");
+        } else {
+            throw error;
+        }
+    }
+};

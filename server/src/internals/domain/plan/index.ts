@@ -1,3 +1,5 @@
+import type {User} from "../user";
+
 export type Plan = {
     id: string
     name: string
@@ -18,6 +20,15 @@ export const PLANS: Record<string, Plan> = {
         models: ["sloth-mini"],
         defaultModel: "sloth-mini",
     },
+    go: {
+        id: "go",
+        name: "Go",
+        monthlyCreditUsd: 4,
+        requestsPerMinute: 60,
+        maxConcurrent: 6,
+        models: ["sloth-mini", "sloth-pro"],
+        defaultModel: "sloth-pro",
+    },
     pro: {
         id: "pro",
         name: "Pro",
@@ -33,7 +44,18 @@ export function planFor(planId: string | undefined): Plan {
     return (planId && PLANS[planId]) || PLANS.free!
 }
 
-export function billingPeriod(now = new Date()): { start: Date, end: Date } {
+/**
+ * The window a user's credit is measured over. A paid plan follows its Paddle
+ * billing period, so credit renews the day it's charged; everyone else, and a
+ * paid plan whose period lapsed without a renewal, uses the UTC calendar month.
+ */
+export function billingPeriod(user: Pick<User, "plan" | "planPeriodStart" | "planPeriodEnd">, now = new Date()): { start: Date, end: Date } {
+    const {planPeriodStart: start, planPeriodEnd: end} = user
+    if (user.plan !== "free" && start && end && start <= now && now < end) return {start, end}
+    return calendarMonth(now)
+}
+
+function calendarMonth(now: Date): { start: Date, end: Date } {
     const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
     const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
     return {start, end}

@@ -143,7 +143,8 @@
 }
 
 @media (max-width: 980px) {
-  .nav-hang a:nth-child(n + 4) {
+  /* Pricing, the last link, stays when the section links run out of room. */
+  .nav-hang a:nth-child(n + 4):not(:last-child) {
     display: none;
   }
 }

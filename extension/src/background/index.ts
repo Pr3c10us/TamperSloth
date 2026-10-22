@@ -4,6 +4,7 @@ import {captureAnnotatedViewport, captureRegion, captureViewportScreenshot} from
 import {installPanelLifecycle, cleanupBrowserGuidance} from './panelLifecycle';
 import {installContextMenu} from './contextMenu';
 import {installLeftoverGroupCheck} from './taskTabs';
+import {BILLING_TOKEN_REQUEST, installPricingBridge} from './pricingBridge';
 import {queuePanelRequest} from '../chat/lib/panelRequests';
 import {
     deleteScriptValue,
@@ -350,6 +351,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     // Overlay notices for the panel.
     if (message.type === 'DRAW_ENDED') return false;
+    // The pricing page's relay; installPricingBridge answers it, so the refusal below must not.
+    if (message.type === BILLING_TOKEN_REQUEST) return false;
     // Only the extension's own UI may control tabs or evaluate code.
     if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL('')) || sender.tab) {
         sendResponse({error: 'Browser control is restricted to the extension UI'});
@@ -524,3 +527,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 });
+
+// The pricing page's token requests, beside the panel's own messages above.
+installPricingBridge();

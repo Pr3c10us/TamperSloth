@@ -55,7 +55,7 @@ export function Privacy() {
 const FAQS = [
   {
     q: "What does it cost?",
-    a: "You bring an API key from Anthropic, OpenAI, Google, DeepSeek, Kimi or Grok and pay them for what you use. Sloth shows the tokens and cost of every reply as it goes, so there are no surprises.",
+    a: "With your own API key from Anthropic, OpenAI, Google, DeepSeek, Kimi or Grok, TamperSloth is free: you pay the provider for what you use, and Sloth shows the cost of every reply. Prefer no keys? Sign in for Sloth models: Free comes with monthly credit, and Go ($5/month) and Pro ($20/month) add more credit and bigger models. See pricing at tampersloth.com/pricing.",
   },
   {
     q: "Which browsers does it work in?",

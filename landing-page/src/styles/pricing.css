@@ -1,0 +1,241 @@
+/* The pricing page. It doesn't load the home page's section styles, so it
+   carries its own copies of the heading and eyebrow pieces it uses. */
+.pricing {
+  padding-top: clamp(140px, 20vh, 210px);
+  padding-bottom: clamp(80px, 12vh, 140px);
+}
+.pricing .section-head {
+  max-width: 760px;
+}
+.pricing .eyebrow.tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.pricing .eyebrow.tick::before {
+  content: "";
+  width: 18px;
+  height: 1.5px;
+  background: var(--sage);
+}
+.pricing-head h1 {
+  margin-top: 20px;
+  font-size: var(--fs-h1);
+}
+.pricing-head .lead {
+  margin-top: 22px;
+  max-width: 580px;
+}
+
+.pricing-status {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 36px;
+  min-height: 24px;
+}
+.pricing-account {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--fg-2);
+  overflow-wrap: anywhere;
+}
+.pricing-account strong {
+  font-weight: 500;
+  color: var(--fg);
+}
+.pricing-warn {
+  color: #e2a26b;
+}
+.pricing-notice {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: var(--fs-small);
+  color: var(--fg-2);
+}
+.pricing-notice.is-success {
+  border-color: rgb(168 189 133 / 0.45);
+  color: var(--sage-hi);
+}
+.pricing-notice.is-error {
+  border-color: rgb(226 120 107 / 0.45);
+  color: #f0a79d;
+}
+
+/* ── Tiers ── */
+.tiers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 28px;
+}
+.tier {
+  display: flex;
+  flex-direction: column;
+  padding: 28px 26px 26px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.tier[data-featured] {
+  background:
+    radial-gradient(120% 70% at 100% 0%, rgb(168 189 133 / 0.12), transparent 60%),
+    var(--card);
+  border-color: rgb(168 189 133 / 0.35);
+}
+.tier[data-current] {
+  box-shadow: 0 0 0 1px var(--sage) inset;
+}
+.tier-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tier-head h2 {
+  font-size: var(--fs-h3);
+  line-height: 1;
+}
+.tier-badge {
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid rgb(168 189 133 / 0.4);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sage);
+  white-space: nowrap;
+}
+.tier-price {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 26px;
+}
+.tier-amount {
+  font-family: var(--font-serif);
+  font-size: clamp(56px, 5.6vw, 76px);
+  line-height: 0.9;
+  letter-spacing: var(--tracking-tight);
+}
+.tier-per {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.tier-pitch {
+  margin-top: 14px;
+  color: var(--fg-2);
+  font-size: 15px;
+}
+.tier-features {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  margin: 24px 0 0;
+  padding: 22px 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+  font-size: 15px;
+}
+.tier-features li {
+  position: relative;
+  padding-left: 22px;
+}
+.tier-features li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0.62em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sage);
+  box-shadow: 0 0 8px var(--sage-glow);
+}
+.tier-action {
+  margin-top: auto;
+  padding-top: 30px;
+}
+.tier-action .btn {
+  width: 100%;
+  justify-content: space-between;
+}
+.tier-action .btn-ghost {
+  justify-content: center;
+}
+.tier-action .btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+  transform: none;
+}
+.tier-note {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--fg-3);
+}
+
+/* ── No token: how to get here from the extension ── */
+.how-to {
+  margin-top: clamp(56px, 9vh, 96px);
+  padding-top: 32px;
+  border-top: 1px solid var(--line-strong);
+  max-width: 720px;
+  scroll-margin-top: 120px;
+}
+.how-to h2 {
+  font-size: var(--fs-h3);
+}
+.how-to ol {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 22px 0 0;
+  padding-left: 22px;
+  color: var(--fg-2);
+}
+.how-to ol li::marker {
+  font-family: var(--font-mono);
+  color: var(--sage);
+}
+.how-to p {
+  margin-top: 18px;
+  color: var(--fg-2);
+}
+.how-to a,
+.pricing-fine a {
+  color: var(--sage);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.pricing-fine {
+  margin-top: 48px;
+  max-width: 640px;
+  font-size: 13px;
+  color: var(--fg-3);
+}
+
+@media (max-width: 900px) {
+  .tiers {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 520px;
+  }
+}
+@media (max-width: 420px) {
+  .tier {
+    padding: 24px 18px 20px;
+  }
+  .tier-action .btn {
+    padding-left: 18px;
+    white-space: normal;
+    text-align: left;
+  }
+}

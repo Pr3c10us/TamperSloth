@@ -1,11 +1,12 @@
 import {useEffect, useState} from "react";
-import {Check, Loader2, Lock, LogIn, LogOut} from "lucide-react";
+import {ArrowUpRight, Check, Loader2, Lock, LogIn, LogOut} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {cn} from "@/lib/utils";
 import {ProviderLogo} from "@/src/chat/components/ProviderLogo";
 import {PlanBadge, SlothUsageMeter, TierGlyph, useSlothSignIn} from "@/src/chat/components/SlothModels";
 import {reconcileSelectedModel} from "@/src/chat/lib/modelFallback";
-import {refreshAccount, signOut, useAccount} from "../lib/account";
+import {openPricing, refreshAccount, signOut} from "../lib/account";
+import {useAccount} from "../lib/useAccount";
 import {SettingsGroup, SettingsSection} from "./Section";
 
 /** The TamperSloth account: sign in for Sloth models, then plan, credit and sign out. */
@@ -105,6 +106,15 @@ export function AccountCard() {
                                             <div className="truncate text-[10.5px] text-muted-foreground">{m.poweredBy}</div>
                                         </div>
                                     ))}
+                                </div>
+                                <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                                    <span className="text-[11.5px] text-muted-foreground">
+                                        {account.plan.id === "free" ? "More credit and models on Go and Pro." : "Switch plans, update your card or cancel."}
+                                    </span>
+                                    <Button variant="outline" size="xs" onClick={() => void openPricing()}>
+                                        {account.plan.id === "free" ? "Upgrade" : "Manage plan"}
+                                        <ArrowUpRight strokeWidth={1.75}/>
+                                    </Button>
                                 </div>
                             </>
                         )}

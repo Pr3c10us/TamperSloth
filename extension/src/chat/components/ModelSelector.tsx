@@ -21,7 +21,8 @@ import {Popover, PopoverContent, PopoverTrigger,} from "@/components/ui/popover"
 import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
 import {cn} from "@/lib/utils";
 import {getApiKeys, subscribeApiKeys} from "@/src/settings/lib/storage.ts";
-import {refreshAccount, useAccount} from "@/src/settings/lib/account";
+import {refreshAccount} from "@/src/settings/lib/account";
+import {useAccount} from "@/src/settings/lib/useAccount";
 import {
     PlanBadge,
     SlothModelRow,

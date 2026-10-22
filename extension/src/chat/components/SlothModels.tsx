@@ -123,11 +123,11 @@ export function SlothUsageMeter({account, className}: { account: Account; classN
 }
 
 export function PlanBadge({account}: { account: Account }) {
-    const pro = account.plan.id !== "free";
+    const paid = account.plan.id !== "free";
     return (
         <span className={cn(
             "rounded-full px-1.5 py-px font-mono text-[9px] uppercase tracking-[.1em]",
-            pro ? "bg-accent text-accent-foreground" : "border border-border text-muted-foreground",
+            paid ? "bg-accent text-accent-foreground" : "border border-border text-muted-foreground",
         )}>
             {account.plan.name}
         </span>

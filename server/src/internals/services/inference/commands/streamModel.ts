@@ -43,7 +43,7 @@ export default class StreamModel {
 
         const plan = planFor(user.plan)
         if (!plan.models.includes(model.id)) {
-            const error = new ForbiddenError(`${model.name} isn't included in the ${plan.name} plan. Upgrade to Pro to use it.`)
+            const error = new ForbiddenError(`${model.name} isn't included in the ${plan.name} plan. Upgrade your plan to use it.`)
             error.code = "MODEL_NOT_IN_PLAN"
             throw error
         }
@@ -54,10 +54,11 @@ export default class StreamModel {
         const request = parseModelRequest(body, provider.optionsNamespace, model.maxOutputTokens)
 
         await this.spendLimit.ensureAvailable()
-        const spent = await this.usageRepository.spentSince(user.id, billingPeriod().start)
+        const period = billingPeriod(user)
+        const spent = await this.usageRepository.spentSince(user.id, period.start)
         if (spent >= plan.monthlyCreditUsd * 1e6) {
             throw new PaymentRequiredError(
-                `You've used this month's ${plan.monthlyCreditUsd * this.creditsPerUsd} ${plan.name} credits. They renew on the 1st.`,
+                `You've used this month's ${plan.monthlyCreditUsd * this.creditsPerUsd} ${plan.name} credits. They renew on ${renewalDate(period.end)}.`,
                 "CREDITS_EXHAUSTED",
             )
         }
@@ -122,7 +123,7 @@ export default class StreamModel {
     private async checkRunBudget(userId: string, plan: Plan, runId: string | undefined, request: ModelRequest) {
         const budget = this.runTokenBudgets[plan.id] ?? 0
         if (budget <= 0) return
-        const upgrade = plan.id === "free" ? ", or upgrade to Pro for longer runs" : ""
+        const upgrade = plan.id === "pro" ? "" : ", or upgrade your plan for longer runs"
         // One step whose prompt alone is over the budget would spend it before anything was recorded.
         if (request.estimatedInputTokens > budget) {
             throw new PaymentRequiredError(
@@ -164,6 +165,11 @@ export default class StreamModel {
         console.error(`model provider answered ${status}`, error.message)
         return new ServiceUnavailableError(`${model.name} is not available right now`)
     }
+}
+
+/** "March 4": the first day the next period's credit can be spent. */
+function renewalDate(periodEnd: Date): string {
+    return periodEnd.toLocaleDateString("en-US", {month: "long", day: "numeric", timeZone: "UTC"})
 }
 
 /** Usage from the provider's finish part, or an estimate when the stream ends before it. */

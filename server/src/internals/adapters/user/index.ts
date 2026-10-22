@@ -43,7 +43,10 @@ export default class UserRepositoryPG implements Repository {
                    google_id,
                    created_at,
                    updated_at,
-                   plan
+                   plan,
+                   paddle_customer_id,
+                   plan_period_start,
+                   plan_period_end
             FROM users
             WHERE ${whereClause}
             LIMIT 1
@@ -61,7 +64,10 @@ export default class UserRepositoryPG implements Repository {
             googleId: row.google_id,
             createdAt: row.created_at,
             updatedAt: row.updated_at,
-            plan: row.plan
+            plan: row.plan,
+            paddleCustomerId: row.paddle_customer_id,
+            planPeriodStart: row.plan_period_start,
+            planPeriodEnd: row.plan_period_end,
         };
     }
 

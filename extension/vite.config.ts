@@ -14,6 +14,11 @@ export default defineConfig(({ mode }) => ({
     __TAMPERSLOTH_API_URL__: JSON.stringify(
       loadEnv(mode, process.cwd(), "VITE_").VITE_TAMPERSLOTH_API_URL || "https://api.tampersloth.com",
     ),
+    // The website whose /pricing page "Upgrade" opens, and where the pricing relay runs;
+    // .env.local can point it at the local landing page.
+    __TAMPERSLOTH_SITE_URL__: JSON.stringify(
+      loadEnv(mode, process.cwd(), "VITE_").VITE_TAMPERSLOTH_SITE_URL || "https://tampersloth.com",
+    ),
   },
   resolve: {
     alias: {

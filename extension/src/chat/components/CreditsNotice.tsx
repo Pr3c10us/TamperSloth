@@ -1,7 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import { ArrowUpRight, CloudOff, Gauge, KeyRound, SlidersHorizontal, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { UPGRADE_URL, useAccount } from "@/src/settings/lib/account";
+import { openPricing } from "@/src/settings/lib/account";
+import { useAccount } from "@/src/settings/lib/useAccount";
 import { useCreditsExhausted } from "../lib/credits";
 import { formatCredits } from "../lib/pricing";
 import { Eyebrow, CARD_DUR, CARD_EASE } from "./askUser/shared";
@@ -50,7 +51,7 @@ export function CreditsNotice({ conversationId, sloth }: { conversationId: strin
     );
     const renews = account && new Date(account.usage.periodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric" });
     // Pro is the top plan, so there is nothing to upgrade to.
-    const canUpgrade = !account || account.plan.id === "free";
+    const canUpgrade = !account || account.plan.id !== "pro";
     const credits = exhausted.limit === "credits";
     const Icon = credits ? Wallet : Gauge;
     const title = credits ? "Out of credits" : exhausted.limit === "runBudget" ? "Run limit reached" : "Chat too long";
@@ -81,7 +82,7 @@ export function CreditsNotice({ conversationId, sloth }: { conversationId: strin
             </p>
             <div className="flex gap-1.5">
                 {canUpgrade && (
-                    <Button size="xs" onClick={() => window.open(UPGRADE_URL, "_blank", "noopener")}>
+                    <Button size="xs" onClick={() => void openPricing()}>
                         Upgrade
                         <ArrowUpRight strokeWidth={1.75} />
                     </Button>

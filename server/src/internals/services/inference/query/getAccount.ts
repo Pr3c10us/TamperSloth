@@ -35,7 +35,7 @@ export default class GetAccount {
 
     async handle(user: User): Promise<Account> {
         const plan = planFor(user.plan)
-        const period = billingPeriod()
+        const period = billingPeriod(user)
         const spentMicros = await this.usageRepository.spentSince(user.id, period.start)
         return {
             user: {id: user.id, email: user.email},

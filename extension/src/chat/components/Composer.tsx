@@ -32,7 +32,7 @@ import { DictationWave } from "./DictationWave";
 import type { Quote } from "../lib/panelRequests";
 import { QuoteChip } from "./QuoteChip";
 import { ModelSelector, type SelectedModelEntry } from "./ModelSelector";
-import { useAccount } from "@/src/settings/lib/account";
+import { useAccount } from "@/src/settings/lib/useAccount";
 import type { ThinkingLevel } from "../lib/thinkingLevel";
 import { PickedElementChip, type PickedElement } from "./PickedElementChip";
 import {

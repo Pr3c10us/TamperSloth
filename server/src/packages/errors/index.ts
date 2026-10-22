@@ -49,6 +49,14 @@ export class ForbiddenError extends ApiError {
     }
 }
 
+export class ConflictError extends ApiError {
+    constructor(message: string, code?: string) {
+        super(message);
+        this.statusCode = StatusCodes.CONFLICT;
+        this.code = code;
+    }
+}
+
 export class AIRateLimitError extends ApiError {
     constructor(message: string) {
         super(message);

@@ -35,13 +35,38 @@ export function startSmoothScroll() {
   };
 }
 
-export function scrollToTarget(target: number | HTMLElement) {
+/** immediate jumps without the glide, as a browser does for a link from another page. */
+export function scrollToTarget(target: number | HTMLElement, { immediate = false } = {}) {
   if (lenis) {
-    lenis.scrollTo(target, { duration: 1.6, easing: (t) => 1 - Math.pow(1 - t, 4) });
+    lenis.scrollTo(target, immediate ? { immediate: true } : { duration: 1.6, easing: (t) => 1 - Math.pow(1 - t, 4) });
   } else {
     const top = typeof target === "number" ? target : target.getBoundingClientRect().top + window.scrollY;
-    window.scrollTo({ top, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    window.scrollTo({ top, behavior: immediate || prefersReducedMotion() ? "auto" : "smooth" });
   }
+}
+
+/**
+ * Arriving with a #section (from the pricing page's nav), the browser jumps
+ * before React has drawn anything, so it lands on the hero. Go there once the
+ * page has its full height: after load, when pinned sections have their spacers.
+ */
+export function scrollToHashOnLoad() {
+  const id = decodeURIComponent(location.hash.slice(1));
+  if (!id || id === "top") return () => {};
+  let cancelled = false;
+  const go = () =>
+    setTimeout(() => {
+      const el = document.getElementById(id);
+      if (cancelled || !el) return;
+      ScrollTrigger.refresh();
+      scrollToTarget(el, { immediate: true });
+    });
+  if (document.readyState === "complete") go();
+  else window.addEventListener("load", go, { once: true });
+  return () => {
+    cancelled = true;
+    window.removeEventListener("load", go);
+  };
 }
 
 export { gsap, ScrollTrigger };

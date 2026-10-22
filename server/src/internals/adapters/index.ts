@@ -14,6 +14,9 @@ import type {SpendLimitRepository} from "../domain/spend";
 import SpendLimitRepositoryPG from "./spend";
 import type {Mailer} from "../domain/mail";
 import SMTPMailer from "./mail/smtp.ts";
+import type {PaymentGateway, SubscriptionRepository} from "../domain/billing";
+import PaddleGateway from "./paddle";
+import SubscriptionRepositoryPG from "./billing";
 
 export type AdapterParameters = {
     postgresClient: SQL
@@ -30,6 +33,8 @@ export default class Adapters {
     googleTokenVerifier: GoogleTokenVerifier
     spendLimitRepository: SpendLimitRepository
     mailer: Mailer
+    paymentGateway: PaymentGateway
+    subscriptionRepository: SubscriptionRepository
 
     constructor(parameters: AdapterParameters) {
         this.parameters = parameters
@@ -40,5 +45,7 @@ export default class Adapters {
         this.googleTokenVerifier = new GoogleTokenVerifierHTTP(parameters.appSecrets.googleExtensionClientIds)
         this.spendLimitRepository = new SpendLimitRepositoryPG(parameters.postgresClient)
         this.mailer = new SMTPMailer(parameters.appSecrets.smtpCredential)
+        this.paymentGateway = new PaddleGateway(parameters.appSecrets.paddleCredentials)
+        this.subscriptionRepository = new SubscriptionRepositoryPG(parameters.postgresClient)
     }
 }

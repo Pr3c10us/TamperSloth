@@ -13,6 +13,8 @@ import type Adapters from "../../adapters";
 import {rateLimit} from 'express-rate-limit';
 import AuthenticationHandler from "./authentication/handler.ts";
 import InferenceHandler from "./inference/handler.ts";
+import BillingHandler from "./billing/handler.ts";
+import WebhookHandler from "./webhook/handler.ts";
 
 // Agent requests carry screenshots and long tool histories.
 const MODEL_REQUEST_BODY_LIMIT = "32mb"
@@ -37,6 +39,11 @@ export default class ExpressHTTP {
 
         // Middlewares
         this.server.set('trust proxy', 1)
+        // First, so requests answered before the rest of the stack (the Paddle webhook) are logged too.
+        let morganMiddleware = new MorganMiddleware()
+        this.server.use(morganMiddleware.middleware)
+        // Ahead of the JSON parser and the rate limiter: the signature covers the raw body, and Paddle retries in bursts.
+        this.webhooks()
         this.server.use("/api/v1/models", express.json({limit: MODEL_REQUEST_BODY_LIMIT}));
         this.server.use(express.json());
         this.server.use(express.urlencoded({extended: true}));
@@ -68,13 +75,12 @@ export default class ExpressHTTP {
             exposedHeaders: ['Retry-After'],
         };
         this.server.use(cors(corsOptions));
-        let morganMiddleware = new MorganMiddleware()
-        this.server.use(morganMiddleware.middleware)
 
 
         this.health()
         this.authentication()
         this.inference()
+        this.billing()
 
         this.server.use(`/api/v1`, this.router);
 
@@ -96,6 +102,16 @@ export default class ExpressHTTP {
     inference = () => {
         const handler = new InferenceHandler(this.services.inferenceService, this.services.authenticationService);
         this.router.use(handler.router);
+    };
+
+    billing = () => {
+        const handler = new BillingHandler(this.services.billingService, this.services.authenticationService);
+        this.router.use(handler.router);
+    };
+
+    webhooks = () => {
+        const handler = new WebhookHandler(this.services.billingService);
+        this.server.use("/webhooks", handler.router);
     };
 
     /** chrome-extension://<id>, for the IDs in EXTENSION_IDS (any ID when it is empty). */

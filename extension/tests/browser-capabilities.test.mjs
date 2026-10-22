@@ -448,6 +448,11 @@ test('saved scripts recover from legacy stopped state and browser messages remai
     const send = (message, sender) => new Promise(resolve => listener(message, sender, resolve));
     const denied = await send({type: 'BROWSER_CALL', operation: 'tabs', input: {action: 'list'}}, {id: 'extension-id', url: 'https://evil.example', tab: {id: 7}});
     assert.match(denied.error, /restricted/);
+    // The pricing page's relay asks from a tab too; the pricing bridge answers it, not this refusal.
+    let refused = false;
+    const pricingSender = {id: 'extension-id', url: 'https://tampersloth.com/pricing', tab: {id: 7}, frameId: 0};
+    assert.equal(listener({type: 'PRICING_BILLING_TOKEN'}, pricingSender, () => { refused = true; }), false);
+    assert.equal(refused, false);
     assert.equal(f.saved.ts_browser_control, undefined);
     assert.equal(f.saved.ts_browser_audit, undefined);
     const sender = {id: 'extension-id', url: 'chrome-extension://extension-id/index.html'};

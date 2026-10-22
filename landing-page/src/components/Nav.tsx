@@ -9,10 +9,12 @@ const LINKS = [
   { id: "toolbox", label: "Toolbox" },
   { id: "setup", label: "Setup" },
   { id: "faq", label: "FAQ" },
+  { id: "pricing", label: "Pricing", href: "/pricing" },
 ];
 
-export function Nav() {
-  const [active, setActive] = useState<string | null>(null);
+/** On the pricing page the section links lead back to the home page. */
+export function Nav({ page = "home" }: { page?: "home" | "pricing" }) {
+  const [active, setActive] = useState<string | null>(page === "pricing" ? "pricing" : null);
   const [scrolled, setScrolled] = useState(false);
 
   const [onLight, setOnLight] = useState(false);
@@ -34,7 +36,8 @@ export function Nav() {
 
   useEffect(() => {
     // The nav follows whichever section is crossing the middle of the viewport.
-    const els = LINKS.map((l) => document.getElementById(l.id)).filter(Boolean) as HTMLElement[];
+    if (page !== "home") return;
+    const els = LINKS.filter((l) => !l.href).map((l) => document.getElementById(l.id)).filter(Boolean) as HTMLElement[];
     const io = new IntersectionObserver(
       (entries) => {
         for (const e of entries) if (e.isIntersecting) setActive(e.target.id);
@@ -43,18 +46,20 @@ export function Nav() {
     );
     els.forEach((el) => io.observe(el));
     return () => io.disconnect();
-  }, []);
+  }, [page]);
+
+  const home = page === "home" ? "" : "/";
 
   return (
     <header className={`nav ${scrolled ? "is-scrolled" : ""} ${onLight ? "is-light" : ""}`}>
-      <a href="#top" className="nav-logo" aria-label="Tampersloth home">
+      <a href={`${home}#top`} className="nav-logo" aria-label="Tampersloth home">
         <SlothMark className="nav-mark" />
         <span className="nav-word">Tampersloth</span>
       </a>
 
       <nav className="nav-hang" aria-label="Sections">
         {LINKS.map((l) => (
-          <a key={l.id} href={`#${l.id}`} className={active === l.id ? "is-active" : ""}>
+          <a key={l.id} href={l.href ?? `${home}#${l.id}`} className={active === l.id ? "is-active" : ""}>
             {l.label}
           </a>
         ))}

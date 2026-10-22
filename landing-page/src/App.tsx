@@ -10,33 +10,20 @@ import { Setup } from "./components/Setup";
 import { Faq, Privacy } from "./components/Trust";
 import { Finale } from "./components/Finale";
 import { ASCII_SLOTH } from "./components/AsciiSloth";
-import { startSmoothScroll } from "./lib/motion";
+import { scrollToHashOnLoad, startSmoothScroll } from "./lib/motion";
+import { observeReveals } from "./lib/reveal";
 import "./styles/brand.css";
 
 export function App() {
   useEffect(() => startSmoothScroll(), []);
+  useEffect(() => scrollToHashOnLoad(), []);
 
   // A hello for anyone who opens DevTools; userscript people tend to.
   useEffect(() => {
     console.log(`%c${ASCII_SLOTH}\n\n  Peeking under the hood? Sloth approves.`, "color:#a8bd85;font-family:monospace;line-height:1.1");
   }, []);
 
-  // One observer for every [data-reveal] element on the page.
-  useEffect(() => {
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting) {
-            e.target.classList.add("is-in");
-            io.unobserve(e.target);
-          }
-        }
-      },
-      { rootMargin: "0px 0px -12% 0px" },
-    );
-    document.querySelectorAll("[data-reveal]").forEach((el) => io.observe(el));
-    return () => io.disconnect();
-  }, []);
+  useEffect(() => observeReveals(), []);
 
   return (
     <>

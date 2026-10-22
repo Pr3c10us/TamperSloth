@@ -1,4 +1,3 @@
-import {useSyncExternalStore} from "react";
 import {setCreditsPerUsd} from "../../chat/lib/pricing";
 
 /**
@@ -13,8 +12,14 @@ export const SLOTH_API_URL: string = typeof __TAMPERSLOTH_API_URL__ === "string"
     ? __TAMPERSLOTH_API_URL__.replace(/\/+$/, "")
     : "https://api.tampersloth.com";
 
-/** Where "Upgrade" sends a Free user for more Sloth credit. */
-export const UPGRADE_URL = "https://tampersloth.com/pricing";
+// Set at build time from VITE_TAMPERSLOTH_SITE_URL; undefined under the node tests.
+declare const __TAMPERSLOTH_SITE_URL__: string | undefined;
+export const SITE_URL: string = typeof __TAMPERSLOTH_SITE_URL__ === "string"
+    ? __TAMPERSLOTH_SITE_URL__.replace(/\/+$/, "")
+    : "https://tampersloth.com";
+
+/** Where "Upgrade" sends a user for more Sloth credit. */
+export const UPGRADE_URL = `${SITE_URL}/pricing`;
 
 const SESSION_KEY = "ts_account_session";
 const ACCOUNT_KEY = "ts_account_cache";
@@ -117,7 +122,8 @@ function init(): Promise<void> {
     return initialized;
 }
 
-function subscribe(fn: () => void) {
+/** Account changes, for useAccount; kept free of React so the background worker can import this file. */
+export function subscribeAccount(fn: () => void) {
     void init();
     listeners.add(fn);
     return () => {
@@ -125,8 +131,8 @@ function subscribe(fn: () => void) {
     };
 }
 
-export function useAccount(): AccountState {
-    return useSyncExternalStore(subscribe, () => state);
+export function accountSnapshot(): AccountState {
+    return state;
 }
 
 export async function isSignedIn(): Promise<boolean> {
@@ -273,6 +279,38 @@ export async function signOut(): Promise<void> {
     try {
         await chrome?.identity?.clearAllCachedAuthTokens?.();
     } catch { /* Not in Chrome, or nothing cached. */ }
+}
+
+// ── Plans ───────────────────────────────────────────────────
+
+/**
+ * Opens the pricing page signed in as this account. The website has no sign-in
+ * of its own, so it gets a short-lived billing token in the URL fragment, which
+ * never reaches a server log. Signed out, it opens the page as it is.
+ */
+export async function openPricing(): Promise<void> {
+    const token = await requestBillingToken();
+    const url = token ? `${UPGRADE_URL}#t=${encodeURIComponent(token)}` : UPGRADE_URL;
+    // window.open after an await can lose the click and be blocked; a tab needs no user gesture.
+    if (chrome?.tabs?.create) await chrome.tabs.create({url});
+    else window.open(url, "_blank", "noopener");
+}
+
+/**
+ * A 30-minute token that only reaches the billing routes, for the pricing page;
+ * null when signed out or the server can't be reached.
+ */
+export async function requestBillingToken(): Promise<string | null> {
+    try {
+        if (!(await isSignedIn())) return null;
+        const response = await accountFetch("/api/v1/billing/token", {method: "POST"});
+        if (!response.ok) return null;
+        const {data} = await response.json() as { data: { token: string } };
+        return data.token;
+    } catch (error) {
+        if (!(error instanceof SignedOutError)) console.warn("[Tampersloth] billing token request failed", error);
+        return null;
+    }
 }
 
 let accountRequest: Promise<Account | null> | null = null;

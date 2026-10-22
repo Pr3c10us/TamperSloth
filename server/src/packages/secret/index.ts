@@ -28,6 +28,17 @@ export type SMTPCredentials = {
 
 export type RunTokenBudgets = Record<string, number>
 
+export type PaddleEnvironment = "sandbox" | "production"
+
+export type PaddleCredentials = {
+    /** Empty until Paddle is set up; billing routes answer 503 until then. */
+    apiKey: string
+    webhookSecret: string
+    environment: PaddleEnvironment
+    /** Paddle price ids (pri_...) for the paid plans. */
+    prices: { go: string, pro: string }
+}
+
 export default class AppSecrets {
     port: number;
     clientOrigins: string[]
@@ -45,6 +56,9 @@ export default class AppSecrets {
     smtpCredential: SMTPCredentials
     /** Where the global daily spend limit's alerts go. */
     spendAlertEmail: string
+    paddleCredentials: PaddleCredentials
+    /** Signs the short-lived token the extension hands to the pricing page. */
+    billingTokenSecret: string
 
     constructor() {
         this.port = this.getEnvironmentVariableAsNumber("PORT", 5000);
@@ -76,6 +90,7 @@ export default class AppSecrets {
         }
         this.runTokenBudgets = {
             free: this.getEnvironmentVariableAsNumber("FREE_RUN_TOKEN_BUDGET", 500_000),
+            go: this.getEnvironmentVariableAsNumber("GO_RUN_TOKEN_BUDGET", 2_000_000),
             pro: this.getEnvironmentVariableAsNumber("PRO_RUN_TOKEN_BUDGET", 0),
         }
         this.creditsPerUsd = this.getEnvironmentVariableAsNumber("CREDITS_PER_USD", 10)
@@ -95,6 +110,21 @@ export default class AppSecrets {
             username: this.getEnvironmentVariable("SMTP_USERNAME")
         }
         this.spendAlertEmail = this.getEnvironmentVariableOrFallback("SPEND_ALERT_EMAIL", this.smtpCredential.fromAddress)
+        const paddleEnvironment = this.getEnvironmentVariableOrFallback("PADDLE_ENV", "sandbox")
+        if (paddleEnvironment !== "sandbox" && paddleEnvironment !== "production") {
+            console.error(`Error: Environment variable "PADDLE_ENV" value "${paddleEnvironment}" must be "sandbox" or "production".`);
+            process.exit(1)
+        }
+        this.paddleCredentials = {
+            apiKey: this.getEnvironmentVariableOrFallback("PADDLE_API_KEY", ""),
+            webhookSecret: this.getEnvironmentVariableOrFallback("PADDLE_WEBHOOK_SECRET", ""),
+            environment: paddleEnvironment,
+            prices: {
+                go: this.getEnvironmentVariableOrFallback("PADDLE_PRICE_GO", ""),
+                pro: this.getEnvironmentVariableOrFallback("PADDLE_PRICE_PRO", ""),
+            },
+        }
+        this.billingTokenSecret = this.getEnvironmentVariable("BILLING_TOKEN_SECRET")
 
     }
 
