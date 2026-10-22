@@ -1,13 +1,16 @@
 import type Adapters from "../../adapters";
 import StreamModel from "./commands/streamModel.ts";
 import GetAccount from "./query/getAccount.ts";
+import GlobalSpendLimit from "./query/globalSpendLimit.ts";
 
 export class Commands {
     streamModel: StreamModel
 
     constructor(adapters: Adapters) {
+        const spendLimit = new GlobalSpendLimit(adapters.spendLimitRepository, adapters.mailer,
+            adapters.parameters.appSecrets.spendAlertEmail)
         this.streamModel = new StreamModel(adapters.modelProviders, adapters.usageRepository, adapters.rateLimiter,
-            adapters.parameters.appSecrets.runTokenBudgets, adapters.parameters.appSecrets.creditsPerUsd)
+            spendLimit, adapters.parameters.appSecrets.runTokenBudgets, adapters.parameters.appSecrets.creditsPerUsd)
     }
 }
 

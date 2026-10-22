@@ -18,8 +18,14 @@ export type RedisCredentials = {
 export type ModelProviderKeys = {
     anthropic: string
 }
+export type SMTPCredentials = {
+    fromAddress: string
+    host: string
+    port: number
+    username: string
+    password: string
+}
 
-/** Most input plus output tokens one agent run may use, per plan id; 0 means no limit. */
 export type RunTokenBudgets = Record<string, number>
 
 export default class AppSecrets {
@@ -36,6 +42,9 @@ export default class AppSecrets {
     creditsPerUsd: number
     extensionIds: string[]
     googleExtensionClientIds: string[]
+    smtpCredential: SMTPCredentials
+    /** Where the global daily spend limit's alerts go. */
+    spendAlertEmail: string
 
     constructor() {
         this.port = this.getEnvironmentVariableAsNumber("PORT", 5000);
@@ -47,7 +56,6 @@ export default class AppSecrets {
         this.jwtSecret = this.getEnvironmentVariable("JWT_SECRET");
         this.refreshJWTExpires = this.getEnvironmentVariableAsNumber("REFRESH_JWT_EXPIRES", 2592000);
         this.refreshJWTSecret = this.getEnvironmentVariable("REFRESH_JWT_SECRET");
-
         this.postgresCredentials = {
             user: this.getEnvironmentVariable("POSTGRES_USER"),
             password: this.getEnvironmentVariable("POSTGRES_PASSWORD"),
@@ -56,7 +64,6 @@ export default class AppSecrets {
             port: this.getEnvironmentVariableAsNumber("POSTGRES_PORT", 5432),
             ssl: this.getEnvironmentVariableAsBool("POSTGRES_SSL", false)
         }
-
         this.redisCredentials = {
             user: this.getEnvironmentVariableOrFallback("REDIS_USER", ""),
             password: this.getEnvironmentVariableOrFallback("REDIS_PASSWORD", ""),
@@ -64,7 +71,6 @@ export default class AppSecrets {
             port: this.getEnvironmentVariableAsNumber("REDIS_PORT", 6379),
             tls: this.getEnvironmentVariableAsBool("REDIS_TLS", false)
         }
-
         this.modelProviderKeys = {
             anthropic: this.getEnvironmentVariableOrFallback("ANTHROPIC_API_KEY", ""),
         }
@@ -81,6 +87,15 @@ export default class AppSecrets {
             .split(",")
             .map(id => id.trim())
             .filter(id => id.length > 0)
+        this.smtpCredential = {
+            fromAddress: this.getEnvironmentVariable("SMTP_FROM_ADDRESS"),
+            host: this.getEnvironmentVariable("SMTP_HOST"),
+            password: this.getEnvironmentVariable("SMTP_PASSWORD"),
+            port: this.getEnvironmentVariableAsNumber("SMTP_PORT", 587),
+            username: this.getEnvironmentVariable("SMTP_USERNAME")
+        }
+        this.spendAlertEmail = this.getEnvironmentVariableOrFallback("SPEND_ALERT_EMAIL", this.smtpCredential.fromAddress)
+
     }
 
     getEnvironmentVariable(key: string): string {

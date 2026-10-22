@@ -6,9 +6,11 @@ import {useSyncExternalStore} from "react";
  * waiting, so the chat offers the ways on instead of an error line: upgrade,
  * a model on the user's own key, or (for a run budget) another message.
  * "userBudget" is the user's own run budget from Preferences, on any model.
+ * "unavailable" is TamperSloth pausing Sloth models for everyone for a while;
+ * it does clear by waiting, but the user's own key works meanwhile.
  */
 
-export type PlanLimit = "credits" | "runBudget" | "runTooLong" | "userBudget";
+export type PlanLimit = "credits" | "runBudget" | "runTooLong" | "userBudget" | "unavailable";
 
 export interface CreditsExhausted {
     limit: PlanLimit;
@@ -49,16 +51,23 @@ export function setCreditsExhausted(conversationId: string, value: CreditsExhaus
     notify();
 }
 
-/** The server answers 402 with a plan-limit code; the SDK may wrap it in a RetryError. */
+/**
+ * The server answers 402 with a plan-limit code, or 503 SLOTH_UNAVAILABLE while Sloth
+ * models are paused; the SDK may wrap either in a RetryError.
+ */
 export function creditsExhaustedError(error: unknown): CreditsExhausted | null {
     const e = error as any;
     if (!e || typeof e !== "object") return null;
     if (e.lastError) return creditsExhaustedError(e.lastError);
-    if ((e.statusCode ?? e.status) !== 402) return null;
+    const status = e.statusCode ?? e.status;
+    if (status !== 402 && status !== 503) return null;
     let code: string | undefined;
     try {
         code = JSON.parse(e.responseBody ?? "")?.code;
     } catch { /* Not JSON. */ }
+    if (status === 503) return code === "SLOTH_UNAVAILABLE"
+        ? {limit: "unavailable", message: typeof e.message === "string" && e.message ? e.message : "Sloth models aren't available at the moment. Try again later."}
+        : null;
     if (code && !CODES[code]) return null;
     return {limit: code ? CODES[code] : "credits",
         message: typeof e.message === "string" && e.message ? e.message : "You've used this month's credit."};

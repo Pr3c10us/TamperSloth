@@ -10,6 +10,10 @@ import ModelProviderRegistry from "./llm";
 import RedisRateLimiter from "./ratelimit/redis.ts";
 import type {GoogleTokenVerifier} from "../domain/user/googleIdentity.ts";
 import GoogleTokenVerifierHTTP from "./google";
+import type {SpendLimitRepository} from "../domain/spend";
+import SpendLimitRepositoryPG from "./spend";
+import type {Mailer} from "../domain/mail";
+import SMTPMailer from "./mail/smtp.ts";
 
 export type AdapterParameters = {
     postgresClient: SQL
@@ -24,6 +28,8 @@ export default class Adapters {
     modelProviders: ModelProviders
     rateLimiter: RateLimiter
     googleTokenVerifier: GoogleTokenVerifier
+    spendLimitRepository: SpendLimitRepository
+    mailer: Mailer
 
     constructor(parameters: AdapterParameters) {
         this.parameters = parameters
@@ -32,5 +38,7 @@ export default class Adapters {
         this.modelProviders = new ModelProviderRegistry(parameters.appSecrets)
         this.rateLimiter = new RedisRateLimiter(parameters.redisClient)
         this.googleTokenVerifier = new GoogleTokenVerifierHTTP(parameters.appSecrets.googleExtensionClientIds)
+        this.spendLimitRepository = new SpendLimitRepositoryPG(parameters.postgresClient)
+        this.mailer = new SMTPMailer(parameters.appSecrets.smtpCredential)
     }
 }

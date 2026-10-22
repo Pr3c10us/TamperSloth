@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, Gauge, KeyRound, SlidersHorizontal, Wallet } from "lucide-react";
+import { ArrowUpRight, CloudOff, Gauge, KeyRound, SlidersHorizontal, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UPGRADE_URL, useAccount } from "@/src/settings/lib/account";
 import { useCreditsExhausted } from "../lib/credits";
@@ -10,7 +10,8 @@ const compactTokens = new Intl.NumberFormat("en-US", { notation: "compact" });
 
 /**
  * Shown when this chat's run was stopped by a limit: a Sloth plan's monthly credit or per-run
- * token budget, or the user's own run budget from Preferences (on any model).
+ * token budget, the user's own run budget from Preferences (on any model), or Sloth models
+ * being paused for everyone.
  */
 export function CreditsNotice({ conversationId, sloth }: { conversationId: string; sloth: boolean }) {
     const exhausted = useCreditsExhausted(conversationId);
@@ -33,6 +34,20 @@ export function CreditsNotice({ conversationId, sloth }: { conversationId: strin
         </NoticeCard>
     );
     if (!sloth) return null;
+    if (exhausted.limit === "unavailable") return (
+        <NoticeCard icon={CloudOff} title="Model unavailable">
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+                Sloth models aren't available at the moment. Try again later, or switch to a model on
+                your own API key to keep going now.
+            </p>
+            <div className="flex gap-1.5">
+                <Button variant="outline" size="xs" onClick={() => navigate("/settings?tab=connections")}>
+                    <KeyRound strokeWidth={1.75} />
+                    Use your own key
+                </Button>
+            </div>
+        </NoticeCard>
+    );
     const renews = account && new Date(account.usage.periodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric" });
     // Pro is the top plan, so there is nothing to upgrade to.
     const canUpgrade = !account || account.plan.id === "free";

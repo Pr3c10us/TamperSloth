@@ -15,6 +15,7 @@ import {
 } from "../../../../packages/errors";
 import {type ModelRequest, parseModelRequest} from "../../../../packages/utils/modelWire.ts";
 import type {RunTokenBudgets} from "../../../../packages/secret";
+import type GlobalSpendLimit from "../query/globalSpendLimit.ts";
 
 export type StreamModelResult = {
     model: SlothModel
@@ -28,6 +29,7 @@ export default class StreamModel {
         private providers: ModelProviders,
         private usageRepository: UsageRepository,
         private rateLimiter: RateLimiter,
+        private spendLimit: GlobalSpendLimit,
         private runTokenBudgets: RunTokenBudgets,
         private creditsPerUsd: number,
     ) {
@@ -51,6 +53,7 @@ export default class StreamModel {
 
         const request = parseModelRequest(body, provider.optionsNamespace, model.maxOutputTokens)
 
+        await this.spendLimit.ensureAvailable()
         const spent = await this.usageRepository.spentSince(user.id, billingPeriod().start)
         if (spent >= plan.monthlyCreditUsd * 1e6) {
             throw new PaymentRequiredError(
