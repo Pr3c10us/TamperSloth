@@ -1,112 +1,75 @@
+# Runs the API with its own Postgres and Redis. Copy .env.example to .env first.
+# Apply migrations once the database is up:
+#   docker compose run --rm backend bun run migrate
 services:
   backend:
     build: .
     container_name: tampersloth_backend
     restart: unless-stopped
+    env_file: .env
+    # Point the API at the containers below, whatever .env says for local development.
     environment:
-      - TEST_SECRET:${TEST_SECRET}
-      - PORT:${PORT}
-      - CLIENT_ORIGIN:${CLIENT_ORIGIN}
-      - JWT_SECRET:${JWT_SECRET}
-      - JWT_EXPIRES:${JWT_EXPIRES}
-      - REFRESH_JWT_SECRET:${REFRESH_JWT_SECRET}
-      - REFRESH_JWT_EXPIRES:${REFRESH_JWT_EXPIRES}
-      - POSTGRES_HOST:${POSTGRES_HOST}
-      - POSTGRES_PORT:${POSTGRES_PORT}
-      - POSTGRES_DB:${POSTGRES_DB}
-      - POSTGRES_USER:${POSTGRES_USER}
-      - POSTGRES_PASSWORD:${POSTGRES_PASSWORD}
-      - POSTGRES_SSL:${POSTGRES_SSL}
-      - REDIS_HOST:${REDIS_HOST}
-      - REDIS_PORT:${REDIS_PORT}
-      - REDIS_USER:${REDIS_USER}
-      - REDIS_PASSWORD:${REDIS_PASSWORD}
-      - REDIS_TLS:${REDIS_TLS}
-      - ANTHROPIC_API_KEY:${ANTHROPIC_API_KEY}
-      - FREE_RUN_TOKEN_BUDGET:${FREE_RUN_TOKEN_BUDGET}
-      - PRO_RUN_TOKEN_BUDGET:${PRO_RUN_TOKEN_BUDGET}
-      - CREDITS_PER_USD:${CREDITS_PER_USD}
-      - GO_RUN_TOKEN_BUDGET:${GO_RUN_TOKEN_BUDGET}
-      - GOOGLE_EXTENSION_CLIENT_ID:${GOOGLE_EXTENSION_CLIENT_ID}
-      - EXTENSION_IDS:${EXTENSION_IDS}
-      - SMTP_HOST:${SMTP_HOST}
-      - SMTP_PORT:${SMTP_PORT}
-      - SMTP_USERNAME:${SMTP_USERNAME}
-      - SMTP_PASSWORD:${SMTP_PASSWORD}
-      - SMTP_FROM_ADDRESS:${SMTP_FROM_ADDRESS}
-      - SPEND_ALERT_EMAIL:${SPEND_ALERT_EMAIL}
-      - PADDLE_API_KEY:${PADDLE_API_KEY}
-      - PADDLE_WEBHOOK_SECRET:${PADDLE_WEBHOOK_SECRET}
-      - PADDLE_PRICE_GO:${PADDLE_PRICE_GO}
-      - PADDLE_PRICE_PRO:${PADDLE_PRICE_PRO}
-      - PADDLE_ENV:${PADDLE_ENV}
-      - BILLING_TOKEN_SECRET:${BILLING_TOKEN_SECRET}
+      PORT: 5000
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_SSL: "false"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_USER: ""
+      REDIS_TLS: "false"
     ports:
-      - "5000:5000"
+      - "${PORT:-5000}:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - tampersloth_network
 
   postgres:
-    image: ankane/pgvector
-    container_name: postgres_db
+    image: postgres:15
+    container_name: tampersloth_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     ports:
-      - "5433:5433"
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - tampersloth_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d myapp"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   redis:
-    image: redis:latest
-    container_name: redis_cache
+    image: redis:7
+    container_name: tampersloth_redis
     restart: unless-stopped
-    ports:
-      - ${REDIS_PORT}:6379
-    command: redis-server --save 20 1 --loglevel warning --requirepass ${REDIS_PASSWORD}
+    command: ["sh", "-c", "exec redis-server --save 20 1 --loglevel warning --requirepass \"$$REDIS_PASSWORD\""]
     environment:
-      - REDIS_REPLICATION_MODE=master
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
     volumes:
-      - redisData:/data
+      - redis_data:/data
     networks:
       - tampersloth_network
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 1s
-      timeout: 2s
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
       retries: 10
-
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: qdrant_vector_db
-    restart: unless-stopped
-    ports:
-      - "${QDRANT_PORT:-6333}:6333"
-      - "${QDRANT_GRPC_PORT:-6334}:6334"
-    environment:
-      - QDRANT__SERVICE__HTTP_PORT=6333
-      - QDRANT__SERVICE__GRPC_PORT=6334
-      - QDRANT__LOG_LEVEL=${QDRANT_LOG_LEVEL:-INFO}
-    volumes:
-      - qdrant_storage:/qdrant/storage
-    networks:
-      - tampersloth_network
 
 volumes:
   postgres_data:
-  redisData:
-  qdrant_storage:
+  redis_data:
 
 networks:
   tampersloth_network:

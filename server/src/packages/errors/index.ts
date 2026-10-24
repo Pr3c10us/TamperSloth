@@ -64,14 +64,6 @@ export class ConflictError extends ApiError {
     }
 }
 
-export class AIRateLimitError extends ApiError {
-    constructor(message: string) {
-        super(message);
-        this.statusCode = StatusCodes.FORBIDDEN;
-        this.code = "AI_RATE_LIMIT";
-    }
-}
-
 export class PaymentRequiredError extends ApiError {
     constructor(message: string, code: string) {
         super(message);
@@ -94,48 +86,6 @@ export class ServiceUnavailableError extends ApiError {
         super(message);
         this.statusCode = StatusCodes.SERVICE_UNAVAILABLE;
         this.code = "PROVIDER_UNAVAILABLE";
-    }
-}
-
-export class DuplicateError extends SafeError {
-    constructor(message: string) {
-        super(message);
-    }
-}
-
-export class NothingToSegmentError extends SafeError {
-    constructor() {
-        super("nothing to segment");
-    }
-}
-
-export class InvalidSegmentsError extends SafeError {
-    constructor() {
-        super("invalid segment");
-    }
-}
-
-export class InvalidMilestonesError extends SafeError {
-    constructor() {
-        super("invalid milestone generated");
-    }
-}
-
-export class InvalidMilestonesReferenceError extends SafeError {
-    constructor() {
-        super("invalid milestone references generated");
-    }
-}
-
-export class InvalidChallengesError extends SafeError {
-    constructor() {
-        super("invalid challenge generated");
-    }
-}
-
-export class InvalidAssessmentsError extends SafeError {
-    constructor() {
-        super("failed to generate feedback, try again");
     }
 }
 

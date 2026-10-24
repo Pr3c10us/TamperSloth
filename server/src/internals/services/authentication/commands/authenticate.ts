@@ -16,7 +16,7 @@ export default class Authenticate {
         } catch (e) {
             if (e instanceof NotFoundError) {
                 user = await this.userRepository.add({
-                    email, googleId, emailVerified: true,
+                    email, googleId,
                 })
             }  else {
                 throw e

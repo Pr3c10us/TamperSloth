@@ -2,8 +2,10 @@ node_modules
 .pnpm-store
 .git
 .gitignore
+.env
+.env.*
 Dockerfile
-docker-compose.yml
+compose.yaml
 README.md
 dist
 *.log

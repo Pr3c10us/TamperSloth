@@ -8,7 +8,7 @@ import {
 import Services from "./internals/services";
 import {setPlanCredits} from "./internals/domain/plan";
 
-class FazerlaneBackend {
+class TamperSlothBackend {
   adapters: Adapters;
   services: Services;
   port: Ports;
@@ -37,5 +37,5 @@ class FazerlaneBackend {
   }
 }
 
-const fazerlaneBackend = new FazerlaneBackend();
-fazerlaneBackend.run();
+const tamperSlothBackend = new TamperSlothBackend();
+tamperSlothBackend.run();

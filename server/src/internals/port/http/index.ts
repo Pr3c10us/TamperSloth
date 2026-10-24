@@ -8,7 +8,6 @@ import ErrorHandlerMiddleware from "./middlewares/errorHandler.ts";
 import Route404 from "./middlewares/invalidRoute.ts";
 import type Services from "../../services";
 import http from "http";
-import {WebSocketServer} from "ws";
 import type Adapters from "../../adapters";
 import {rateLimit} from 'express-rate-limit';
 import AuthenticationHandler from "./authentication/handler.ts";
@@ -25,7 +24,6 @@ export default class ExpressHTTP {
     adapters: Adapters
     server: Express;
     bareServer: http.Server
-    websocketServer: WebSocketServer
 
     router = express.Router();
 
@@ -35,7 +33,6 @@ export default class ExpressHTTP {
         this.adapters = adapters
         this.server = express();
         this.bareServer = http.createServer(this.server)
-        this.websocketServer = new WebSocketServer({server: this.bareServer})  // Single server
 
         // Middlewares
         this.server.set('trust proxy', 1)

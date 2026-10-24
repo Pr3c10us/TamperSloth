@@ -1,11 +1,10 @@
-FROM oven/bun:alpine AS base
+FROM oven/bun:1.4.4-alpine AS base
 
 # Set working directory
 WORKDIR /app
 
 # Copy package files first (for better caching)
 COPY package.json bun.lock ./
-COPY patches ./patches
 
 # Install dependencies (include dev for build)
 RUN bun install --frozen-lockfile
@@ -14,7 +13,7 @@ RUN bun install --frozen-lockfile
 COPY . .
 
 # 2️⃣ Runtime image
-FROM oven/bun:alpine AS prod
+FROM oven/bun:1.4.4-alpine AS prod
 
 WORKDIR /app
 
@@ -30,12 +29,6 @@ COPY --from=base /app/migrations ./migrations
 
 # Copy the rest of the source code
 COPY . .
-
-# Create uploads directory and set permissions
-RUN mkdir -p /app/uploads && \
-    mkdir -p /app/public/temp && \
-    chown -R appuser:appgroup /app/uploads && \
-    chown -R appuser:appgroup /app/public
 
 # Expose your Express port
 EXPOSE 5000

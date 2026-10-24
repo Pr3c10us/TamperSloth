@@ -485,8 +485,8 @@ test('guide tips are text only, with no logo next to the lime-glowing pointer',(
     assert.equal(state.cursor.children.some(child=>child.tagName==='img'),false);
     assert.equal(state.cursorBody.textContent,'Click Black');assert.equal(state.cursorBody.style.minHeight,'');
     assert.equal(state.cursorTag.style.top,'34px');
-    assert.match(state.cursor.innerHTML,/fill="black"/);assert.match(state.cursor.innerHTML,/stroke="#ffffff"/);
-    assert.match(state.cursor.innerHTML,/M41\.1621 6\.11426C50\.3285/);
+    assert.match(state.cursor.innerHTML,/fill="black"/);assert.match(state.cursor.innerHTML,/stroke="#A8BD85"/);
+    assert.match(state.cursor.innerHTML,/M3\.22324 1\.01515C3\.80072/);
     state.moveCursor({x:300,y:590},false,true);
     assert.equal(state.cursorTag.style.top,'34px');
     assert.ok(state.cursorPoint.y+34+state.cursorTag.offsetHeight<=588);
