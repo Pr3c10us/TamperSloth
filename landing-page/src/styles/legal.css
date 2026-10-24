@@ -1,0 +1,131 @@
+/* Terms, privacy and refunds. Like the pricing page, it carries its own
+   copies of the heading and eyebrow pieces it uses. */
+.legal {
+  padding-top: clamp(140px, 20vh, 210px);
+  padding-bottom: clamp(80px, 12vh, 140px);
+}
+.legal .section-head {
+  max-width: 760px;
+}
+.legal .eyebrow.tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.legal .eyebrow.tick::before {
+  content: "";
+  width: 18px;
+  height: 1.5px;
+  background: var(--sage);
+}
+.legal-head h1 {
+  margin-top: 20px;
+  font-size: var(--fs-h1);
+}
+.legal-head .lead {
+  margin-top: 22px;
+  max-width: 580px;
+}
+
+.legal-body {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: clamp(32px, 6vw, 96px);
+  margin-top: clamp(56px, 9vh, 96px);
+  padding-top: 40px;
+  border-top: 1px solid var(--line-strong);
+}
+
+.legal-toc ol {
+  position: sticky;
+  top: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: toc;
+}
+.legal-toc li {
+  counter-increment: toc;
+  display: flex;
+  gap: 12px;
+  font-size: var(--fs-small);
+}
+.legal-toc li::before {
+  content: counter(toc, decimal-leading-zero);
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.9;
+  color: var(--fg-3);
+}
+.legal-toc a {
+  color: var(--fg-2);
+  transition: color 0.25s;
+}
+.legal-toc a:hover {
+  color: var(--sage);
+}
+
+.legal-doc {
+  max-width: 720px;
+  counter-reset: section;
+}
+.legal-doc section {
+  counter-increment: section;
+  scroll-margin-top: 120px;
+}
+.legal-doc section + section {
+  margin-top: 44px;
+}
+.legal-doc h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  font-size: var(--fs-h3);
+  line-height: 1.15;
+}
+.legal-doc h2::before {
+  content: counter(section, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--sage);
+}
+.legal-doc p,
+.legal-doc ul {
+  margin-top: 14px;
+  line-height: 1.7;
+  color: var(--fg-2);
+  text-wrap: pretty;
+}
+.legal-doc ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 20px;
+}
+.legal-doc li::marker {
+  color: var(--sage);
+}
+.legal-doc strong {
+  font-weight: 500;
+  color: var(--fg);
+}
+.legal-doc a {
+  color: var(--sage);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .legal-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .legal-toc {
+    display: none;
+  }
+}

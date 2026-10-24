@@ -12,8 +12,8 @@ const LINKS = [
   { id: "pricing", label: "Pricing", href: "/pricing" },
 ];
 
-/** On the pricing page the section links lead back to the home page. */
-export function Nav({ page = "home" }: { page?: "home" | "pricing" }) {
+/** Away from home the section links lead back to the home page. */
+export function Nav({ page = "home" }: { page?: "home" | "pricing" | "legal" }) {
   const [active, setActive] = useState<string | null>(page === "pricing" ? "pricing" : null);
   const [scrolled, setScrolled] = useState(false);
 

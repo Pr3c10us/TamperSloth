@@ -1,4 +1,5 @@
 import { Canopy } from "./Canopy";
+import { FooterBar } from "./FooterBar";
 import { ArrowIcon, SlothMark } from "./brand";
 import { INSTALL_URL, isMac } from "../lib/site";
 import "../styles/finale.css";
@@ -31,18 +32,7 @@ export function Finale() {
         <span>Tampersloth</span>
       </div>
 
-      <div className="finale-bar">
-        <div className="finale-bar-inner container">
-          <span>© {new Date().getFullYear()} Tampersloth</span>
-          <span className="finale-motto">Made for the way you browse.</span>
-          <nav aria-label="Footer">
-            <a href="#stage">How it helps</a>
-            <a href="#toolbox">Toolbox</a>
-            <a href="#faq">FAQ</a>
-            <a href="#top">Back to top ↑</a>
-          </nav>
-        </div>
-      </div>
+      <FooterBar />
     </footer>
   );
 }

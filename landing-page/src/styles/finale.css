@@ -69,48 +69,9 @@
   color: var(--fg);
   transform: translateY(0.04em);
 }
-.finale-bar {
-  position: relative;
-  border-top: 1px solid var(--line);
-  background: var(--night);
-}
-.finale-bar-inner {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px 28px;
-  padding-top: 22px;
-  padding-bottom: 26px;
-  font-size: 13px;
-  color: var(--fg-3);
-}
-.finale-motto {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-.finale-bar nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 22px;
-}
-.finale-bar a {
-  color: var(--fg-2);
-  transition: color 0.25s;
-}
-.finale-bar a:hover {
-  color: var(--sage);
-}
-
 @media (max-width: 720px) {
   .finale {
     margin-top: 60px;
     padding-top: 90px;
-  }
-  .finale-motto {
-    order: 3;
-    width: 100%;
   }
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { initializePaddle, type Paddle } from "@paddle/paddle-js";
 import { Nav } from "../components/Nav";
+import { FooterBar } from "../components/FooterBar";
 import { ArrowIcon } from "../components/brand";
 import { observeReveals } from "../lib/reveal";
 import { INSTALL_URL, PADDLE_CLIENT_TOKEN, PADDLE_ENV } from "../lib/site";
@@ -488,9 +489,12 @@ export function Pricing() {
         <p className="pricing-fine">
           Prices in US dollars; tax is added at checkout where it applies. Payments are handled by Paddle, our merchant of
           record. Upgrades are charged in full and start a new month on the day you upgrade, with your unused credit
-          carried over; downgrades start at your next renewal. Unused credit doesn't carry over between months.
+          carried over; downgrades start at your next renewal. Unused credit doesn't carry over between months. Any
+          payment can be refunded within 14 days; see the <a href="/refunds">refund policy</a>. By subscribing you agree
+          to our <a href="/terms">terms</a> and <a href="/privacy">privacy notice</a>.
         </p>
       </main>
+      <FooterBar page="pricing" />
       <div className="grain" aria-hidden />
     </>
   );

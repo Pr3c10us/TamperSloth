@@ -1,0 +1,27 @@
+#!/bin/sh
+# Blocks commits that stage secret files or lines that look like credentials.
+# Bypass a false positive with: git commit --no-verify
+
+files=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$files" ] && exit 0
+status=0
+
+bad_names=$(printf '%s\n' "$files" | grep -iE '(^|/)\.env($|\.)|\.(pem|key|p12|pfx|crx|jks|keystore)$|(^|/)id_(rsa|dsa|ecdsa|ed25519)$|service-account.*\.json$|(^|/)credentials\.json$' | grep -vE '\.env\.(example|sample)$')
+if [ -n "$bad_names" ]; then
+  echo "pre-commit: refusing to commit secret files:" >&2
+  printf '  %s\n' $bad_names >&2
+  status=1
+fi
+
+pattern='sk-ant-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}|pdl_(live|sdbx)_[A-Za-z0-9_]{10,}|ntfset_[A-Za-z0-9_]{10,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY|gh[pousr]_[A-Za-z0-9]{30,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk_live_[A-Za-z0-9]{10,}|GOCSPX-[A-Za-z0-9_-]{20,}|eyJ[A-Za-z0-9_-]{20,}\.eyJ[A-Za-z0-9_-]{20,}|(postgres(ql)?|rediss?|mongodb(\+srv)?|amqp)://[^:/@ ]+:[^@/ ]{4,}@'
+hits=$(git diff --cached -U0 --no-color -- . ':!*package-lock.json' ':!*bun.lock' |
+  awk '/^\+\+\+ b\//{f=substr($0,7)} /^\+[^+]/{print f": "substr($0,2)}' |
+  grep -E "$pattern" | cut -c1-60)
+if [ -n "$hits" ]; then
+  echo "pre-commit: staged lines look like credentials (truncated):" >&2
+  printf '%s\n' "$hits" | sed 's/^/  /' >&2
+  status=1
+fi
+
+[ $status -ne 0 ] && echo "Unstage them (git restore --staged <file>) or move values into an ignored .env." >&2
+exit $status
