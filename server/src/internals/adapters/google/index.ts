@@ -13,8 +13,9 @@ type TokenInfo = {
 }
 
 /**
- * Verifies access tokens from chrome.identity.getAuthToken with Google's
- * tokeninfo endpoint. The audience check is what makes this safe: a token
+ * Verifies access tokens from chrome.identity.getAuthToken (the manifest's
+ * client) or launchWebAuthFlow (the web client, for Edge and others) with Google's
+ * tokeninfo endpoint; GOOGLE_EXTENSION_CLIENT_ID lists both, comma-separated. The audience check is what makes this safe: a token
  * Google issued to any other app is refused, so one can't be replayed here.
  */
 export default class GoogleTokenVerifierHTTP implements GoogleTokenVerifier {

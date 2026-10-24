@@ -46,7 +46,10 @@ export default class UserRepositoryPG implements Repository {
                    plan,
                    paddle_customer_id,
                    plan_period_start,
-                   plan_period_end
+                   plan_period_end,
+                   plan_status,
+                   credit_window_start,
+                   credit_bonus_micros
             FROM users
             WHERE ${whereClause}
             LIMIT 1
@@ -68,6 +71,9 @@ export default class UserRepositoryPG implements Repository {
             paddleCustomerId: row.paddle_customer_id,
             planPeriodStart: row.plan_period_start,
             planPeriodEnd: row.plan_period_end,
+            planStatus: row.plan_status,
+            creditWindowStart: row.credit_window_start,
+            creditBonusMicros: Number(row.credit_bonus_micros ?? 0),
         };
     }
 

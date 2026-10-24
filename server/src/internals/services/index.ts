@@ -9,7 +9,7 @@ export default class Services {
     billingService: BillingService
 
     constructor(adapters: Adapters) {
-        this.authenticationService = new AuthenticationService(adapters.userRepository, adapters.parameters.appSecrets, adapters.googleTokenVerifier)
+        this.authenticationService = new AuthenticationService(adapters.userRepository, adapters.parameters.appSecrets, adapters.googleTokenVerifier, adapters)
         this.inferenceService = new InferenceService(adapters)
         this.billingService = new BillingService(adapters)
     }

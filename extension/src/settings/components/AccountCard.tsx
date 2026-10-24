@@ -109,7 +109,8 @@ export function AccountCard() {
                                 </div>
                                 <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
                                     <span className="text-[11.5px] text-muted-foreground">
-                                        {account.plan.id === "free" ? "More credit and models on Go and Pro." : "Switch plans, update your card or cancel."}
+                                        {account.plan.status === "past_due" ? "Your last payment failed, so Sloth credit is paused."
+                                        : account.plan.id === "free" ? "More credit and models on Go and Pro." : "Switch plans, update your card or cancel."}
                                     </span>
                                     <Button variant="outline" size="xs" onClick={() => void openPricing()}>
                                         {account.plan.id === "free" ? "Upgrade" : "Manage plan"}

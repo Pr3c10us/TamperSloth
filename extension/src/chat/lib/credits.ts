@@ -5,12 +5,14 @@ import {useSyncExternalStore} from "react";
  * run used the plan's token budget. Unlike a rate limit, these don't clear by
  * waiting, so the chat offers the ways on instead of an error line: upgrade,
  * a model on the user's own key, or (for a run budget) another message.
+ * "creditsLow" is a step that could cost more than the credit left; "pastDue" is a
+ * failed renewal payment, which pauses the plan's credit until the card is updated.
  * "userBudget" is the user's own run budget from Preferences, on any model.
  * "unavailable" is TamperSloth pausing Sloth models for everyone for a while;
  * it does clear by waiting, but the user's own key works meanwhile.
  */
 
-export type PlanLimit = "credits" | "runBudget" | "runTooLong" | "userBudget" | "unavailable";
+export type PlanLimit = "credits" | "creditsLow" | "pastDue" | "runBudget" | "runTooLong" | "userBudget" | "unavailable";
 
 export interface CreditsExhausted {
     limit: PlanLimit;
@@ -22,6 +24,8 @@ export interface CreditsExhausted {
 
 const CODES: Record<string, PlanLimit> = {
     CREDITS_EXHAUSTED: "credits",
+    CREDITS_LOW: "creditsLow",
+    PAYMENT_PAST_DUE: "pastDue",
     RUN_BUDGET_EXHAUSTED: "runBudget",
     RUN_TOO_LONG: "runTooLong",
 };

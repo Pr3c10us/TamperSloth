@@ -19,6 +19,11 @@ export default defineConfig(({ mode }) => ({
     __TAMPERSLOTH_SITE_URL__: JSON.stringify(
       loadEnv(mode, process.cwd(), "VITE_").VITE_TAMPERSLOTH_SITE_URL || "https://tampersloth.com",
     ),
+    // A "Web application" OAuth client for Google sign-in outside Chrome (Edge, Brave…),
+    // where getAuthToken isn't available. Its redirect URI is chrome.identity.getRedirectURL().
+    __TAMPERSLOTH_GOOGLE_WEB_CLIENT_ID__: JSON.stringify(
+      loadEnv(mode, process.cwd(), "VITE_").VITE_GOOGLE_WEB_CLIENT_ID || "",
+    ),
   },
   resolve: {
     alias: {

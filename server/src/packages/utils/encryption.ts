@@ -123,3 +123,29 @@ export const verifyBillingToken = (token: string) => {
         }
     }
 };
+
+const PLAN_CHANGE_AUDIENCE = "plan-change";
+const PLAN_CHANGE_TOKEN_SECONDS = 10 * 60;
+
+/**
+ * Issued with a plan-change preview and required to make the change, so a change
+ * only happens as previewed: the same plan, kind and subscription.
+ */
+export const generatePlanChangeToken = (payload: object): string => {
+    const environmentVariables = new AppSecrets();
+    return jwt.sign(payload, environmentVariables.billingTokenSecret, {
+        expiresIn: PLAN_CHANGE_TOKEN_SECONDS,
+        audience: PLAN_CHANGE_AUDIENCE,
+    });
+};
+
+/** The previewed change, or null when the token is wrong or expired. */
+export const verifyPlanChangeToken = (token: string): Record<string, unknown> | null => {
+    const environmentVariables = new AppSecrets();
+    try {
+        const payload = jwt.verify(token, environmentVariables.billingTokenSecret, {audience: PLAN_CHANGE_AUDIENCE});
+        return typeof payload === "object" ? payload as Record<string, unknown> : null;
+    } catch {
+        return null;
+    }
+};

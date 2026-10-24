@@ -1,4 +1,5 @@
 import {setCreditsPerUsd} from "../../chat/lib/pricing";
+import {trustPricingTab} from "./pricingTabs";
 
 /**
  * The TamperSloth account: a session from Google sign-in on our server, which
@@ -53,6 +54,8 @@ export interface Account {
         runTokenBudget?: number;
         /** The Sloth model a new sign-in starts on. */
         defaultModel: string;
+        /** The paid plan's subscription status; past_due pauses its credit. Missing from older servers. */
+        status?: string | null;
     };
     /** creditsPerUsd: how many credits one US dollar buys; missing from servers older than the setting. */
     usage: { spentUsd: number; creditUsd: number; creditsPerUsd?: number; periodStart: string; periodEnd: string };
@@ -217,21 +220,69 @@ export async function accountFetch(path: string, init: RequestInit = {}, transpo
 
 // ── Sign in / out ───────────────────────────────────────────
 
-/** A Google access token for the manifest's oauth2 client, from Chrome's own account sign-in. */
-async function googleToken(): Promise<string> {
-    if (!chrome?.identity?.getAuthToken) throw new Error("Google sign-in needs Chrome with the extension's identity permission.");
+// Set at build time from VITE_GOOGLE_WEB_CLIENT_ID; undefined under the node tests.
+declare const __TAMPERSLOTH_GOOGLE_WEB_CLIENT_ID__: string | undefined;
+const GOOGLE_WEB_CLIENT_ID: string = typeof __TAMPERSLOTH_GOOGLE_WEB_CLIENT_ID__ === "string" ? __TAMPERSLOTH_GOOGLE_WEB_CLIENT_ID__ : "";
+
+interface GoogleToken {
+    token: string;
+    /** "chrome" tokens come from Chrome's account sign-in and sit in its token cache. */
+    source: "chrome" | "web";
+}
+
+/**
+ * A Google access token: from Chrome's own account sign-in when the browser has
+ * one, otherwise from Google's sign-in page in a popup (Edge, Brave and others
+ * ship chrome.identity but not getAuthToken, or have browser sign-in turned off).
+ */
+async function googleToken(): Promise<GoogleToken> {
+    if (!chrome?.identity) throw new Error("Google sign-in needs the extension's identity permission.");
+    if (chrome.identity.getAuthToken) {
+        try {
+            const {token} = await chrome.identity.getAuthToken({interactive: true});
+            if (!token) throw new Error("Sign-in was cancelled.");
+            return {token, source: "chrome"};
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (!/not supported|turned off browser signin|not signed in/i.test(message)) throw error;
+        }
+    }
+    return {token: await webGoogleToken(), source: "web"};
+}
+
+/** Google's OAuth implicit flow in a launchWebAuthFlow popup, for browsers without Chrome's account sign-in. */
+async function webGoogleToken(): Promise<string> {
+    if (!GOOGLE_WEB_CLIENT_ID || !chrome.identity.launchWebAuthFlow) {
+        throw new Error("Google sign-in in this browser isn't set up yet. Use Chrome, or try again after an update.");
+    }
+    const state = crypto.randomUUID();
+    const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    url.search = new URLSearchParams({
+        client_id: GOOGLE_WEB_CLIENT_ID,
+        response_type: "token",
+        redirect_uri: chrome.identity.getRedirectURL(),
+        scope: "openid email profile",
+        state,
+        // No cached grant to revoke on sign-out here, so always offer the account chooser.
+        prompt: "select_account",
+    }).toString();
+
+    let redirect: string | undefined;
     try {
-        const {token} = await chrome.identity.getAuthToken({interactive: true});
-        if (!token) throw new Error("Sign-in was cancelled.");
-        return token;
+        redirect = await chrome.identity.launchWebAuthFlow({url: url.toString(), interactive: true});
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        // Edge, Brave and others ship chrome.identity but not Chrome's account sign-in.
-        if (/not supported|turned off browser signin/i.test(message)) {
-            throw new Error("Google sign-in needs Chrome signed in to a Google account.");
-        }
+        if (/did not approve|cancel|closed/i.test(message)) throw new Error("Sign-in was cancelled.");
         throw error;
     }
+    if (!redirect) throw new Error("Sign-in was cancelled.");
+    const params = new URLSearchParams(new URL(redirect).hash.slice(1));
+    if (params.get("error")) {
+        throw new Error(params.get("error") === "access_denied" ? "Sign-in was cancelled." : `Google sign-in failed (${params.get("error")}).`);
+    }
+    const token = params.get("access_token");
+    if (!token || params.get("state") !== state) throw new Error("Google sign-in failed. Try again.");
+    return token;
 }
 
 /** Trades a Google token for a TamperSloth session. */
@@ -243,15 +294,15 @@ async function exchange(googleAccessToken: string): Promise<Response> {
     });
 }
 
-/** Signs in with the Google account Chrome is using and keeps the session the server returns. */
+/** Signs in with a Google account and keeps the session the server returns. */
 export async function signIn(): Promise<Account | null> {
-    let googleAccessToken = await googleToken();
-    let response = await exchange(googleAccessToken);
-    if (response.status === 401) {
+    let google = await googleToken();
+    let response = await exchange(google.token);
+    if (response.status === 401 && google.source === "chrome") {
         // Chrome hands back a cached token that Google may since have revoked; drop it and ask once more.
-        await chrome.identity.removeCachedAuthToken({token: googleAccessToken});
-        googleAccessToken = await googleToken();
-        response = await exchange(googleAccessToken);
+        await chrome.identity.removeCachedAuthToken({token: google.token});
+        google = await googleToken();
+        response = await exchange(google.token);
     }
     if (!response.ok) {
         const body = await response.json().catch(() => null) as { message?: string } | null;
@@ -284,16 +335,18 @@ export async function signOut(): Promise<void> {
 // ── Plans ───────────────────────────────────────────────────
 
 /**
- * Opens the pricing page signed in as this account. The website has no sign-in
- * of its own, so it gets a short-lived billing token in the URL fragment, which
- * never reaches a server log. Signed out, it opens the page as it is.
+ * Opens the pricing page. The website has no sign-in of its own: once it loads,
+ * it asks this extension for a billing token, and a tab opened here gets one
+ * without a click on the page (see pricingBridge). No token is ever in the URL.
  */
 export async function openPricing(): Promise<void> {
-    const token = await requestBillingToken();
-    const url = token ? `${UPGRADE_URL}#t=${encodeURIComponent(token)}` : UPGRADE_URL;
+    if (!chrome?.tabs?.create) {
+        window.open(UPGRADE_URL, "_blank", "noopener");
+        return;
+    }
     // window.open after an await can lose the click and be blocked; a tab needs no user gesture.
-    if (chrome?.tabs?.create) await chrome.tabs.create({url});
-    else window.open(url, "_blank", "noopener");
+    const tab = await chrome.tabs.create({url: UPGRADE_URL});
+    if (tab.id !== undefined) await trustPricingTab(tab.id);
 }
 
 /**

@@ -2,6 +2,7 @@
 export type BillingTokenReply =
   | { ok: true; token: string }
   | { ok: false; reason: "signed-out"; panelOpened: boolean }
+  | { ok: false; reason: "needs-click" }
   | { ok: false; reason: "unavailable" };
 
 type RelayMessage = { source?: string; type?: string; id?: string; reply?: BillingTokenReply };
@@ -19,8 +20,8 @@ function fromRelay(event: MessageEvent): RelayMessage | null {
   return data?.source === "tampersloth-extension" ? data : null;
 }
 
-/** Whether a TamperSloth build is installed: its relay marks the page, or says so shortly. */
-function waitForRelay(): Promise<boolean> {
+/** Whether a TamperSloth build is installed: its relay marks the page, or says so within `wait`. */
+function waitForRelay(wait: number): Promise<boolean> {
   if (relayReady()) return Promise.resolve(true);
   return new Promise((resolve) => {
     const done = (found: boolean) => {
@@ -31,18 +32,23 @@ function waitForRelay(): Promise<boolean> {
     const onMessage = (event: MessageEvent) => {
       if (fromRelay(event)?.type === "ready") done(true);
     };
-    const timer = setTimeout(() => done(relayReady()), RELAY_WAIT_MS);
+    const timer = setTimeout(() => done(relayReady()), wait);
     window.addEventListener("message", onMessage);
   });
 }
 
 /**
  * Asks the installed extension for a billing token for its signed-in account,
- * through the relay it injects into this site, so any build answers: store,
- * unpacked or test. null means no TamperSloth is installed.
+ * through the relay it injects into this page, so any build answers: store,
+ * unpacked or test. The extension only answers right after a click on the page,
+ * or in a tab it opened itself; otherwise the reply is "needs-click". null means
+ * no TamperSloth is installed.
+ *
+ * Call it straight from a click handler: the relay checks the click is recent.
+ * `relayWait` is longer for the quiet request on page load, when the relay may still be on its way.
  */
-export async function askExtensionForBillingToken(): Promise<BillingTokenReply | null> {
-  if (!(await waitForRelay())) return null;
+export async function askExtensionForBillingToken(relayWait = RELAY_WAIT_MS): Promise<BillingTokenReply | null> {
+  if (!(await waitForRelay(relayWait))) return null;
   const id = Math.random().toString(36).slice(2);
   return new Promise((resolve) => {
     const done = (reply: BillingTokenReply) => {

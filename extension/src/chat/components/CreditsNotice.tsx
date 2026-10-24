@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, CloudOff, Gauge, KeyRound, SlidersHorizontal, Wallet } from "lucide-react";
+import { ArrowUpRight, CloudOff, CreditCard, Gauge, KeyRound, SlidersHorizontal, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { openPricing } from "@/src/settings/lib/account";
 import { useAccount } from "@/src/settings/lib/useAccount";
@@ -35,6 +35,24 @@ export function CreditsNotice({ conversationId, sloth }: { conversationId: strin
         </NoticeCard>
     );
     if (!sloth) return null;
+    if (exhausted.limit === "pastDue") return (
+        <NoticeCard icon={CreditCard} title="Payment failed">
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+                Your last payment didn't go through, so your Sloth credit is paused. Update your card to pick up where you
+                left off, or switch to a model on your own API key meanwhile.
+            </p>
+            <div className="flex gap-1.5">
+                <Button size="xs" onClick={() => void openPricing()}>
+                    Update card
+                    <ArrowUpRight strokeWidth={1.75} />
+                </Button>
+                <Button variant="outline" size="xs" onClick={() => navigate("/settings?tab=connections")}>
+                    <KeyRound strokeWidth={1.75} />
+                    Use your own key
+                </Button>
+            </div>
+        </NoticeCard>
+    );
     if (exhausted.limit === "unavailable") return (
         <NoticeCard icon={CloudOff} title="Model unavailable">
             <p className="text-[13px] leading-relaxed text-muted-foreground">
@@ -52,16 +70,17 @@ export function CreditsNotice({ conversationId, sloth }: { conversationId: strin
     const renews = account && new Date(account.usage.periodEnd).toLocaleDateString(undefined, { month: "short", day: "numeric" });
     // Pro is the top plan, so there is nothing to upgrade to.
     const canUpgrade = !account || account.plan.id !== "pro";
-    const credits = exhausted.limit === "credits";
+    const credits = exhausted.limit === "credits" || exhausted.limit === "creditsLow";
     const Icon = credits ? Wallet : Gauge;
-    const title = credits ? "Out of credits" : exhausted.limit === "runBudget" ? "Run limit reached" : "Chat too long";
+    const title = exhausted.limit === "creditsLow" ? "Not enough credit left" : credits ? "Out of credits"
+        : exhausted.limit === "runBudget" ? "Run limit reached" : "Chat too long";
     // Sloth runs are metered in credits, so the run-limit cards never quote token counts.
     const aside = credits ? renews && `Renews ${renews}` : undefined;
 
     return (
         <NoticeCard icon={Icon} title={title} aside={aside || undefined}>
             <p className="text-[13px] leading-relaxed text-muted-foreground">
-                {!account ? exhausted.message : exhausted.limit === "runBudget" ? (
+                {!account || exhausted.limit === "creditsLow" ? exhausted.message : exhausted.limit === "runBudget" ? (
                     <>
                         This reply reached the {account.plan.name} plan's limit for one run. Send a message to pick up
                         where it stopped{canUpgrade ? ", or upgrade for longer runs." : "."}

@@ -6,6 +6,7 @@ import {
   redisClientConnection,
 } from "./packages/utils/connections.ts";
 import Services from "./internals/services";
+import {setPlanCredits} from "./internals/domain/plan";
 
 class FazerlaneBackend {
   adapters: Adapters;
@@ -14,6 +15,7 @@ class FazerlaneBackend {
 
   constructor() {
     const appSecrets = new AppSecrets();
+    setPlanCredits(appSecrets.planCredits);
     const postgresClient = bunPostgresClientConnection(
       appSecrets.postgresCredentials
     );
@@ -31,6 +33,7 @@ class FazerlaneBackend {
 
   run() {
     this.port.httpPort.listen();
+    this.port.jobs.start();
   }
 }
 

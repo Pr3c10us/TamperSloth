@@ -3,8 +3,8 @@ import {APICallError} from "@ai-sdk/provider";
 import type {User} from "../../../domain/user";
 import {costMicros, findSlothModel, type SlothModel, type TokenUsage} from "../../../domain/model";
 import type {ModelProviders, RateLimiter} from "../../../domain/model/provider.ts";
-import type {UsageRepository, UsageStatus} from "../../../domain/usage";
-import {billingPeriod, type Plan, planFor} from "../../../domain/plan";
+import type {CreditHolds, UsageRepository, UsageStatus} from "../../../domain/usage";
+import {billingPeriod, creditAllowanceMicros, entitledPlan, type Plan} from "../../../domain/plan";
 import {
     BadRequestError,
     ForbiddenError,
@@ -32,6 +32,7 @@ export default class StreamModel {
         private spendLimit: GlobalSpendLimit,
         private runTokenBudgets: RunTokenBudgets,
         private creditsPerUsd: number,
+        private creditHolds: CreditHolds,
     ) {
     }
 
@@ -41,7 +42,7 @@ export default class StreamModel {
         const model = findSlothModel(modelId)
         if (!model) throw new NotFoundError(`model "${modelId}" does not exist`)
 
-        const plan = planFor(user.plan)
+        const plan = entitledPlan(user)
         if (!plan.models.includes(model.id)) {
             const error = new ForbiddenError(`${model.name} isn't included in the ${plan.name} plan. Upgrade your plan to use it.`)
             error.code = "MODEL_NOT_IN_PLAN"
@@ -53,18 +54,49 @@ export default class StreamModel {
 
         const request = parseModelRequest(body, provider.optionsNamespace, model.maxOutputTokens)
 
+        // Paddle starts the new period before the renewal is paid; its credit waits for the payment.
+        if (user.planStatus === "past_due") {
+            throw new PaymentRequiredError(
+                "Your last payment didn't go through, so your Sloth credit is paused. Update your card under Manage billing to keep going.",
+                "PAYMENT_PAST_DUE",
+            )
+        }
         await this.spendLimit.ensureAvailable()
         const period = billingPeriod(user)
+        const limit = creditAllowanceMicros(user)
         const spent = await this.usageRepository.spentSince(user.id, period.start)
-        if (spent >= plan.monthlyCreditUsd * 1e6) {
+        if (spent >= limit) {
             throw new PaymentRequiredError(
-                `You've used this month's ${plan.monthlyCreditUsd * this.creditsPerUsd} ${plan.name} credits. They renew on ${renewalDate(period.end)}.`,
+                `You've used this period's ${this.credits(limit)} ${plan.name} credits. They renew on ${renewalDate(period.end)}.`,
                 "CREDITS_EXHAUSTED",
             )
         }
         await this.checkRunBudget(user.id, plan, runId, request)
 
-        const release = await this.rateLimiter.acquire(user.id, plan)
+        // The most this request can cost, set aside until it's recorded, so requests running
+        // side by side can't each pass the check above and together spend past the credit.
+        const mostItCosts = costMicros(model.rates, {
+            input: request.estimatedInputTokens,
+            output: request.options.maxOutputTokens ?? model.maxOutputTokens,
+            cacheRead: 0,
+            cacheWrite: 0,
+        })
+        const releaseHold = await this.creditHolds.hold(user.id, {spentMicros: spent, limitMicros: limit, micros: mostItCosts})
+        if (!releaseHold) {
+            throw new PaymentRequiredError(
+                `This step could use up to ${this.credits(mostItCosts)} credits, and ${this.credits(limit - spent)} are left this period ` +
+                `(some may be set aside for requests still running). Start a new chat, or use a model on your own API key.`,
+                "CREDITS_LOW",
+            )
+        }
+
+        let release: () => void
+        try {
+            release = await this.rateLimiter.acquire(user.id, plan)
+        } catch (error) {
+            releaseHold()
+            throw error
+        }
         let result
         try {
             result = await provider.languageModel(model.target.modelId).doStream({
@@ -74,6 +106,7 @@ export default class StreamModel {
             })
         } catch (error) {
             release()
+            releaseHold()
             throw this.clientError(error, model)
         }
 
@@ -92,6 +125,8 @@ export default class StreamModel {
                 costMicros: costMicros(model.rates, usage),
                 status: finalStatus,
             }).catch(error => console.error("failed to record model usage", error))
+                // Released once the cost is recorded, so it's never counted by neither.
+                .finally(releaseHold)
         }
 
         let settled = false
@@ -114,6 +149,11 @@ export default class StreamModel {
         signal.addEventListener("abort", () => void settle("aborted"), {once: true})
 
         return {model, stream}
+    }
+
+    /** Credits in USD micros, as the extension shows them. */
+    private credits(micros: number): string {
+        return (Math.max(0, micros) / 1e6 * this.creditsPerUsd).toLocaleString("en-US", {maximumFractionDigits: 1})
     }
 
     /**

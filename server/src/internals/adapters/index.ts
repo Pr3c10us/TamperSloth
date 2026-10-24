@@ -12,11 +12,14 @@ import type {GoogleTokenVerifier} from "../domain/user/googleIdentity.ts";
 import GoogleTokenVerifierHTTP from "./google";
 import type {SpendLimitRepository} from "../domain/spend";
 import SpendLimitRepositoryPG from "./spend";
-import type {Mailer} from "../domain/mail";
+import type {AlertThrottle, Mailer} from "../domain/mail";
 import SMTPMailer from "./mail/smtp.ts";
+import RedisAlertThrottle from "./mail/throttle.ts";
 import type {PaymentGateway, SubscriptionRepository} from "../domain/billing";
 import PaddleGateway from "./paddle";
 import SubscriptionRepositoryPG from "./billing";
+import type {CreditHolds} from "../domain/usage";
+import RedisCreditHolds from "./credit/redis.ts";
 
 export type AdapterParameters = {
     postgresClient: SQL
@@ -33,8 +36,10 @@ export default class Adapters {
     googleTokenVerifier: GoogleTokenVerifier
     spendLimitRepository: SpendLimitRepository
     mailer: Mailer
+    alertThrottle: AlertThrottle
     paymentGateway: PaymentGateway
     subscriptionRepository: SubscriptionRepository
+    creditHolds: CreditHolds
 
     constructor(parameters: AdapterParameters) {
         this.parameters = parameters
@@ -45,7 +50,9 @@ export default class Adapters {
         this.googleTokenVerifier = new GoogleTokenVerifierHTTP(parameters.appSecrets.googleExtensionClientIds)
         this.spendLimitRepository = new SpendLimitRepositoryPG(parameters.postgresClient)
         this.mailer = new SMTPMailer(parameters.appSecrets.smtpCredential)
+        this.alertThrottle = new RedisAlertThrottle(parameters.redisClient)
         this.paymentGateway = new PaddleGateway(parameters.appSecrets.paddleCredentials)
         this.subscriptionRepository = new SubscriptionRepositoryPG(parameters.postgresClient)
+        this.creditHolds = new RedisCreditHolds(parameters.redisClient)
     }
 }

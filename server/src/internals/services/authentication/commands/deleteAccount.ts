@@ -1,17 +1,18 @@
 import type Repository from "../../../domain/user/repository.ts";
+import type {PaymentGateway, SubscriptionRepository} from "../../../domain/billing";
 
 export default class DeleteAccount {
-    accountRepository: Repository;
-
     constructor(
-        accountRepository: Repository,
+        private accountRepository: Repository,
+        private paymentGateway: PaymentGateway,
+        private subscriptionRepository: SubscriptionRepository,
     ) {
-        this.accountRepository = accountRepository;
     }
 
-
     handle = async (id: string): Promise<void> => {
-                    await this.accountRepository.delete(id)
+        // Deleting the user deletes their subscription rows, but Paddle would go on charging the card.
+        const subscription = await this.subscriptionRepository.findLiveByUser(id)
+        if (subscription) await this.paymentGateway.cancelImmediately(subscription.paddleSubscriptionId)
+        await this.accountRepository.delete(id)
     };
 }
-

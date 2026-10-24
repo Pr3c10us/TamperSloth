@@ -35,6 +35,13 @@ export class BadRequestError extends ApiError {
     }
 }
 
+/** A Paddle webhook whose signature failed. ageSeconds is set when it was right but too old. */
+export class InvalidSignatureError extends BadRequestError {
+    constructor(readonly ageSeconds: number | null) {
+        super("invalid signature");
+    }
+}
+
 export class UnAuthorizedError extends ApiError {
     constructor(message: string) {
         super(message);

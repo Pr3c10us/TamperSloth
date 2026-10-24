@@ -453,6 +453,17 @@ test('saved scripts recover from legacy stopped state and browser messages remai
     const pricingSender = {id: 'extension-id', url: 'https://tampersloth.com/pricing', tab: {id: 7}, frameId: 0};
     assert.equal(listener({type: 'PRICING_BILLING_TOKEN'}, pricingSender, () => { refused = true; }), false);
     assert.equal(refused, false);
+    // The pricing bridge answers only the pricing page itself, and only after a click or in a tab the extension opened.
+    const bridge = [...f.chrome.runtime.onMessage.listeners][1];
+    const ask = (sender, clicked) => new Promise(resolve => {
+        if (!bridge({type: 'PRICING_BILLING_TOKEN', clicked}, sender, resolve)) resolve('ignored');
+    });
+    assert.equal(await ask({...pricingSender, url: 'https://demo.tampersloth.com/pricing'}, true), 'ignored');
+    assert.equal(await ask({...pricingSender, url: 'https://tampersloth.com/'}, true), 'ignored');
+    const needsClick = JSON.stringify({ok: false, reason: 'needs-click'});
+    assert.equal(JSON.stringify(await ask(pricingSender, false)), needsClick);
+    f.session[`ts_pricing_tab_7`] = Date.now() + 60_000;
+    assert.notEqual(JSON.stringify(await ask(pricingSender, false)), needsClick, 'A tab the extension opened needs no click');
     assert.equal(f.saved.ts_browser_control, undefined);
     assert.equal(f.saved.ts_browser_audit, undefined);
     const sender = {id: 'extension-id', url: 'chrome-extension://extension-id/index.html'};

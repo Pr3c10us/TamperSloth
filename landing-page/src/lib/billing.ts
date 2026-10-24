@@ -1,14 +1,41 @@
 import { API_URL } from "./site";
 
 export type PlanId = "free" | "go" | "pro";
+export type PaidPlanId = "go" | "pro";
 
 /** What the server knows about the signed-in account's plan. */
 export type Billing = {
   email: string;
+  /** The plan the user has now. */
   plan: PlanId;
   status: "trialing" | "active" | "past_due" | "paused" | "canceled" | null;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
+  /** A downgrade waiting for the renewal: the plan the user moves to at currentPeriodEnd. */
+  scheduledPlan: PlanId | null;
+};
+
+/** A plan as the server enforces it; the cards are drawn from these. */
+export type PlanSummary = {
+  id: PlanId;
+  name: string;
+  priceUsd: number;
+  credits: number;
+  models: string[];
+  requestsPerMinute: number;
+  /** Most tokens one agent run may use; 0 means no limit. */
+  runTokenBudget: number;
+};
+
+export type PlanChangePreview = {
+  plan: PaidPlanId;
+  /** upgrade: full price now, fresh period. downgrade: from the renewal. keep: undoes a pending downgrade. */
+  kind: "upgrade" | "downgrade" | "keep";
+  /** Minor units (cents), tax and account credit included; null when nothing is charged. */
+  chargeToday: { amountMinor: number; currency: string } | null;
+  effectiveAt: string;
+  credits: { plan: number; carriedOver: number } | null;
+  confirmToken: string;
 };
 
 export class BillingError extends Error {
@@ -21,7 +48,7 @@ export class BillingError extends Error {
     this.code = code;
   }
 
-  /** The billing token ran out or was never valid; the extension has to open the page again. */
+  /** The billing token ran out or was never valid. */
   get expired() {
     return this.status === 401 || this.status === 403;
   }
@@ -29,21 +56,8 @@ export class BillingError extends Error {
 
 const TOKEN_KEY = "ts_billing_token";
 
-/**
- * The extension opens /pricing#t=<billing token>. The token moves to session
- * storage and leaves the address bar, so it isn't bookmarked or shared.
- */
-export function takeBillingToken(): string | null {
-  const fromHash = new URLSearchParams(location.hash.slice(1)).get("t");
-  if (fromHash) {
-    history.replaceState(null, "", location.pathname + location.search);
-    try {
-      sessionStorage.setItem(TOKEN_KEY, fromHash);
-    } catch {
-      /* Storage blocked: the token still works until the tab closes. */
-    }
-    return fromHash;
-  }
+/** The token the extension handed this tab, kept so a reload stays signed in. */
+export function storedBillingToken(): string | null {
   try {
     return sessionStorage.getItem(TOKEN_KEY);
   } catch {
@@ -51,7 +65,6 @@ export function takeBillingToken(): string | null {
   }
 }
 
-/** Keeps a token the extension handed over directly, as takeBillingToken does for one in the URL. */
 export function rememberBillingToken(token: string) {
   try {
     sessionStorage.setItem(TOKEN_KEY, token);
@@ -68,12 +81,13 @@ export function forgetBillingToken() {
   }
 }
 
-async function call<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
+async function call<T>(path: string, init: RequestInit & { token?: string } = {}): Promise<T> {
+  const { token, ...rest } = init;
   let response: Response;
   try {
-    response = await fetch(`${API_URL}/api/v1/billing${path}`, {
-      ...init,
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    response = await fetch(`${API_URL}/api/v1${path}`, {
+      ...rest,
+      headers: { ...(token && { Authorization: `Bearer ${token}` }), "Content-Type": "application/json" },
     });
   } catch {
     throw new BillingError("Couldn't reach TamperSloth. Check your connection and try again.", 0);
@@ -85,12 +99,22 @@ async function call<T>(token: string, path: string, init: RequestInit = {}): Pro
   return body?.data as T;
 }
 
-export const getBilling = (token: string) => call<Billing>(token, "");
+const post = (token: string, body?: unknown) =>
+  ({ method: "POST", token, ...(body !== undefined && { body: JSON.stringify(body) }) }) as const;
 
-export const createCheckout = (token: string, plan: "go" | "pro") =>
-  call<{ transactionId: string }>(token, "/checkout", { method: "POST", body: JSON.stringify({ plan }) });
+export const getPlans = () => call<PlanSummary[]>("/plans");
 
-export const changePlan = (token: string, plan: "go" | "pro") =>
-  call<{ ok: true }>(token, "/change-plan", { method: "POST", body: JSON.stringify({ plan }) });
+export const getBilling = (token: string) => call<Billing>("/billing", { token });
 
-export const openPortal = (token: string) => call<{ url: string }>(token, "/portal", { method: "POST" });
+export const createCheckout = (token: string, plan: PaidPlanId) =>
+  call<{ transactionId: string }>("/billing/checkout", post(token, { plan }));
+
+export const previewPlanChange = (token: string, plan: PaidPlanId) =>
+  call<PlanChangePreview>("/billing/change-plan/preview", post(token, { plan }));
+
+export const changePlan = (token: string, plan: PaidPlanId, confirmToken: string) =>
+  call<{ ok: true }>("/billing/change-plan", post(token, { plan, confirmToken }));
+
+export const resumePlan = (token: string) => call<{ ok: true }>("/billing/resume", post(token));
+
+export const openPortal = (token: string) => call<{ url: string }>("/billing/portal", post(token));

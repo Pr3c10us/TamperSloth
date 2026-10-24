@@ -10,7 +10,8 @@ export class Commands {
         const spendLimit = new GlobalSpendLimit(adapters.spendLimitRepository, adapters.mailer,
             adapters.parameters.appSecrets.spendAlertEmail)
         this.streamModel = new StreamModel(adapters.modelProviders, adapters.usageRepository, adapters.rateLimiter,
-            spendLimit, adapters.parameters.appSecrets.runTokenBudgets, adapters.parameters.appSecrets.creditsPerUsd)
+            spendLimit, adapters.parameters.appSecrets.runTokenBudgets, adapters.parameters.appSecrets.creditsPerUsd,
+            adapters.creditHolds)
     }
 }
 

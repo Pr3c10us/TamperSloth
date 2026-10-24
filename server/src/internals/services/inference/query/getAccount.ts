@@ -1,6 +1,6 @@
 import type {User} from "../../../domain/user";
 import type {UsageRepository} from "../../../domain/usage";
-import {billingPeriod, planFor} from "../../../domain/plan";
+import {billingPeriod, creditAllowanceMicros, entitledPlan} from "../../../domain/plan";
 import {SLOTH_MODELS} from "../../../domain/model";
 import type {RunTokenBudgets} from "../../../../packages/secret";
 
@@ -19,8 +19,12 @@ export type AccountModel = {
 
 export type Account = {
     user: { id: string, email: string }
-    plan: { id: string, name: string, monthlyCreditUsd: number, requestsPerMinute: number, runTokenBudget: number, defaultModel: string }
-    /** creditsPerUsd: how many credits one US dollar buys; users see credits, never dollars. */
+    /** status: the subscription's (past_due pauses Sloth credit), or null on Free. */
+    plan: { id: string, name: string, monthlyCreditUsd: number, requestsPerMinute: number, runTokenBudget: number, defaultModel: string, status: string | null }
+    /**
+     * creditUsd: this period's credit, with any credit an upgrade carried over.
+     * creditsPerUsd: how many credits one US dollar buys; users see credits, never dollars.
+     */
     usage: { spentUsd: number, creditUsd: number, creditsPerUsd: number, periodStart: string, periodEnd: string }
     models: AccountModel[]
 }
@@ -34,7 +38,7 @@ export default class GetAccount {
     }
 
     async handle(user: User): Promise<Account> {
-        const plan = planFor(user.plan)
+        const plan = entitledPlan(user)
         const period = billingPeriod(user)
         const spentMicros = await this.usageRepository.spentSince(user.id, period.start)
         return {
@@ -46,10 +50,11 @@ export default class GetAccount {
                 requestsPerMinute: plan.requestsPerMinute,
                 runTokenBudget: this.runTokenBudgets[plan.id] ?? 0,
                 defaultModel: plan.defaultModel,
+                status: plan.id === "free" ? null : user.planStatus ?? null,
             },
             usage: {
                 spentUsd: spentMicros / 1e6,
-                creditUsd: plan.monthlyCreditUsd,
+                creditUsd: creditAllowanceMicros(user) / 1e6,
                 creditsPerUsd: this.creditsPerUsd,
                 periodStart: period.start.toISOString(),
                 periodEnd: period.end.toISOString(),
