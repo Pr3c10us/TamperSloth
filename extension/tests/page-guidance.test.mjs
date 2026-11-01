@@ -1118,3 +1118,42 @@ test('a target that does not resolve returns its candidates without a screenshot
     assert.match(result.reason,/c9 menuitem "Settings" in menu/);assert.match(result.hint,/Pick the intended ref/);
     assert.equal(result.screenshot,undefined);assert.equal(operations.includes('perception'),false);
 });
+
+const textField=f=>{f.target.localName='input';f.target.attrs.type='email';return f;};
+
+test('a typing step keeps its guide and tip through the click in and every keystroke, and ends on Enter',()=>{
+    const f=textField(fixture());
+    f.run({action:'start',id:'email',selector:'#target',event:'input',instruction:'Type your work email',timeoutMs:20000});
+    const state=f.window.__tamperSlothGuidance;
+    f.fire('pointerdown');f.fire('click');f.fire('focusin');
+    assert.ok(state.marks.has('__step'));
+    const focused=f.run({action:'poll',id:'email'});
+    assert.equal(focused.status,'waiting');assert.equal(focused.typing,true,'a focused field counts as typing before the first key');
+    f.fire('input');f.fire('input');
+    assert.ok(state.marks.has('__step'));assert.equal(state.cursorBody.hidden,false);
+    assert.equal(f.run({action:'poll',id:'email'}).status,'waiting');
+    f.fire('keydown',f.target,true,{key:'Enter'});
+    assert.equal(f.run({action:'poll',id:'email'}).status,'completed');assert.equal(state.marks.has('__step'),false);
+});
+
+test('a typing step also ends when the user leaves the field after typing, or pauses',()=>{
+    const left=textField(fixture());
+    left.run({action:'start',id:'name',selector:'#target',event:'click',instruction:'Type your name',timeoutMs:20000});
+    left.fire('focusin');left.fire('focusout');
+    assert.equal(left.run({action:'poll',id:'name'}).status,'waiting','leaving before typing is not done');
+    left.fire('focusin');left.fire('input');left.fire('focusout');
+    assert.equal(left.run({action:'poll',id:'name'}).status,'completed');
+    const paused=textField(fixture());
+    paused.run({action:'start',id:'note',selector:'#target',event:'input',instruction:'Type a note',timeoutMs:20000});
+    paused.fire('input');
+    const state=paused.window.__tamperSlothGuidance,check=[...paused.intervals.values()].at(-1);
+    check();assert.equal(paused.run({action:'poll',id:'note'}).status,'waiting');
+    state.wait.lastInput-=5000;check();
+    assert.equal(paused.run({action:'poll',id:'note'}).status,'completed');
+});
+
+test('pauses between keystrokes never trigger a progress check that would clear the guide',async()=>{
+    const f=timedToolFixture(now=>now>=9000 ? {status:'completed',actionObserved:true} : {status:'waiting',ready:true,interactions:1,typing:true});
+    const result=await f.run({selector:'#email',event:'input',instruction:'Type your work email'});
+    assert.equal(result.status,'completed');assert.equal(f.calls.some(call=>call.operation==='perception'),false);
+});

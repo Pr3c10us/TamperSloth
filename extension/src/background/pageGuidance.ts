@@ -421,6 +421,10 @@ export function pageGuidance(args: any): any {
             return state.clean(state.clean(labelled) || el.getAttribute?.('aria-label') || state.clean(labels) || el.getAttribute?.('alt') || value
                 || (field ? '' : state.clean(el.textContent)) || state.clean(icons) || el.getAttribute?.('title') || el.getAttribute?.('placeholder') || (field ? el.getAttribute?.('name') : '')).slice(0,80);
         };
+        state.typable=(el: any)=>{
+            const tag=state.tagOf(el),type=String(el.getAttribute?.('type') ?? 'text').toLowerCase();
+            return tag==='textarea' || el.isContentEditable===true || (tag==='input' && ['text','email','search','url','tel','password','number',''].includes(type));
+        };
         state.shown=(el: any)=>{
             const b=el.getBoundingClientRect();
             return b.width>0 && b.height>0 && getComputedStyle(el).visibility!=='hidden' && !el.closest?.('[aria-hidden="true"],[inert]');
@@ -694,8 +698,8 @@ export function pageGuidance(args: any): any {
                 let target;try{target=state.find(mark.selector);}catch{target=null;}
                 if(state.hits(event,mark.selector,target)) {
                     mark.actions.add(event.type);if(event.type==='pointerdown') mark.actions.add('click');
-                    if(mark.label && (!state.wait || state.wait.result || event.type===state.wait.event)) mark.label.hidden=true;
-                    if(state.guideOwner===mark.id && (!state.wait || state.wait.result || event.type===state.wait.event)) {
+                    if(mark.label && (!state.wait || state.wait.result || event.type===state.wait.wanted)) mark.label.hidden=true;
+                    if(state.guideOwner===mark.id && (!state.wait || state.wait.result || event.type===state.wait.wanted)) {
                         clearTimeout(state.typingTimer);cursorBody.hidden=true;state.guideOwner=undefined;state.positionTooltip();
                     }
                 }
@@ -724,7 +728,7 @@ export function pageGuidance(args: any): any {
             const w = state.wait; if (!w || w.result) return;
             w.result = {...result, actionObserved:w.acted && w.event!=='state', elapsedMs:Date.now()-w.started, unexpectedActions:w.unexpected, interactions:w.interactions, url:location.href,...(w.region ? {verification:'visual'} : {}),...(w.guideArea ? {guideArea:w.guideArea} : {}),...(w.targetLabel ? {target:w.targetLabel} : {})};
             w.finishedAt=Date.now();clearTimeout(w.timer); clearTimeout(w.idleTimer); clearInterval(w.check); state.recent=[];
-            for (const type of [...actionTypes,'keydown']) document.removeEventListener(type,w.listener,true);
+            for (const type of [...actionTypes,'keydown','focusout']) document.removeEventListener(type,w.listener,true);
             for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);
             if(result.status==='completed') {status.hidden=true;}
             else state.message(result.status === 'timeout' ? 'Still here to help' : 'Guidance paused', result.hint ?? 'Guidance paused.');
@@ -888,7 +892,11 @@ export function pageGuidance(args: any): any {
         state.baseline=new WeakSet(state.controls().map((entry: any)=>entry.el));
         // The user may act before the wait starts, e.g. while the agent is still inspecting.
         const surface=!!target && !region && !!state.drawingArea(target,args.event);
-        let alreadyActed=args.event!=='state' && (region ? state.recentRegionHit(region,args.event) : state.recentHit(args.selector,target,args.event,surface));
+        // On a text field the instruction says what to type, so it must stay up while the user types.
+        // Clicking in or the first key is not the step; committing the value is.
+        const typing=!!target && !region && ['click','focusin','input','change'].includes(args.event) && state.typable(target);
+        const wanted=typing ? 'change' : args.event;
+        let alreadyActed=args.event!=='state' && (region ? state.recentRegionHit(region,args.event) : state.recentHit(args.selector,target,wanted,surface));
         state.recent=[];
         // Scroll an off-screen region into view and keep its hit area aligned with the page.
         if(region && !alreadyActed) {
@@ -898,7 +906,7 @@ export function pageGuidance(args: any): any {
         const retained=new Set(args.annotationIds ?? []);
         for(const [id,mark] of state.marks) {
             let markTarget=null;if(mark.selector) try{markTarget=state.find(mark.selector);}catch{}
-            if((mark.selector===args.selector || (target && markTarget===target)) && mark.actions.has(args.event)) alreadyActed=true;
+            if((mark.selector===args.selector || (target && markTarget===target)) && mark.actions.has(wanted)) alreadyActed=true;
             if(retained.has(id)) {mark.stepId=args.id;}
             else state.remove(id);
         }
@@ -911,10 +919,17 @@ export function pageGuidance(args: any): any {
             if (args.expectedState==='checked') return el.checked === true || el.getAttribute('aria-checked')==='true';
             const b=el.getBoundingClientRect(); return b.width>0 && b.height>0 && getComputedStyle(el).visibility!=='hidden';
         };
-        const w: any=state.wait={id:args.id,event:args.event,region,targetLabel:args.targetLabel,interactions:0,pointerActive:false,started:Date.now(),waitingForDraw:true,unexpected:0,acted:alreadyActed || args.event==='state',result:null,timer:null,check:null,listener:null};
+        const w: any=state.wait={id:args.id,event:args.event,wanted,typing,region,targetLabel:args.targetLabel,interactions:0,pointerActive:false,started:Date.now(),waitingForDraw:true,unexpected:0,acted:alreadyActed || args.event==='state',result:null,timer:null,check:null,listener:null};
         // Persist the action so a poll after a full page load (link click) still knows the user acted.
         const markActed=()=>{if(!w.acted || !w.actedAt) w.actedAt=Date.now();w.acted=true;try{sessionStorage.setItem('__tamperSlothActed',w.id);}catch{}};
         if(alreadyActed){markActed();for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);}
+        const commit=()=>{
+            markActed();
+            // Remove the instruction immediately, even if its resulting state takes time.
+            for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);
+            if (matches()) state.finish({status:'completed'});
+            else state.message('Checking the page','Waiting for the expected change');
+        };
         w.listener=(event:any)=> {
             if (!event.isTrusted || state.inputLocked) return;
             if (event.type==='keydown' && event.key==='Escape') {state.finish({status:'cancelled',hint:'Cancelled with Escape.'});return;}
@@ -922,21 +937,26 @@ export function pageGuidance(args: any): any {
             let currentTarget=target;try{if(args.selector) currentTarget=state.find(args.selector);}catch{currentTarget=null;}
             const hit=region ? state.inRegion({x:event.clientX,y:event.clientY},region) : !!args.selector && (state.hits(event,args.selector,currentTarget)
                 || (surface && state.surfaceHit({x:event.clientX,y:event.clientY,path:event.composedPath()},currentTarget)));
-            if (state.sameAction(event.type,args.event) && hit) {
-                markActed();
-                // Remove the instruction immediately, even if its resulting state takes time.
-                for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);
-                if (matches()) state.finish({status:'completed'});
-                else state.message('Checking the page','Waiting for the expected change');
+            if (typing && hit && !w.acted) {
+                if (event.type==='focusin') {w.focused=true;return;}
+                if (event.type==='focusout') w.focused=false;
+                if (event.type==='input') {w.typed=true;w.lastInput=Date.now();clearTimeout(w.timer);w.timer=null;if(!w.waitingForDraw) w.armTimeout();return;}
+                // Typing is done when the value commits, Enter is pressed in a one-line field, or the user leaves the field.
+                const enter=event.type==='keydown' && event.key==='Enter' && state.tagOf(currentTarget ?? target)==='input';
+                if (event.type==='change' || ((enter || event.type==='focusout') && w.typed)) commit();
+                return;
             }
+            if (state.sameAction(event.type,wanted) && hit) commit();
             else if (event.type==='click' && !hit && !w.acted) {w.unexpected++;state.message('Try the marked control','Tab to focus · Enter to activate · Escape to pause');}
         };
         if(w.acted && matches()) {state.finish({status:'completed'});return w.result;}
-        for (const type of [...actionTypes,'keydown']) document.addEventListener(type,w.listener,true);
+        for (const type of [...actionTypes,'keydown','focusout']) document.addEventListener(type,w.listener,true);
         w.check=setInterval(()=>{
+            // A long pause after typing means the user is done, even without leaving the field.
+            if(typing && w.typed && !w.acted && Date.now()-w.lastInput>=5000) commit();
             // Fall back to the window-level log when the page stops propagation before document listeners run.
             if(!w.acted && region && state.recentRegionHit(region,args.event)){markActed();for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);}
-            if(!w.acted && args.selector && state.recentHit(args.selector,(()=>{try{return state.find(args.selector);}catch{return target;}})(),args.event,surface)){markActed();for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);}
+            if(!w.acted && args.selector && state.recentHit(args.selector,(()=>{try{return state.find(args.selector);}catch{return target;}})(),wanted,surface)){markActed();for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);}
             // A declared success condition proves completion even if the action event was missed.
             if((w.acted || args.completion) && matches()) {state.finish({status:'completed',...(args.completion ? {proof:args.completion} : {})});return;}
             // The action happened but its declared change has not. Once the page settles, waiting longer
@@ -989,7 +1009,7 @@ export function pageGuidance(args: any): any {
     if (args.action === 'poll' || args.action === 'cancel') {
         if (!state.wait || state.wait.id!==args.id) return {status:'lost',hint:'This step was replaced or the page navigated. Inspect the current page.'};
         if(args.action==='cancel') state.finish({status:'cancelled',hint:'Guidance cancelled.'});
-        return state.wait.result ?? {status:'waiting',ready:!state.wait.waitingForDraw,actionObserved:state.wait.acted && state.wait.event!=='state',unexpectedActions:state.wait.unexpected,interactions:state.wait.interactions,interactionActive:state.wait.pointerActive};
+        return state.wait.result ?? {status:'waiting',ready:!state.wait.waitingForDraw,actionObserved:state.wait.acted && state.wait.event!=='state',unexpectedActions:state.wait.unexpected,interactions:state.wait.interactions,interactionActive:state.wait.pointerActive,...(state.wait.typing && !state.wait.acted && (state.wait.typed || state.wait.focused) ? {typing:true} : {})};
     }
     throw new Error('Unknown guidance action');
 }

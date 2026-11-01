@@ -27,7 +27,7 @@ Cursor descriptions stay below the pointer at a 34px vertical offset, with horiz
 For each walkthrough step:
 
 1. Find the control with `listControls` (or take it from the previous step's `newControls`/`controls`).
-2. Call `waitForUserAction` with one instruction, `target: {ref}`, and event (`click`, `change`, `input`, `submit`, or `focusin`). For form completion prefer `change` over `input`, which completes on the first keystroke. Field values are never collected.
+2. Call `waitForUserAction` with one instruction, `target: {ref}`, and event (`click`, `change`, `input`, `submit`, or `focusin`). A step on a text field (text-like `input`, `textarea`, or contenteditable) with `click`, `focusin`, `input` or `change` is a typing step: the outline and tip stay up while the user clicks in and types, and the step ends when the value commits (`change`), Enter is pressed in a one-line field, the user leaves the field after typing, or 5 seconds pass after the last keystroke. Pauses between keystrokes, or a focused field before typing starts, never trigger a progress check, and typing extends the step timeout. The tip should say what to type. Field values are never collected.
 3. Where success requires a resulting change, include `expectedSelector` and `expectedState` (`visible`, `absent`, or `checked`). `event:state` waits directly for that condition, including troubleshooting/loading tasks.
 4. Read the returned status and controls before proceeding; inspect the page only when the next control is missing or the outcome is unclear. A click is evidence of an action, not proof of a successful operation.
 5. Clear annotations at the end.

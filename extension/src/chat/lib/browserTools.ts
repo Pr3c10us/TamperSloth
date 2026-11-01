@@ -292,7 +292,9 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
                         // Drawing takes a few seconds at most; a step that never reports ready must still get progress checks.
                         if((result.ready===true || Date.now()-startedAt>=8000) && !ready){ready=true;readyAt=Date.now();deadline=readyAt+input.timeoutMs+1000;}
                         if((result.interactions ?? 0)>interactions){interactions=result.interactions;lastInteractionAt=Date.now();}
-                        if(readyAt!==undefined && !result.interactionActive && interactions>0 && Date.now()-readyAt>=input.checkAfterMs && Date.now()-lastInteractionAt>=800) {
+                        // Pauses between keystrokes are part of typing, not a missed action.
+                        if(result.typing) deadline=Math.max(deadline,Date.now()+input.timeoutMs+1000);
+                        if(readyAt!==undefined && !result.interactionActive && !result.typing && interactions>0 && Date.now()-readyAt>=input.checkAfterMs && Date.now()-lastInteractionAt>=800) {
                             if(region) return await visualCheck('interactionPause',result);
                             if(!acted && input.event!=='state') return await recover('Page activity was observed without the expected action.',result,'interactionPause');
                         }
