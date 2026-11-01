@@ -117,9 +117,16 @@ export async function withFreshScreenshot<T extends {metadata?: any}>(tabId: num
     const previous = windows.get(windowId) ?? Promise.resolve();
     const task = previous.catch(() => {}).then(async () => {
         const start = Date.now();
+        const fresh = (output: T, attempt: number, settled: boolean, changing = false) => ({...output, metadata: {...output.metadata, freshness: {
+            capturedAt: new Date().toISOString(), elapsedMs: Date.now() - start, attempts: attempt, settled,
+            ...(changing ? {changing: true, note: 'The page kept changing while it was captured (an animation, carousel or live content). The image shows one moment of it.'} : {}),
+            checked: 'document, DOM revision, viewport and active tab',
+        }}});
+        // A capture of the same document that only lost to ongoing page activity.
+        let changed: {output: T; attempt: number} | undefined;
         for (let attempt = 1; attempt <= 3; attempt++) {
             await check();
-            const tab = await chrome.tabs.get(tabId);
+            const tab = await chrome.tabs.get(tabId), url = tab.url;
             if (tab.windowId !== windowId) throw new Error('Screenshot target moved to another window');
             await chrome.windows.update(windowId, {focused: true});
             await chrome.tabs.update(tabId, {active: true});
@@ -139,17 +146,24 @@ export async function withFreshScreenshot<T extends {metadata?: any}>(tabId: num
                 const output = await capture(windowId, before);
                 await check();
                 const after = await observe(false);
-                if (!await isTargetActive() || !after.visible || before.key !== after.key) continue;
-                return {...output, metadata: {...output.metadata, freshness: {
-                    capturedAt: new Date().toISOString(), elapsedMs: Date.now() - start, attempts: attempt,
-                    settled: before.settled, checked: 'document, DOM revision, viewport and active tab',
-                }}};
+                if (!await isTargetActive() || !after.visible) continue;
+                if (before.key !== after.key) {
+                    const now = await chrome.tabs.get(tabId);
+                    // Navigation is a real race; retry. Ongoing activity on the same page is not one.
+                    if (now.url !== url || now.status === 'loading') continue;
+                    changed = {output, attempt};
+                    // It already failed to settle for the whole settle wait, so another attempt would see the same.
+                    if (!before.settled) break;
+                    continue;
+                }
+                return fresh(output, attempt, before.settled);
             } catch (error) {
                 // Retry only document replacement races; permission/debugger
                 // errors propagate instead of silently weakening verification.
                 if (attempt === 3 || !/Execution context was destroyed|Cannot find context|No frame with given id|Frame with the given id was not found|Frame was removed|document unloaded/i.test(String(error))) throw error;
             }
         }
+        if (changed) return fresh(changed.output, changed.attempt, false, true);
         throw new Error('Page kept changing during screenshot capture. Wait for the relevant UI to finish updating before capturing again.');
     });
     windows.set(windowId, task);

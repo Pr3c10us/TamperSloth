@@ -12,7 +12,7 @@ export type SummaryStep =
 const VERBS: Record<string, string> = {
     getCurrentTab: "checked the tab", getPageText: "read the page", getPageStructure: "inspected the page",
     getElementDetails: "inspected an element", navigateTo: "opened a page", navigateHistory: "navigated",
-    reloadPage: "reloaded the page", clickElement: "clicked", clickTarget: "clicked", typeText: "typed",
+    reloadPage: "reloaded the page", clickElement: "clicked", clickTarget: "clicked", typeText: "typed", fillForm: "filled a form",
     selectOption: "picked an option", scrollPage: "scrolled", submitForm: "submitted a form",
     waitForElement: "waited", wait: "waited", showTab: "showed you the tab", takeScreenshot: "took a screenshot", takeMarkedScreenshot: "took a screenshot",
     executeContentScript: "ran a script", evaluateJavaScript: "ran JavaScript", saveScript: "saved a change",

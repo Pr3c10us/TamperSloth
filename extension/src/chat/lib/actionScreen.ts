@@ -282,6 +282,17 @@ export function assessAction(name: string, input: Record<string, any>, targets: 
             if (typed.confirm || !input.pressEnter || !target?.formSensitive) return typed;
             return {...typed, risk: "high", category: "sensitive-input", confirm: true, reasons: ["Pressing Enter submits a form with password or payment fields"]};
         }
+        case "fillForm": {
+            // Each field is judged as typing into it; the submit as clicking that control or submitting the form.
+            const fields: Record<string, any>[] = Array.isArray(input.fields) ? input.fields : [];
+            const steps = fields.map((field, i) => assessTyping(stringOf(field.value), targets[i]));
+            const submitTarget = targets[fields.length];
+            if (input.submit && typeof input.submit === "object") steps.push(assessClick(submitTarget, undefined));
+            else if (input.submit === true) steps.push(submitTarget?.formSensitive
+                ? {risk: "high", category: "sensitive-input", confirm: true, reasons: ["Submits a form with password or payment fields"], payload: [submitTarget.formAction ?? ""].filter(Boolean)}
+                : {risk: "medium", category: "input", reasons: [], payload: [submitTarget?.formAction ?? ""].filter(Boolean)});
+            return combine(steps);
+        }
         case "submitForm":
             return target?.formSensitive
                 ? {risk: "high", category: "sensitive-input", confirm: true, reasons: ["Submits a form with password or payment fields"], payload: [target.formAction ?? ""].filter(Boolean)}

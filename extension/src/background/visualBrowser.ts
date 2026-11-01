@@ -1,12 +1,17 @@
 import type {CDPManager} from './cdp';
 import {pagePerception} from './pagePerception';
-import {runPageGuidance} from './pageGuidance';
+import {pageChanges, runPageGuidance} from './pageGuidance';
 import {pageScreenshotState, withFreshScreenshot} from './screenshotCapture';
 import {boundedRegion, gridRegion, columnLabel, detectContours, gesturePath, parseChord, type Box, type Point} from './visualGeometry';
 
 type Scope = {tabId: number; sessionId?: string; frameId?: string; contextId?: number};
 type World = Scope & {contextId: number; frameId: string};
 type Snapshot = {id: string; timestamp: number; scope: World; metrics: any; marks: any[]; gridSize: number; region: Box};
+/** Time a marked screenshot may spend finding marks beyond the DOM scan. */
+const MARK_DISCOVERY_MS = 1500;
+const MARK_BATCH = 50;
+/** An action counts as settled once the page has changed and then gone this long without changing. */
+const SETTLE_QUIET_MS = 150;
 export class VisualBrowser {
     private snapshots = new Map<string, Snapshot>();
     private cdp: CDPManager;
@@ -38,8 +43,59 @@ export class VisualBrowser {
         if (!result.result || !Object.hasOwn(result.result, 'value')) throw new Error('Perception returned no structured result');
         return result.result.value;
     }
+    /**
+     * Marks for nodes the DOM scan missed. Nodes resolve concurrently in batches and each batch is
+     * marked in one call, instead of three sequential round trips per node.
+     */
+    private async addMarks(scope: World, snapshotId: string, maxMarks: number, have: number, backendNodeIds: number[], deadline: number) {
+        const marks: any[] = [], objectGroup = `ts-marks-${snapshotId}`;
+        let inspected = 0;
+        try {
+            for (let i = 0; i < backendNodeIds.length && have + marks.length < maxMarks && Date.now() < deadline; i += MARK_BATCH) {
+                const batch = backendNodeIds.slice(i, i + MARK_BATCH);
+                inspected += batch.length;
+                const objectIds = (await Promise.all(batch.map(backendNodeId => this.command(scope, 'DOM.resolveNode', {backendNodeId, executionContextId: scope.contextId, objectGroup})
+                    .then(node => node.object?.objectId as string | undefined, () => undefined)))).filter((objectId): objectId is string => !!objectId);
+                if (!objectIds.length) continue;
+                const result = await this.command(scope, 'Runtime.callFunctionOn', {objectId: objectIds[0], returnByValue: true,
+                    functionDeclaration: `function(args, ...elements) { const run = (${pagePerception.toString()}); return elements.map(el => run(args, el)); }`,
+                    arguments: [{value: {action: 'addMark', snapshotId, maxMarks}}, ...objectIds.map(objectId => ({objectId}))]});
+                if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
+                for (const mark of result.result?.value ?? []) if (mark && have + marks.length < maxMarks) marks.push(mark);
+            }
+        } finally { await this.command(scope, 'Runtime.releaseObjectGroup', {objectGroup}).catch(() => {}); }
+        return {marks, inspected, full: have + marks.length >= maxMarks && inspected < backendNodeIds.length};
+    }
+    /** Role+name matches from the accessibility tree; asks only for matching nodes when it can. */
+    private async axCandidates(a: World, target: any): Promise<any[]> {
+        const match = (s: string) => target.exact === false ? s.toLowerCase().includes(target.name.toLowerCase()) : s.trim() === target.name.trim();
+        const usable = (nodes: any[]) => nodes.filter((n: any) => !n.ignored && n.role?.value === target.role && match(n.name?.value ?? '') && n.backendDOMNodeId);
+        if (target.exact !== false) {
+            // The full tree of a large app is tens of thousands of nodes; an exact name can be looked up instead.
+            try {
+                const doc = await this.command(a, 'Runtime.evaluate', {expression: 'document', contextId: a.contextId, returnByValue: false});
+                try {
+                    const found = await this.command(a, 'Accessibility.queryAXTree', {objectId: doc.result.objectId, accessibleName: target.name.trim(), role: target.role});
+                    const nodes = usable(found.nodes);
+                    if (nodes.length) return nodes;
+                } finally { await this.command(a, 'Runtime.releaseObject', {objectId: doc.result.objectId}).catch(() => {}); }
+            } catch { /* No match or no query support: read the whole tree as before. */ }
+        }
+        return usable((await this.command(a, 'Accessibility.getFullAXTree', {frameId: a.frameId})).nodes);
+    }
     private async resolve(a: World, target: any, edge?: string): Promise<any> {
         if (!target) throw new Error('An element target or point is required');
+        // A listControls ref names a control in the overlay's world; turn it into a selector that finds only that element.
+        if (target.ref) target = {selector: (await runPageGuidance(a.tabId, {action: 'resolveRef', ref: target.ref})).selector};
+        // Re-resolving the element already found (after hover) needs no new tree lookup.
+        if (target.backendNodeId) {
+            const {backendNodeId, ...rest} = target;
+            try {
+                const object = await this.command(a, 'DOM.resolveNode', {backendNodeId, executionContextId: a.contextId});
+                try { return {...await this.page(a, {action: 'resolve', target: {selector: '*'}, edge}, object.object.objectId), backendNodeId}; }
+                finally { await this.command(a, 'Runtime.releaseObject', {objectId: object.object.objectId}); }
+            } catch { target = rest; }
+        }
         if (target.mark) {
             const snapshot = this.snapshots.get(target.snapshotId);
             if (!snapshot || snapshot.scope.tabId !== a.tabId || snapshot.scope.frameId !== a.frameId || snapshot.scope.sessionId !== a.sessionId) throw new Error('Mark belongs to a different or expired snapshot');
@@ -53,16 +109,14 @@ export class VisualBrowser {
         }
         // Role/name targeting uses the browser AX name when possible, including closed roots.
         if (target.role) {
-            const ax = await this.command(a, 'Accessibility.getFullAXTree', {frameId: a.frameId});
-            const match = (s: string) => target.exact === false ? s.toLowerCase().includes(target.name.toLowerCase()) : s.trim() === target.name.trim();
-            const candidates = ax.nodes.filter((n: any) => !n.ignored && n.role?.value === target.role && match(n.name?.value ?? '') && n.backendDOMNodeId);
+            const candidates = await this.axCandidates(a, target);
             if (candidates.length > 1 && target.index === undefined) throw new Error(`Target is ambiguous (${candidates.length} AX matches). Narrow it or specify index.`);
             const selected = candidates[target.index ?? 0];
             if (candidates.length && !selected) throw new Error('Target index is out of range');
             const visible: any[] = [];
             for (const node of selected ? [selected] : []) {
                 const object = await this.command(a, 'DOM.resolveNode', {backendNodeId: node.backendDOMNodeId, executionContextId: a.contextId});
-                try { visible.push(await this.page(a, {action: 'resolve', target: {selector: '*'}, edge}, object.object.objectId)); }
+                try { visible.push({...await this.page(a, {action: 'resolve', target: {selector: '*'}, edge}, object.object.objectId), backendNodeId: node.backendDOMNodeId}); }
                 catch (error) { if (candidates.length === 1) throw error; }
                 finally { await this.command(a, 'Runtime.releaseObject', {objectId: object.object.objectId}); }
             }
@@ -149,22 +203,21 @@ export class VisualBrowser {
             const result = await this.page(scope, {action: 'marks', snapshotId: id, maxMarks: args.maxMarks});
             candidateLimitReached = result.candidateLimitReached;
             const localMarks = result.marks;
+            // Extra discovery (click listeners, closed shadow roots) is a bonus, so it gets a time budget.
+            const deadline = Date.now() + MARK_DISCOVERY_MS;
             if (localMarks.length < args.maxMarks) {
                 const doc = await this.command(scope, 'Runtime.evaluate', {expression: 'document', contextId: scope.contextId, returnByValue: false});
                 try {
                     const listeners = await this.command(scope, 'DOMDebugger.getEventListeners', {objectId: doc.result.objectId, depth: -1, pierce: true});
                     const ids = [...new Set<number>(listeners.listeners.filter((l: any) => ['click', 'mousedown', 'pointerdown'].includes(l.type) && l.backendNodeId).map((l: any) => l.backendNodeId))];
-                    for (const backendNodeId of ids.slice(0, 200)) {
-                        if (localMarks.length >= args.maxMarks) { candidateLimitReached = true; break; }
-                        const node = await this.command(scope, 'DOM.resolveNode', {backendNodeId, executionContextId: scope.contextId});
-                        try { const mark = await this.page(scope, {action: 'addMark', snapshotId: id, maxMarks: args.maxMarks}, node.object.objectId); if (mark) localMarks.push(mark); }
-                        finally { await this.command(scope, 'Runtime.releaseObject', {objectId: node.object.objectId}); }
-                    }
-                    clickHandlerCoverage = {backendCandidates: ids.length, inspected: Math.min(200, ids.length), truncated: ids.length > 200};
+                    const added = await this.addMarks(scope, id, args.maxMarks, localMarks.length, ids.slice(0, 200), deadline);
+                    localMarks.push(...added.marks);
+                    if (added.full) candidateLimitReached = true;
+                    clickHandlerCoverage = {backendCandidates: ids.length, inspected: added.inspected, truncated: ids.length > added.inspected};
                 } catch (e) { clickHandlerCoverage = {unavailable: true, reason: String(e).slice(0, 200)}; }
                 finally { if (doc.result?.objectId) await this.command(scope, 'Runtime.releaseObject', {objectId: doc.result.objectId}); }
             }
-            if (localMarks.length < args.maxMarks) {
+            if (localMarks.length < args.maxMarks && Date.now() < deadline) {
                 const document = await this.command(scope, 'DOM.getFlattenedDocument', {depth: -1, pierce: true});
                 const nodes = new Map<number, any>(document.nodes.map((n: any) => [n.nodeId, n]));
                 const closed = document.nodes.filter((node: any) => {
@@ -172,13 +225,9 @@ export class VisualBrowser {
                     for (let parent = nodes.get(node.parentId), depth = 0; parent && depth < 50; parent = nodes.get(parent.parentId), depth++) if (parent.shadowRootType === 'closed') return true;
                     return false;
                 });
-                for (const node of closed.slice(0, 200)) {
-                    if (localMarks.length >= args.maxMarks) { candidateLimitReached = true; break; }
-                    const object = await this.command(scope, 'DOM.resolveNode', {backendNodeId: node.backendNodeId, executionContextId: scope.contextId});
-                    try { const mark = await this.page(scope, {action: 'addMark', snapshotId: id, maxMarks: args.maxMarks}, object.object.objectId); if (mark) localMarks.push(mark); }
-                    finally { await this.command(scope, 'Runtime.releaseObject', {objectId: object.object.objectId}); }
-                }
-                if (closed.length > 200) candidateLimitReached = true;
+                const added = await this.addMarks(scope, id, args.maxMarks, localMarks.length, closed.slice(0, 200).map((node: any) => node.backendNodeId), deadline);
+                localMarks.push(...added.marks);
+                if (added.full || closed.length > 200) candidateLimitReached = true;
             }
             marks = localMarks.map((m: any) => ({...m, localCenter: m.center, center: {x: offset.x + m.center.x * offset.scaleX, y: offset.y + m.center.y * offset.scaleY},
                 bbox: {x: offset.x + m.bbox.x * offset.scaleX, y: offset.y + m.bbox.y * offset.scaleY, width: m.bbox.width * offset.scaleX, height: m.bbox.height * offset.scaleY}}));
@@ -268,11 +317,12 @@ export class VisualBrowser {
         const eventCursor = this.cdp.read(args.tabId).cursor;
         const before = await this.page(a, {action: 'observeStart', id});
         let resolved: any, feedback: any;
-        await this.lockInput(args.tabId, true);
+        await this.lockInput(args.tabId, true, args.baseline !== false);
         const click = async (target: any) => {
             resolved = await resolve(target);
             await send('Input.dispatchMouseEvent', {type: 'mouseMoved', ...resolved.point});
-            resolved = await resolve(target); // Hover can open a menu or move a target.
+            // Hover can open a menu or move a target; the element found first is checked again directly.
+            resolved = await resolve(resolved.backendNodeId ? {...target, backendNodeId: resolved.backendNodeId} : target);
             await send('Input.dispatchMouseEvent', {type: 'mouseMoved', ...resolved.point});
             for (let count = 1; count <= args.clickCount; count++) {
                 await send('Input.dispatchMouseEvent', {type: 'mousePressed', ...resolved.point, button: args.button, buttons: args.button === 'left' ? 1 : args.button === 'right' ? 2 : 4, clickCount: count});
@@ -349,19 +399,20 @@ export class VisualBrowser {
                     }
                 } finally { await this.release(args.tabId, 'Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []}); }
             }
-            await pause(args.feedbackMs);
+            await this.settle(a, id, args.feedbackMs);
         } finally {
             await this.lockInput(args.tabId, false);
             try { feedback = await this.page(a, {action: 'observeEnd', id}); }
             catch { feedback = {observationLost: true, before}; }
         }
         const afterURL = await chrome.tabs.get(args.tabId).then(tab => tab.url, () => null);
+        const changes = afterURL === null || args.reportChanges === false ? undefined : await pageChanges(args.tabId);
         const dialogs = afterURL === null ? [] : this.cdp.read(args.tabId, eventCursor).events.filter(e => e.method === 'Page.javascriptDialogOpening').slice(-5);
         const actualHit = [...(feedback.events ?? [])].reverse().find((e: any) => e.type === 'mousedown')?.hit;
         const expectedTarget = resolved?.target;
         const output: any = {ok: true, action: args.action, resolved, feedback: {...feedback, actualHit, expectedTarget,
             targetMatched: expectedTarget?.name && actualHit?.name ? expectedTarget.name === actualHit.name : null,
-            tabURL: {before: beforeURL, after: afterURL}, urlChanged: beforeURL !== afterURL || feedback.urlChanged, javascriptDialogs: dialogs}};
+            tabURL: {before: beforeURL, after: afterURL}, urlChanged: beforeURL !== afterURL || feedback.urlChanged, javascriptDialogs: dialogs}, ...(changes ? {changes} : {})};
         if (args.postScreenshot && resolved?.point && afterURL !== null) {
             const p = resolved.point;
             output.postAction = await this.screenshot({tabId: args.tabId, mode: 'plain', region: {x: Math.max(0, p.x - 100), y: Math.max(0, p.y - 75), width: 200, height: 150}, scale: 1, gridSize: 100});
@@ -369,9 +420,21 @@ export class VisualBrowser {
         }
         return output;
     }
-    /** Pause the user's site input while the agent's own input is in flight; decoration only. */
-    private lockInput(tabId: number, locked: boolean) {
-        return runPageGuidance(tabId, {action: 'agentLock', locked}).catch(() => {});
+    /**
+     * Pause the user's site input while the agent's own input is in flight; decoration only.
+     * Locking also records the page as it was, for the changes report after the action.
+     */
+    private lockInput(tabId: number, locked: boolean, baseline = locked) {
+        return runPageGuidance(tabId, {action: 'agentLock', locked, baseline: locked && baseline}).catch(() => {});
+    }
+    /**
+     * Waits for the action's effects: until the page has changed and then gone quiet, or for at
+     * most `maxMs` when nothing changes (the old fixed wait). A navigation ends the wait early.
+     */
+    private async settle(a: World, id: string, maxMs: number) {
+        if (!maxMs) return;
+        try { await this.page(a, {action: 'settle', id, maxMs, quietMs: SETTLE_QUIET_MS}); }
+        catch { /* The document went away: there is nothing left to wait for here. */ }
     }
     async observeRaw(args: any, perform: () => Promise<any>) {
         const root = await this.world({tabId: args.tabId}), id = crypto.randomUUID();
@@ -380,7 +443,7 @@ export class VisualBrowser {
         await this.page(root, {action: 'observeStart', id});
         let feedback: any, result: any;
         await this.lockInput(args.tabId, true);
-        try { result = await perform(); await new Promise(resolve => setTimeout(resolve, args.feedbackMs)); }
+        try { result = await perform(); await this.settle(root, id, args.feedbackMs); }
         finally { await this.lockInput(args.tabId, false); try { feedback = await this.page(root, {action: 'observeEnd', id}); } catch { feedback = {observationLost: true}; } }
         const afterURL = (await chrome.tabs.get(args.tabId)).url;
         return {...result, metadata: {...metadata, coordinateSpace: 'root viewport CSS pixels'}, feedback: {...feedback, tabURL: {before: beforeURL, after: afterURL}, urlChanged: beforeURL !== afterURL || feedback.urlChanged}};

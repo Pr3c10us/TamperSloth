@@ -1,7 +1,7 @@
 import {browserSchemas, type BrowserOperation} from '../chat/lib/browserSchemas';
 import {CDPManager} from './cdp';
 import {VisualBrowser} from './visualBrowser';
-import {runPageGuidance} from './pageGuidance';
+import {pageChanges, runPageGuidance} from './pageGuidance';
 import {assertNotWorkingTab, assertTaskGroup, assertTaskTabs, describeTask, finishTask, noteTaskTab, openTaskTabs, setTaskStatus, taskGroupStyle, tidyTaskGroup} from './taskTabs';
 
 export const cdp = new CDPManager();
@@ -82,7 +82,8 @@ async function run(operation: BrowserOperation, input: unknown) {
     const tabId = a.tabId;
     switch (operation) {
         case 'perception': requireValue(tabId, 'tabId'); return visual.screenshot(a);
-        case 'guidance': return runPageGuidance(requireValue(tabId, 'tabId'), a);
+        // A changes report is extra evidence: an action never waits long on it.
+        case 'guidance': return a.action === 'changes' ? await pageChanges(requireValue(tabId, 'tabId')) ?? {} : runPageGuidance(requireValue(tabId, 'tabId'), a);
         case 'gesture': requireValue(tabId, 'tabId'); return visual.gesture(a);
         case 'tabs': {
             await popupReady;
@@ -163,6 +164,7 @@ async function run(operation: BrowserOperation, input: unknown) {
             return {group: groupSummary((await chrome.tabGroups.move(groupId, {index: a.index ?? -1, ...(a.windowId !== undefined ? {windowId: a.windowId} : {})}))!)};
         }
         case 'taskStatus': return setTaskStatus(a.conversationId, a.status);
+        case 'task': return {task: await describeTask(a.conversationId)};
         case 'evaluate': {
             const target = {tabId: requireValue(tabId, 'tabId'), ...(a.frameIds ? {frameIds: a.frameIds} : {})};
             // USER_SCRIPT is a separate isolated world with configurable CSP; extension ISOLATED forbids raw eval.

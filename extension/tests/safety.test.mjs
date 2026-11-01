@@ -103,6 +103,26 @@ test('typing after a click in one gesture batch is judged against the clicked fi
     assert.equal(mark[0].known.label, 'Buy now');
 });
 
+test('a form batch is judged field by field, and its submit as the control it clicks', () => {
+    const specs = targetSpecs('fillForm', {fields: [{ref: 'c3', value: 'Ada'}, {selector: '#card', value: '1'}], submit: {ref: 'c9'}}, () => undefined);
+    assert.deepEqual(plain(specs), [{ref: 'c3'}, {selector: '#card'}, {ref: 'c9'}]);
+    assert.deepEqual(plain(targetSpecs('fillForm', {fields: [{selector: '#q', value: 'x'}], submit: true}, () => undefined)),
+        [{selector: '#q'}, {selector: '#q'}]);
+    assert.deepEqual(plain(targetSpecs('clickTarget', {target: {ref: 'c4'}}, () => undefined)), [{ref: 'c4'}]);
+    assert.deepEqual(plain(targetSpecs('clickElement', {ref: 'c5'}, () => undefined)), [{ref: 'c5'}]);
+
+    const plainFields = assessAction('fillForm', {fields: [{ref: 'c1', value: 'Ada'}, {ref: 'c2', value: 'Lovelace'}]}, [{tag: 'input'}, {tag: 'input'}]);
+    assert.equal(plainFields.confirm, false);
+    assert.equal(plainFields.risk, 'medium');
+    assert.equal(assessAction('fillForm', {fields: [{ref: 'c1', value: 'Ada'}, {ref: 'c2', value: 'hunter2'}]},
+        [{tag: 'input'}, {tag: 'input', type: 'password'}]).confirm, true, 'A password among the fields needs approval');
+    assert.equal(assessAction('fillForm', {fields: [{ref: 'c1', value: '4242 4242 4242 4242'}]}, [{tag: 'input'}]).confirm, true);
+    const order = assessAction('fillForm', {fields: [{ref: 'c1', value: '2'}], submit: {ref: 'c9'}}, [{tag: 'input'}, {label: 'Place your order', tag: 'button'}]);
+    assert.equal(order.category, 'payment');
+    assert.equal(order.confirm, true);
+    assert.equal(assessAction('fillForm', {fields: [{ref: 'c1', value: 'me'}], submit: true}, [{tag: 'input'}, {tag: 'input', formSensitive: true}]).confirm, true);
+});
+
 test('the gate holds risky actions, screens after a flag, and blocks on a block verdict', async () => {
     const asked = [];
     let answer = 'allow';

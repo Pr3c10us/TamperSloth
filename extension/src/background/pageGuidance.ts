@@ -13,7 +13,7 @@ export function pageGuidance(args: any): any {
     const actionTypes=['click','input','change','submit','focusin','pointerup','pointerdown'];
     // Bump when the overlay's behavior changes. Its state, functions included, outlives an
     // extension reload on the page; an older overlay is disposed and built afresh.
-    const VERSION=16;
+    const VERSION=17;
     let state = win.__tamperSlothGuidance;
     if (state && state.version!==VERSION) {
         state.version=VERSION;
@@ -491,6 +491,45 @@ export function pageGuidance(args: any): any {
             return {...(added.length ? {newControls:added.map(line)} : {}),controls:listed.filter((entry: any)=>!entry.isNew).map(line),
                 ...(entries.length>limit ? {moreControls:entries.length-limit} : {})};
         };
+        // What an agent action changed, measured against the page just before it, so the model can
+        // take its next step from the result instead of reading the page again.
+        state.dialogQuery='dialog[open],[role="dialog"],[role="alertdialog"],[aria-modal="true"]';
+        state.liveQuery='[role="alert"],[role="status"],[aria-live="assertive"],[aria-live="polite"]';
+        state.focused=()=>{
+            let el: any=document.activeElement;
+            while(el?.shadowRoot?.activeElement) el=el.shadowRoot.activeElement;
+            return el && el!==document.body && el!==document.documentElement ? el : null;
+        };
+        state.all=(query: string)=>state.roots().flatMap((root: any)=>{try{return Array.from(root.querySelectorAll(query));}catch{return [];}});
+        state.markBaseline=()=>{
+            state.baseline=new WeakSet(state.controls().map((entry: any)=>entry.el));
+            state.before={url:location.href,title:document.title,focus:state.focused(),dialogs:new Set(state.all(state.dialogQuery)),
+                live:new Map(state.all(state.liveQuery).map((el: any)=>[el,state.clean(el.textContent)]))};
+        };
+        state.changes=(limit=15)=>{
+            const before=state.before;
+            // A new document (a full navigation) has no baseline: hand over its controls instead.
+            if(!before) {
+                const listed=state.listControls(undefined,limit+10);
+                return {page:{url:location.href,title:document.title},controls:listed.controls,...(listed.moreControls ? {moreControls:listed.moreControls} : {})};
+            }
+            const out: any={};
+            if(location.href!==before.url) out.url=location.href;
+            if(document.title!==before.title) out.title=document.title;
+            const listed=state.listControls(undefined,limit*2,true);
+            if(listed.newControls) out.newControls=listed.newControls.slice(0,limit);
+            const dialogs=state.all(state.dialogQuery).filter((el: any)=>!before.dialogs.has(el) && state.shown(el));
+            if(dialogs.length) out.dialogs=dialogs.slice(0,3).map((el: any)=>state.clean(el.getAttribute('aria-label')
+                || el.querySelector('h1,h2,h3,[role="heading"]')?.textContent || el.textContent).slice(0,120));
+            const focus=state.focused();
+            if(focus && focus!==before.focus) out.focus=state.describeControl({el:focus,name:state.nameOf(focus),role:state.roleOf(focus),box:focus.getBoundingClientRect()});
+            const messages=state.all(state.liveQuery).map((el: any)=>({el,text:state.clean(el.textContent)}))
+                .filter((m: any)=>m.text && before.live.get(m.el)!==m.text && state.shown(m.el));
+            if(messages.length) out.messages=messages.slice(0,3).map((m: any)=>m.text.slice(0,200));
+            const invalid=state.all('[aria-invalid="true"],:user-invalid').filter((el: any)=>state.shown(el));
+            if(invalid.length) out.invalid=invalid.slice(0,5).map((el: any)=>`${state.nameOf(el) || state.tagOf(el)}${el.validationMessage ? `: ${el.validationMessage}` : ''}`.slice(0,160));
+            return out;
+        };
         // Clickable elements without a control role, found by their visible text.
         state.textMatches=(wanted: string,exact?: boolean)=>{
             const found: any[]=[];let scanned=0;
@@ -735,6 +774,8 @@ export function pageGuidance(args: any): any {
             clearTimeout(state.statusTimer); state.statusTimer = setTimeout(() => {status.hidden=true;},5000);
         };
     }
+    // Later calls from the same extension build run this function from the page instead of injecting it again.
+    if(args.build) {state.run=pageGuidance;state.build=args.build;}
     if(args.action==='dispose') {
         pageGuidance({action:'clear'});
         state.cursor.hidden=true;
@@ -745,7 +786,13 @@ export function pageGuidance(args: any): any {
         state.host.remove();delete win.__tamperSlothGuidance;
         return {ok:true};
     }
+    if (args.action === 'changes') return state.changes(args.limit ?? 15);
+    if (args.action === 'resolveRef') {
+        const el=state.locate({ref:args.ref});
+        return {selector:state.selectorFor(el),role:state.roleOf(el),name:state.nameOf(el)};
+    }
     if (args.action === 'cue') {
+        if (args.baseline) state.markBaseline();
         const el = args.selector ? document.querySelectorAll(args.selector)[args.index ?? 0] : document.activeElement;
         el?.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'});
         const b = el?.getBoundingClientRect();
@@ -795,7 +842,10 @@ export function pageGuidance(args: any): any {
         state.status.hidden=true; return {ok:true};
     }
     if (args.action === 'remove') {state.remove(args.id); return {ok:true};}
-    if (args.action === 'agentLock') {state.setAgentLocked(!!args.locked,true); return {ok:true};}
+    if (args.action === 'agentLock') {
+        if(args.baseline && args.locked) state.markBaseline();
+        state.setAgentLocked(!!args.locked,true); return {ok:true};
+    }
     if (args.action === 'draw') {
         state.resize.observe(document.documentElement);
         state.resize.observe(state.status);
@@ -1014,15 +1064,46 @@ export function pageGuidance(args: any): any {
     throw new Error('Unknown guidance action');
 }
 
+/**
+ * What the last agent action changed (see state.changes), or undefined when the page cannot say
+ * in time, e.g. while a navigation it started is still loading.
+ */
+export async function pageChanges(tabId: number, timeoutMs = 2000): Promise<Record<string, unknown> | undefined> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+        return await Promise.race([runPageGuidance(tabId, {action: 'changes'}).catch(() => undefined),
+            new Promise<undefined>(resolve => { timer = setTimeout(() => resolve(undefined), timeoutMs); })]);
+    } finally { clearTimeout(timer); }
+}
+
+/** Runs the overlay this build already installed in the page; says so when it has to be injected first. */
+export function runInstalledGuidance(args: any, build: string): any {
+    const state = (window as any).__tamperSlothGuidance;
+    if (!state || state.build !== build || typeof state.run !== 'function') return {notInstalled: true};
+    return state.run(args);
+}
+
+// The overlay is ~90 KB of source. Every cursor announcement, cue and lock used to re-send and
+// re-compile all of it; now only the first call on a page (or after a worker restart) does.
+const BUILD = crypto.randomUUID();
+/** Tabs whose overlay flag is already in session storage, so it is written once per tab. */
+const flaggedTabs = new Set<number>();
+
 export async function runPageGuidance(tabId: number, args: any) {
-    if(args.action!=='dispose' && chrome.storage?.session) {
+    if(args.action==='dispose') flaggedTabs.delete(tabId);
+    else if(chrome.storage?.session && !flaggedTabs.has(tabId)) {
         await chrome.storage.session.set({[`ts_guidance_tab_${tabId}`]:true});
+        flaggedTabs.add(tabId);
     }
-    const assets=chrome.runtime.getURL ? {
-        sans:chrome.runtime.getURL('fonts/geist-latin-wght-normal.woff2'),
-        heading:chrome.runtime.getURL('fonts/instrument-serif-latin-400-italic.woff2'),
-    } : undefined;
-    const [result] = await chrome.scripting.executeScript({target:{tabId},func:pageGuidance,args:[{...args,assets,waitForDrawing:args.action==='draw',reportErrors:true}]});
+    const call={...args,waitForDrawing:args.action==='draw',reportErrors:true};
+    let [result] = await chrome.scripting.executeScript({target:{tabId},func:runInstalledGuidance,args:[call,BUILD]});
+    if (result?.result?.notInstalled) {
+        const assets=chrome.runtime.getURL ? {
+            sans:chrome.runtime.getURL('fonts/geist-latin-wght-normal.woff2'),
+            heading:chrome.runtime.getURL('fonts/instrument-serif-latin-400-italic.woff2'),
+        } : undefined;
+        [result] = await chrome.scripting.executeScript({target:{tabId},func:pageGuidance,args:[{...call,assets,build:BUILD}]});
+    }
     if (!result?.result) throw new Error('Guidance is unavailable on this page');
     if (result.result.guidanceError) throw new Error(result.result.guidanceError);
     return result.result;

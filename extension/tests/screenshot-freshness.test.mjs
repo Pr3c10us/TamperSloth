@@ -72,16 +72,35 @@ test('captures of different tabs in one window serialize activation through fina
     assert.deepEqual(order, [7, 8]);
 });
 
-test('perpetual races fail after a bounded retry count instead of presenting an unchecked image', async () => {
+test('a page that keeps changing returns its capture flagged as changing instead of failing', async () => {
+    const f = fixture();
+    let captures = 0;
+    const busy = await f.api.withFreshScreenshot(7, check, async () => {
+        captures++; f.state.revision++; return {screenshot: 'moment'};
+    }, async () => f.observation());
+    assert.equal(captures, 3, 'A page that settled first gets the bounded retries');
+    assert.equal(busy.screenshot, 'moment');
+    assert.equal(busy.metadata.freshness.changing, true);
+    assert.equal(busy.metadata.freshness.settled, false);
+    f.state.settled = false;
+    captures = 0;
+    const animated = await f.api.withFreshScreenshot(7, check, async () => {
+        captures++; f.state.revision++; return {screenshot: 'carousel'};
+    }, async () => f.observation());
+    assert.equal(captures, 1, 'A page that never settled is not retried');
+    assert.equal(animated.metadata.freshness.changing, true);
+    const current = await f.api.withFreshScreenshot(7, check, async () => ({screenshot: 'current'}), async () => f.observation());
+    assert.equal(current.metadata.freshness.settled, false, 'A bounded wait is reported honestly on active pages');
+    assert.equal(current.metadata.freshness.changing, undefined);
+});
+
+test('perpetual races across navigations still fail instead of presenting an unchecked image', async () => {
     const f = fixture();
     let captures = 0;
     await assert.rejects(f.api.withFreshScreenshot(7, check, async () => {
-        captures++; f.state.revision++; return {screenshot: 'stale'};
+        captures++; f.state.revision++; f.tabs.get(7).url = `https://example.com/${captures}`; return {screenshot: 'stale'};
     }, async () => f.observation()), /Page kept changing/);
     assert.equal(captures, 3);
-    f.state.settled = false;
-    const current = await f.api.withFreshScreenshot(7, check, async () => ({screenshot: 'current'}), async () => f.observation());
-    assert.equal(current.metadata.freshness.settled, false, 'A bounded wait is reported honestly on active pages');
 });
 
 test('navigation replaces the observation context and retries, while cancellation and permission errors propagate', async () => {

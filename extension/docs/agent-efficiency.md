@@ -1,8 +1,11 @@
 # Agent efficiency
 
-The agent now starts with nine core tools and enables browsing, scripting,
+The agent starts with the core tools and enables browsing, scripting,
 debugging, and visual groups as needed. A local keyword hint can
 enable relevant groups up front; it is not a model call or a capability restriction.
+Acting is the default, so any request that does not read as a question, a
+walkthrough or a saved change starts with the browsing and input groups: enabling
+them later cost a whole model step and reset the prompt cache.
 The agent can always request another group with `enableTools`. Groups stay enabled
 for the rest of the run to limit changes to provider cache prefixes.
 
@@ -70,6 +73,56 @@ replace repeated narration, and specialized instructions are loaded on demand.
 The page-text schema default and console `.slice(-0)` cap bugs are fixed. Virtual
 file listings now return paths that the read/edit tools can consume directly.
 
+## Faster actions
+
+Most of a run's time is model steps, so actions carry what the next step needs:
+
+- For page work, the run-start metadata lists the on-screen controls as refs
+  (`c12`), from the same overlay as `listControls`. The list skips the model when
+  it trips the prompt-injection scan; `listControls` then fetches it screened.
+- `clickElement`, `typeText`, `selectOption`, `submitForm`, `fillForm` and
+  `clickTarget` take a `ref`. Refs resolve in the overlay to a selector that
+  matches only that element; the safety gate inspects the same element.
+- Actions return `changes`: newly shown controls with refs (an opened menu or
+  dialog), new dialogs, changed status or alert text, invalid fields, moved focus
+  and URL or title changes, measured against the page just before the action. After
+  a full navigation, or after `navigateTo` without `readText`, the new page's
+  controls come back instead.
+- `fillForm` fills text fields, selects, checkboxes and radios in one call and can
+  submit. Each field is screened as typing into it, and the submit as clicking
+  that control or submitting a sensitive form.
+
+Waits follow the page rather than fixed timers:
+
+- Clicks and trusted input return once the page has changed and then been quiet
+  for 150 ms. When nothing changes they still wait the old maximum
+  (`waitAfter`/`feedbackMs`, 500 ms). `clickElement` no longer smooth-scrolls
+  and then sleeps 200 ms.
+- `submitForm` (and Enter in `typeText`, and `fillForm`'s submit) waits for a
+  navigation only if the tab starts loading within 400 ms. A submit handled by
+  script waits for the page to settle instead of the full 5 s timeout.
+- `navigateTo` defaults to `domcontentloaded`: the new document is parsed and its
+  DOM has been quiet briefly. `load` still waits for every resource when asked.
+  A fragment-only change returns at once.
+- A rate-limited request waits as long as the provider's retry hint says (at
+  least 1 s); the minute-long wait applies only when there is no hint.
+
+Overhead inside each action:
+
+- The ~90 KB page overlay is injected once per page and extension build. Cursor
+  announcements, cues and input locks then call the installed copy, and its
+  session-storage flag is written once per tab.
+- Role and name targets query matching accessibility nodes instead of the whole
+  tree (substring names still read the whole tree). The hover recheck resolves
+  the node already found.
+- Marked screenshots resolve extra candidates (click listeners, closed shadow
+  roots) in batches of 50 with one marking call per batch, within a 1.5 s budget.
+- A screenshot of a page that keeps changing (a carousel, a ticker) returns its
+  capture flagged `freshness.changing` instead of failing after three attempts.
+  Races with a navigation still retry and fail rather than return a stale page.
+- Run setup reads settings, the plan budget, the tab, the task and the controls
+  concurrently. A task-only lookup replaces listing every open tab.
+
 ## Run settings and measurements
 
 Settings → Preferences controls the maximum steps (default 200), aggregate token
@@ -115,17 +168,23 @@ measurements count locally serialized schema, prompt, and guidance characters,
 not provider tokens. Initial tool/instruction sizes exclude user content and
 small per-run tab metadata; the baseline does not include later skill fetches.
 
-| Task | Initial tools | Before chars | After chars | Reduction |
-| --- | ---: | ---: | ---: | ---: |
-| Read a page | 9 | 35,362 | 9,133 | 74.2% |
-| Research several pages | 17 | 35,362 | 15,812 | 55.3% |
-| Create a script | 19 | 35,362 | 17,390 | 50.8% |
-| Debug a script | 22 | 35,362 | 20,348 | 42.5% |
-| Modify a script | 19 | 35,362 | 17,390 | 50.8% |
+The tools have grown since the original 35,362-character baseline, so the table
+compares the current build with the one before action tools loaded up front.
 
-Skill content fell from 23,516 to 6,227 characters. A fixed 20-step page-reading
-replay reduced cumulative serialized context from 2,666,215 to 664,585 characters
-(75.1%). This replay measures payload reduction; it does not establish equivalent
+| Task | Initial tools | Before chars | After chars |
+| --- | ---: | ---: | ---: |
+| Read a page | 14 | 39,081 | 39,892 |
+| Research several pages | 22 → 28 | 46,354 | 59,505 |
+| Create a script | 24 | 48,074 | 48,885 |
+| Debug a script | 27 | 51,271 | 52,082 |
+| Modify a script | 24 | 48,074 | 48,885 |
+
+Requests that act (research here, which browses and searches) now carry the
+input group and `fillForm` from the first step: about 13,000 more characters,
+cached after the first step, in exchange for not spending a step on `enableTools`.
+Skill content is 5,889 characters (originally 23,516). The fixed 20-step
+page-reading replay serializes 1,279,765 characters against 2,666,215 originally
+(52.0%). This replay measures payload size; it does not establish equivalent
 task success, actual token savings, pricing, or cache-hit rates.
 
 For live evaluation, run the same tasks with the same model against controlled

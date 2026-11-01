@@ -554,6 +554,49 @@ test('semantic and marked clicks return feedback and prevent ambiguous or occlud
     assert.equal(f.commands.filter(c => c.method === 'Input.dispatchMouseEvent').length, count);
 });
 
+test('role targets look up only matching AX nodes and recheck the same node after hover', async () => {
+    const f = fixture(), original = f.chrome.debugger.sendCommand;
+    f.chrome.debugger.sendCommand = async (target, method, params) => {
+        if (method === 'Accessibility.queryAXTree') {
+            f.commands.push({target, method, params});
+            return {nodes: [{role: {value: 'button'}, name: {value: 'Send'}, backendDOMNodeId: 21}, {role: {value: 'button'}, name: {value: 'Send'}, ignored: true, backendDOMNodeId: 22}]};
+        }
+        if (method === 'Runtime.callFunctionOn' && params.functionDeclaration.includes('__tamperSlothPerception')) {
+            f.commands.push({target, method, params});
+            return {result: {value: {point: {x: 30, y: 30}, target: {tag: 'button', role: 'button', name: 'Send'}, hit: {tag: 'button', name: 'Send'}, metrics: {}}}};
+        }
+        return original(target, method, params);
+    };
+    const click = await f.run('gesture', {tabId: 7, target: {role: 'button', name: 'Send'}, feedbackMs: 0});
+    assert.equal(click.resolved.target.name, 'Send');
+    const methods = f.commands.map(c => c.method);
+    assert.equal(methods.filter(m => m === 'Accessibility.queryAXTree').length, 1, 'The hover recheck reuses the node it found');
+    assert.equal(methods.includes('Accessibility.getFullAXTree'), false);
+    assert.deepEqual(plain(f.commands.find(c => c.method === 'Accessibility.queryAXTree').params), {objectId: 'doc', accessibleName: 'Send', role: 'button'});
+    assert.deepEqual(f.commands.filter(c => c.method === 'DOM.resolveNode').map(c => c.params.backendNodeId), [21, 21]);
+    // Substring names cannot be queried exactly, so they still read the whole tree.
+    await f.run('gesture', {tabId: 7, target: {role: 'button', name: 'Sen', exact: false}, feedbackMs: 0});
+    assert.ok(f.commands.some(c => c.method === 'Accessibility.getFullAXTree'));
+});
+
+test('marks beyond the DOM scan are resolved in batches instead of three calls per node', async () => {
+    const f = fixture(), original = f.chrome.debugger.sendCommand, batches = [];
+    f.chrome.debugger.sendCommand = async (target, method, params) => {
+        if (method === 'DOMDebugger.getEventListeners') return {listeners: Array.from({length: 60}, (_, i) => ({type: 'click', backendNodeId: 100 + i}))};
+        if (method === 'Runtime.callFunctionOn' && params.functionDeclaration.includes('...elements')) {
+            batches.push(params.arguments.length - 1);
+            return {result: {value: params.arguments.slice(1).map((_, i) => ({id: 2 + i, name: 'Extra', bbox: {x: 1, y: 1, width: 5, height: 5}, center: {x: 3, y: 3}, source: 'dom'}))}};
+        }
+        return original(target, method, params);
+    };
+    const shot = await f.run('perception', {tabId: 7, maxMarks: 20});
+    assert.deepEqual(batches, [50], 'One call marks a whole batch');
+    assert.equal(shot.legend.length, 20);
+    assert.equal(shot.candidateLimitReached, true);
+    assert.equal(shot.clickHandlerCoverage.inspected, 50);
+    assert.ok(f.commands.some(c => c.method === 'Runtime.releaseObjectGroup'), 'Batch objects are released together');
+});
+
 test('composite keyboard and touch gestures create complete input sequences', async () => {
     const f = fixture();
     await f.run('gesture', {tabId: 7, action: 'press', chord: 'Ctrl+Shift+K', feedbackMs: 0});

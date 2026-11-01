@@ -160,6 +160,7 @@ export function pagePerception(args: any, anchored?: Element) {
         const entry: any = {before: {url: location.href, focus: focus(), scroll: {x: scrollX, y: scrollY}, dialogs: Array.from(document.querySelectorAll('dialog[open],[role=dialog],[aria-modal=true]')).map(describe)}, mutations: [], mutationCount: 0, events: [], roots: new Set([document])};
         entry.observer = new MutationObserver(records => {
             entry.mutationCount += records.length;
+            entry.lastMutation = performance.now();
             for (const r of records) if (entry.mutations.length < 20) entry.mutations.push({type: r.type, tag: (r.target as Element).tagName?.toLowerCase(), attribute: r.attributeName, added: r.addedNodes.length, removed: r.removedNodes.length});
         });
         entry.observer.observe(document, {subtree: true, childList: true, attributes: true, characterData: true});
@@ -172,6 +173,20 @@ export function pagePerception(args: any, anchored?: Element) {
         entry.timer = setTimeout(() => { entry.cleanup(); state.observations.delete(args.id); }, 45000);
         state.observations.set(args.id, entry);
         return entry.before;
+    }
+    if (args.action === 'settle') {
+        // Done once the page has changed and then stayed quiet; a page that never changes waits maxMs.
+        const entry = state.observations.get(args.id);
+        if (!entry) return {settledMs: 0};
+        const start = performance.now();
+        return new Promise(resolve => {
+            const check = () => {
+                const now = performance.now(), quiet = entry.lastMutation !== undefined && now - entry.lastMutation >= args.quietMs;
+                if ((quiet && now - start >= 50) || now - start >= args.maxMs) resolve({settledMs: Math.round(now - start), quiet});
+                else setTimeout(check, 25);
+            };
+            check();
+        });
     }
     if (args.action === 'observeEnd') {
         const entry = state.observations.get(args.id);

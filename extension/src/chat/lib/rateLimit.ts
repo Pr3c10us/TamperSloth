@@ -5,14 +5,17 @@ import {type LanguageModel, wrapLanguageModel} from "ai";
  * Any key can hit a provider's rate limit mid-run (free tiers allow only a
  * few requests a minute), so a 429 is a pause rather than a failure. Each model call that hits one waits out the
  * window and tries again, so the run carries on from the step it was on.
- * The SDK's own retries back off for seconds, which never clears a
- * per-minute limit.
+ * The wait follows the provider's retry hint when it sends one, and is a
+ * minute otherwise: the SDK's own retries back off for seconds, which never
+ * clears a per-minute limit.
  */
 
 /** Retries after the first rate-limited attempt. */
 export const RATE_LIMIT_RETRIES = 3;
-/** A per-minute window always clears within this. */
+/** A per-minute window always clears within this; used when the provider gives no retry hint. */
 export const RATE_LIMIT_WAIT_MS = 60_000;
+/** Shortest wait, even when the provider's hint says less. */
+export const RATE_LIMIT_MIN_WAIT_MS = 1000;
 /** A provider asking for longer means a daily or billing quota, which waiting won't fix. */
 export const MAX_RATE_LIMIT_WAIT_MS = 5 * 60_000;
 
@@ -159,7 +162,8 @@ export async function withRateLimitRetry<T>(call: () => PromiseLike<T>, options:
             if (retry > RATE_LIMIT_RETRIES) {
                 throw new RateLimitError(`${modelName} is still rate limited after ${RATE_LIMIT_RETRIES} retries. ${switchHint}`);
             }
-            const ms = Math.max(RATE_LIMIT_WAIT_MS, (hint ?? 0) + 1000);
+            // The provider's own hint is when its window reopens; a minute is only the guess without one.
+            const ms = hint !== null ? Math.max(RATE_LIMIT_MIN_WAIT_MS, hint + 1000) : RATE_LIMIT_WAIT_MS;
             waits.set(conversationId, {modelName, until: Date.now() + ms, retry, maxRetries: RATE_LIMIT_RETRIES});
             notify();
             try {

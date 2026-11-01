@@ -7,7 +7,7 @@ import {stripReason, withReason} from "./toolReason";
 import {createSafetyGate, type SafetyGateOptions} from "./safetyGate";
 
 export const TOOL_GROUPS = {
-    browsing: ["clickElement", "typeText", "selectOption", "scrollPage", "submitForm", "waitForElement", "navigateHistory", "reloadPage"],
+    browsing: ["clickElement", "typeText", "fillForm", "selectOption", "scrollPage", "submitForm", "waitForElement", "navigateHistory", "reloadPage"],
     scripting: ["viewCodeFiles", "createFileTool", "strReplaceTool", "deleteFileTool", "executeContentScript", "saveScript", "listScripts", "toggleScript", "removeScript", "reloadPage"],
     debugging: ["getDebugInfo", "getLocalStorage", "getCookies"],
     visual: ["takeScreenshot", "takeMarkedScreenshot"],
@@ -21,7 +21,7 @@ type Group = keyof typeof TOOL_GROUPS;
 type ModelOutputOptions = Parameters<NonNullable<ToolSet[string]["toModelOutput"]>>[0];
 const CORE = ["getCurrentTab", "getPageText", "getPageStructure", "getElementDetails", "navigateTo", "askUser", "getSkill", "enableTools", "readToolResult", 'annotatePage', 'waitForUserAction', 'listControls', 'wait', 'showTab'];
 const PAGE_BARRIERS = new Set(['takeScreenshot', 'takeMarkedScreenshot', 'navigateTo', 'navigateHistory', 'reloadPage',
-    'clickElement', 'typeText', 'selectOption', 'scrollPage', 'submitForm', 'waitForElement', 'executeContentScript',
+    'clickElement', 'typeText', 'fillForm', 'selectOption', 'scrollPage', 'submitForm', 'waitForElement', 'executeContentScript',
     'saveScript', 'toggleScript', 'removeScript', 'evaluateJavaScript', 'clickTarget', 'browserGesture', 'trustedInput', 'annotatePage', 'waitForUserAction', 'wait']);
 function needsPageBarrier(name: string, input: any) {
     return PAGE_BARRIERS.has(name) || name === 'browserTabs' && input.action !== 'list'
@@ -35,10 +35,29 @@ function isZodObject(schema: unknown): schema is z.ZodObject {
     return (schema as z.ZodObject | undefined)?._zod?.def?.type === "object";
 }
 
+/** Requests that ask a question or to be shown how, rather than for something done on the page. */
+const QUESTION = /^(?:what|why|who|whom|whose|when|where|which|how|is|are|was|were|does|do|did|should|explain|summari[sz]e|tell me|describe|define|translate|list|read)\b/i;
+const GUIDE = /\b(guide|guidance|walk me|teach|show me|step.by.step|how (?:do|can|would|should) i)\b/i;
+const SCRIPT = /\b(script|automatically|always|hide|remove|restyle|dark mode|css|every time)\b/i;
+/** A change meant to stay ("always hide…"), which a saved script does rather than page actions. */
+const PERSISTENT = /\b(script|userscript|automatically|always|every time|whenever)\b/i;
+
+/**
+ * Acting is the default (see the system prompt), so action tools load up front unless the
+ * request reads as a question, a walkthrough or a saved script. Enabling them later costs
+ * a whole model step and resets the prompt cache.
+ */
+export function wantsAction(request: string): boolean {
+    if (/\b(click|fill|submit|scroll|select|search|browse|navigate|for me|do it|go ahead|yourself)\b/i.test(request)) return true;
+    const core = request.trim().replace(/^(?:hey|hi|ok(?:ay)?|please|pls|sloth)\b[,!.\s]*/i, "")
+        .replace(/^(?:can|could|would|will) you\s+(?:please\s+)?/i, "");
+    return !QUESTION.test(core) && !GUIDE.test(request) && !PERSISTENT.test(request);
+}
+
 export function initialToolGroups(request: string): Group[] {
     const groups: Group[] = [];
-    if (/\b(script|automatically|always|hide|remove|restyle|dark mode|css|every time)\b/i.test(request)) groups.push("scripting");
-    if (/\b(click|fill|submit|scroll|select|search|browse|navigate|for me|do it|go ahead|yourself)\b/i.test(request)) groups.push("browsing");
+    if (SCRIPT.test(request)) groups.push("scripting");
+    if (wantsAction(request)) groups.push("browsing", "input");
     if (/\b(debug|error|broken|fails?|not working|console|network)\b/i.test(request)) groups.push("debugging");
     if (/\b(screenshot|layout|appearance|restyle|dark mode)\b/i.test(request)) groups.push("visual");
     if (/\b(tabs?|popups?|accessibility|recipes?|persistent|evaluate|javascript|compar(?:e|ing|ison)|inspiration|references|sources|across)\b/i.test(request)) groups.push('browser');
@@ -46,7 +65,7 @@ export function initialToolGroups(request: string): Group[] {
     if (/\b(network|websocket|replay|requests?)\b/i.test(request)) groups.push('network');
     if (/\b(clipboard|downloads?|notifications?)\b/i.test(request)) groups.push('system');
     if (/\b(guide|guidance|walk|teach|show me|step.by.step|highlight|annotat\w*)\b/i.test(request)) groups.push('guidance');
-    return groups;
+    return [...new Set(groups)];
 }
 
 type Projection = Awaited<ReturnType<NonNullable<ToolSet[string]["toModelOutput"]>>>;
@@ -230,6 +249,8 @@ export function createToolRuntime(rawTools: ToolSet, options: {
         };
     }
     return {tools, initialGuidance,
+        /** The tool groups enabled before the first step, from the request's wording. */
+        initialGroups: [...groups],
         activeTools: () => Object.keys(tools).filter(name => enabled.has(name)),
         metrics: () => [...metrics.values()],
         repeatedFailure: () => repeatedFailure,

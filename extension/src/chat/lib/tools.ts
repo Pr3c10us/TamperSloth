@@ -137,6 +137,39 @@ async function withSelectorHelp<T>(tabId: number, selector: string | null | unde
     }
 }
 
+/** An action counts as settled once the page has changed and then gone this long without changing. */
+const SETTLE_QUIET_MS = 150;
+/** A submit that navigates shows the tab loading within this. */
+const NAVIGATION_START_MS = 400;
+
+/**
+ * Runs in the page: resolves with its URL once the DOM has gone `quietMs` without changing, or
+ * after `capMs`. Injection waits for the document to be parsed, so this is "parsed and settled".
+ * With `needChange`, quiet only counts after something changed (suggestions arriving after typing).
+ */
+function pageQuiet(quietMs: number, capMs: number, needChange = false) {
+    return new Promise<string>(resolve => {
+        const start = performance.now();
+        let last = start, changed = false;
+        const observer = new MutationObserver(() => { last = performance.now(); changed = true; });
+        observer.observe(document, {subtree: true, childList: true, attributes: true, characterData: true});
+        const check = () => {
+            const now = performance.now();
+            if (((changed || !needChange) && now - last >= quietMs) || now - start >= capMs) { observer.disconnect(); resolve(location.href); }
+            else setTimeout(check, 25);
+        };
+        setTimeout(check, quietMs);
+    });
+}
+
+/** Same document, only the fragment differs: the browser scrolls instead of loading anything. */
+function sameDocument(a: string, b?: string) {
+    try {
+        const x = new URL(a), y = new URL(b ?? '');
+        return x.hash !== y.hash && x.href.split('#')[0] === y.href.split('#')[0];
+    } catch { return false; }
+}
+
 function numberLines(content: string, startLine: number, endLine: number): string {
     const lines = content.split('\n');
     const slice = lines.slice(startLine - 1, endLine);
@@ -167,6 +200,51 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
     };
     // Read before any tool can navigate it: a chat started on a new tab page uses that tab for the task.
     const originBlank = Promise.resolve().then(async () => tabId > 0 && isNewTabPage((await globalThis.chrome.tabs.get(tabId)).url)).catch(() => false);
+    // The page overlay names controls (listControls refs) and reports what an action changed.
+    /** The selector a call names its element by: its own, or one for a ref. An unknown ref throws with candidates. */
+    const targetOf = async (input: {selector?: string; ref?: string}): Promise<{selector: string} | {error: string; hint?: string}> => {
+        if (input.ref) return {selector: (await browserCall('guidance', {tabId, action: 'resolveRef', ref: input.ref})).selector};
+        if (!input.selector) return {error: 'Provide selector or ref.', hint: 'Use a ref from listControls or a changes report, or a CSS selector.'};
+        return selectorError(input.selector) ?? {selector: input.selector};
+    };
+    /** Moves the agent cursor to the element and remembers the page, so changesSince can report the action's effects. */
+    const cue = (selector: string | undefined, index: number | undefined, kind: 'click' | 'type' | 'scroll') =>
+        browserCall('guidance', {tabId, action: 'cue', selector, index, cue: kind, baseline: kind !== 'scroll'}).catch(() => {});
+    /** What the last cued action changed: new controls with refs, dialogs, messages, invalid fields, focus, URL. */
+    const changesSince = async () => {
+        const changes = await browserCall('guidance', {tabId, action: 'changes'}).catch(() => undefined);
+        return changes && Object.keys(changes).length ? {changes} : {};
+    };
+    /**
+     * Call before a submit; the returned wait resolves after the navigation it started (true), or once
+     * the page settles when script handled it in place (false), instead of always waiting the timeout.
+     */
+    const watchSubmission = () => {
+        let loading = false, completed = false;
+        const listener = (updatedTabId: number, changeInfo: {status?: string}) => {
+            if (updatedTabId !== tabId) return;
+            if (changeInfo.status === 'loading') loading = true;
+            if (changeInfo.status === 'complete' && loading) completed = true;
+        };
+        globalThis.chrome.tabs.onUpdated.addListener(listener);
+        return async (timeoutMs: number) => { try {
+            const deadline = Date.now() + timeoutMs, started = Date.now();
+            let settledInPlace = false;
+            while (!completed && Date.now() < deadline) {
+                // A form that navigates starts loading almost at once; one handled by script never does.
+                if (!loading && !settledInPlace && Date.now() - started >= NAVIGATION_START_MS) {
+                    if ((await globalThis.chrome.tabs.get(tabId)).status === 'loading') loading = true;
+                    else {
+                        await globalThis.chrome.scripting.executeScript({target: {tabId}, func: pageQuiet, args: [SETTLE_QUIET_MS, 1500]}).catch(() => {});
+                        settledInPlace = true;
+                        if (!loading) break;
+                    }
+                }
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+            return completed;
+        } finally { globalThis.chrome.tabs.onUpdated.removeListener(listener); } };
+    };
     return leaseTabTools({
         ...createBrowserTools(() => tabId, id => { tabId = id; }, context.abortSignal, {conversationId: context.conversationId, originTabId: tabId > 0 ? tabId : undefined, originBlank}),
         // ═══════════════════════════════════════════════
@@ -1009,7 +1087,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
 
         navigateTo: tool({
             description:
-                "Navigate the attached tab and wait for loading/readiness. Optionally readText afterward in the same call. Accepts absolute or relative URLs.",
+                "Navigate the attached tab and wait until it is ready. Optionally readText afterward in the same call; without readText the result lists the new page's on-screen controls with refs. Accepts absolute or relative URLs.",
             inputSchema: z.object({
                 url: z
                     .string()
@@ -1020,10 +1098,10 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 waitUntil: z
                     .enum(["load", "domcontentloaded"])
                     .optional()
-                    .default("load")
+                    .default("domcontentloaded")
                     .describe(
-                        '"load" waits for all resources including images/stylesheets (default). ' +
-                        '"domcontentloaded" resolves earlier, as soon as the HTML is parsed.'
+                        '"domcontentloaded" (default) resolves once the HTML is parsed and the DOM has settled briefly. ' +
+                        '"load" also waits for every image, ad and tracker; use it only when those matter.'
                     ),
                 waitForSelector: z
                     .string()
@@ -1043,7 +1121,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 readText: z.boolean().default(false).describe('Return concise page text after navigation and optional readiness wait.'),
                 readSelector: z.string().optional().describe('Scope the optional text read to this selector.'),
             }),
-            execute: async ({url, waitUntil, waitForSelector, timeout}) => {
+            execute: async ({url, waitUntil, waitForSelector, timeout, readText}) => {
                 const timeoutMs = timeout ?? 15000;
                 const startTime = Date.now();
 
@@ -1051,49 +1129,44 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 const currentTab = await chrome.tabs.get(tabId);
                 const resolvedUrl = new URL(url, currentTab.url).href;
 
-                // Navigate the tab
-                await chrome.tabs.update(tabId, {url: resolvedUrl});
-
-                // Wait for the tab to finish loading
-                const waitForLoad = () =>
-                    new Promise<chrome.tabs.Tab>((resolve, reject) => {
-                        const timer = setTimeout(() => {
-                            chrome.tabs.onUpdated.removeListener(listener);
-                            reject(new Error(`Navigation timed out after ${timeoutMs}ms`));
-                        }, timeoutMs);
-
-                        const targetEvent =
-                            waitUntil === "domcontentloaded" ? "loading" : "complete";
-
-                        const listener = (
-                            updatedTabId: number,
-                            changeInfo: { status?: string },
-                            tab: chrome.tabs.Tab
-                        ) => {
-                            if (updatedTabId !== tabId) return;
-
-                            if (
-                                changeInfo.status === "complete" ||
-                                (targetEvent === "loading" && changeInfo.status === "loading" && tab.url !== currentTab.url)
-                            ) {
-                                if (targetEvent === "loading" && changeInfo.status === "loading") {
-                                    setTimeout(() => {
-                                        clearTimeout(timer);
-                                        chrome.tabs.onUpdated.removeListener(listener);
-                                        resolve(tab);
-                                    }, 100);
-                                } else {
-                                    clearTimeout(timer);
-                                    chrome.tabs.onUpdated.removeListener(listener);
-                                    resolve(tab);
+                // Ready means "complete", or with domcontentloaded: the new document is parsed and its
+                // DOM has settled briefly, without waiting on every image, ad and tracker.
+                let finish!: (error?: Error) => void;
+                const ready = new Promise<void>((resolve, reject) => {
+                    let done = false, probing = false;
+                    const timer = setTimeout(() => finish(new Error(`Navigation timed out after ${timeoutMs}ms`)), timeoutMs);
+                    const listener = (updatedTabId: number, changeInfo: {status?: string}, tab: chrome.tabs.Tab) => {
+                        if (updatedTabId !== tabId) return;
+                        if (changeInfo.status === "complete") finish();
+                        else if (waitUntil === "domcontentloaded" && !probing && tab.url && tab.url !== currentTab.url) {
+                            probing = true;
+                            void (async () => {
+                                // Injection waits for the document to be parsed; an early one may still land in the old page.
+                                while (!done) {
+                                    const [probe] = await globalThis.chrome.scripting.executeScript({target: {tabId}, func: pageQuiet, args: [SETTLE_QUIET_MS, 1000]})
+                                        .catch(() => [undefined]);
+                                    if (done) return;
+                                    if (typeof probe?.result === "string" && probe.result !== currentTab.url) return finish();
+                                    await new Promise(r => setTimeout(r, 100));
                                 }
-                            }
-                        };
+                            })();
+                        }
+                    };
+                    finish = (error?: Error) => {
+                        if (done) return;
+                        done = true;
+                        clearTimeout(timer);
+                        chrome.tabs.onUpdated.removeListener(listener);
+                        if (error) reject(error); else resolve();
+                    };
+                    chrome.tabs.onUpdated.addListener(listener);
+                });
+                ready.catch(() => {});
 
-                        chrome.tabs.onUpdated.addListener(listener);
-                    });
-
-                await waitForLoad();
+                await chrome.tabs.update(tabId, {url: resolvedUrl});
+                // A fragment change only scrolls; nothing loads.
+                if (sameDocument(resolvedUrl, currentTab.url)) setTimeout(() => finish(), 100);
+                await ready;
                 const loadDuration = Date.now() - startTime;
 
                 // Optionally wait for a specific selector to appear in the DOM
@@ -1140,6 +1213,8 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 // Grab final page state
                 const finalTab = await chrome.tabs.get(tabId);
                 const redirected = finalTab.url !== resolvedUrl;
+                // To act next, the model needs the page's controls; a text read brings its own page instead.
+                const listed = readText ? undefined : await browserCall('guidance', {tabId, action: 'controls', limit: 25}).catch(() => undefined);
 
                 return {
                     success: true,
@@ -1155,6 +1230,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                             ...selectorResult,
                         },
                     }),
+                    ...(listed?.controls?.length && {controls: listed.controls, ...(listed.moreControls ? {moreControls: listed.moreControls} : {})}),
                 };
             },
         }),
@@ -1291,10 +1367,12 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
 
         clickElement: tool({
             description:
-                "Click a selector match and report navigation. Choose index for multiple matches.",
+                "Click an element by ref (from listControls or a changes report) or selector. Reports navigation and what the click changed (new controls with refs, dialogs, messages).",
             inputSchema: z.object({
+                ref: z.string().optional().describe('Control ref such as "c12". Use instead of selector.'),
                 selector: z
                     .string()
+                    .optional()
                     .describe(
                         'CSS selector for the element to click, e.g. "button.submit", "#login-btn", ' +
                         '"a[href=\\"/about\\"]".'
@@ -1311,19 +1389,21 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     .optional()
                     .default(500)
                     .describe(
-                        "Milliseconds to wait after clicking for any triggered effects to settle (default: 500)."
+                        "Most milliseconds to wait for the click's effects (default 500). Returns sooner once the page has changed and gone quiet."
                     ),
                 responseFormat: responseFormatSchema,
             }),
-            execute: async ({selector, index, waitAfter, responseFormat}) => {
-                const invalid = selectorError(selector);
-                if (invalid) return invalid;
-                await browserCall('guidance',{tabId,action:'cue',selector,index,cue:'click'}).catch(()=>{});
+            execute: async ({ref, selector: given, index: givenIndex, waitAfter, responseFormat}) => {
+                const target = await targetOf({ref, selector: given});
+                if (!("selector" in target)) return target;
+                // A ref's selector matches exactly one element.
+                const selector = target.selector, index = ref ? 0 : givenIndex;
+                await cue(selector, index, 'click');
                 const beforeTab = await chrome.tabs.get(tabId);
 
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId},
-                    func: (sel: string, idx: number, wait: number, format: string) => {
+                    func: (sel: string, idx: number, wait: number, quietMs: number, format: string) => {
                         return new Promise<any>((resolve) => {
                             const els = document.querySelectorAll(sel);
                             if (els.length === 0) {
@@ -1352,54 +1432,67 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                             }
 
                             const el = els[idx] as HTMLElement;
-                            el.scrollIntoView({behavior: "smooth", block: "center"});
+                            // el.click() needs no on-screen point; scroll only so the user sees what was clicked.
+                            const box = el.getBoundingClientRect();
+                            if (box.bottom < 0 || box.top > innerHeight || box.right < 0 || box.left > innerWidth) el.scrollIntoView({behavior: "instant", block: "center"});
+                            try {(window as any).__tamperSlothGuidance?.cue(el,'click');} catch { /* Decoration is optional. */ }
 
-                            setTimeout(() => {
-                                try {(window as any).__tamperSlothGuidance?.cue(el,'click');} catch { /* Decoration is optional. */ }
-                                el.click();
-
-                                setTimeout(() => {
-                                    if (format === "concise") {
-                                        resolve({clicked: true});
-                                    } else {
-                                        resolve({
-                                            clicked: true,
-                                            tag: el.tagName.toLowerCase(),
-                                            id: el.id || undefined,
-                                            classes: Array.from(el.classList),
-                                            text: el.textContent?.trim().slice(0, 200),
-                                            href: (el as HTMLAnchorElement).href || undefined,
-                                            matchCount: els.length,
-                                            indexClicked: idx,
-                                        });
-                                    }
-                                }, wait);
-                            }, 200);
+                            // Wait for the click's effects: until the page has changed and gone quiet, or `wait` at most.
+                            let last = 0;
+                            const observer = new MutationObserver(() => { last = performance.now(); });
+                            observer.observe(document, {subtree: true, childList: true, attributes: true, characterData: true});
+                            el.click();
+                            const start = performance.now();
+                            const check = () => {
+                                const now = performance.now();
+                                if (!(last && now - last >= quietMs && now - start >= 50) && now - start < wait) { setTimeout(check, 25); return; }
+                                observer.disconnect();
+                                if (format === "concise") {
+                                    resolve({clicked: true});
+                                } else {
+                                    resolve({
+                                        clicked: true,
+                                        tag: el.tagName.toLowerCase(),
+                                        id: el.id || undefined,
+                                        classes: Array.from(el.classList),
+                                        text: el.textContent?.trim().slice(0, 200),
+                                        href: (el as HTMLAnchorElement).href || undefined,
+                                        matchCount: els.length,
+                                        indexClicked: idx,
+                                        settledMs: Math.round(now - start),
+                                    });
+                                }
+                            };
+                            check();
                         });
                     },
-                    args: [selector, index ?? 0, waitAfter ?? 500, responseFormat ?? "concise"],
+                    args: [selector, index ?? 0, waitAfter ?? 500, SETTLE_QUIET_MS, responseFormat ?? "concise"],
                 });
 
                 const afterTab = await chrome.tabs.get(tabId);
                 const navigated = afterTab.url !== beforeTab.url;
+                const clicked = (result?.result as {clicked?: boolean} | undefined)?.clicked;
 
                 return {
-                    ...await withSelectorHelp(tabId, selector, result.result),
+                    ...await withSelectorHelp(tabId, selector, result?.result),
                     navigated,
                     ...(navigated && {
                         newUrl: afterTab.url,
                         newTitle: afterTab.title,
                     }),
+                    ...(clicked ? await changesSince() : {}),
                 };
             },
         }),
 
         typeText: tool({
             description:
-                "Type into a matched input or editable element; optionally clear or press Enter.",
+                "Type into an input or editable element by ref or selector; optionally clear or press Enter. For several fields use fillForm. After Enter, or in a field that suggests (combobox, search), reports what changed.",
             inputSchema: z.object({
+                ref: z.string().optional().describe('Control ref such as "c12". Use instead of selector.'),
                 selector: z
                     .string()
+                    .optional()
                     .describe(
                         'CSS selector for the input element, e.g. "input[name=\\"email\\"]", "#search-box", ' +
                         '"textarea.comment".'
@@ -1430,10 +1523,12 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     ),
                 responseFormat: responseFormatSchema,
             }),
-            execute: async ({selector, text, clearFirst, pressEnter, index, responseFormat}) => {
-                const invalid = selectorError(selector);
-                if (invalid) return invalid;
-                await browserCall('guidance',{tabId,action:'cue',selector,index,cue:'type'}).catch(()=>{});
+            execute: async ({ref, selector: given, text, clearFirst, pressEnter, index: givenIndex, responseFormat}) => {
+                const target = await targetOf({ref, selector: given});
+                if (!("selector" in target)) return target;
+                const selector = target.selector, index = ref ? 0 : givenIndex;
+                await cue(selector, index, 'type');
+                const submission = pressEnter ? watchSubmission() : undefined;
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId},
                     func: (
@@ -1469,8 +1564,12 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                         }
 
                         const el = els[idx] as HTMLElement;
-                        el.scrollIntoView({behavior: "smooth", block: "center"});
+                        const box = el.getBoundingClientRect();
+                        if (box.bottom < 0 || box.top > innerHeight || box.right < 0 || box.left > innerWidth) el.scrollIntoView({behavior: "instant", block: "center"});
                         el.focus();
+                        // Fields that offer suggestions as you type, worth waiting for after typing.
+                        const suggests = el.getAttribute("role") === "combobox" || el.hasAttribute("aria-autocomplete") || el.hasAttribute("list")
+                            || (el as HTMLInputElement).type === "search";
 
                         try {(window as any).__tamperSlothGuidance?.cue(el,'type');} catch { /* Decoration is optional. */ }
 
@@ -1547,7 +1646,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                         }
 
                         if (format === "concise") {
-                            return {typed: true, pressedEnter: enter};
+                            return {typed: true, pressedEnter: enter, ...(suggests ? {suggests} : {})};
                         }
                         return {
                             typed: true,
@@ -1558,6 +1657,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                                 ? (el as HTMLInputElement).value.slice(0, 500)
                                 : el.textContent?.slice(0, 500),
                             pressedEnter: enter,
+                            ...(suggests ? {suggests} : {}),
                         };
                     },
                     args: [
@@ -1569,16 +1669,32 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                         responseFormat ?? "concise",
                     ],
                 });
-                return withSelectorHelp(tabId, selector, result.result);
+                const typed = result?.result as {typed?: boolean; suggests?: boolean} | undefined;
+                if (!typed?.typed) {
+                    await submission?.(0);
+                    return withSelectorHelp(tabId, selector, result?.result);
+                }
+                // Enter may submit or search; a suggesting field opens a list. Either way the next step depends on it.
+                if (submission) {
+                    const navigated = await submission(3000);
+                    return {...typed, ...(navigated ? {navigated} : {}), ...await changesSince()};
+                }
+                if (typed.suggests) {
+                    await globalThis.chrome.scripting.executeScript({target: {tabId}, func: pageQuiet, args: [SETTLE_QUIET_MS, 800, true]}).catch(() => {});
+                    return {...typed, ...await changesSince()};
+                }
+                return typed;
             },
         }),
 
         selectOption: tool({
             description:
-                "Select a native dropdown option by value, label or index.",
+                "Select a native dropdown option by value, label or index. Name the <select> by ref or selector. Reports what the choice changed.",
             inputSchema: z.object({
+                ref: z.string().optional().describe('Control ref such as "c12". Use instead of selector.'),
                 selector: z
                     .string()
+                    .optional()
                     .describe('CSS selector for the <select> element, e.g. "#country", "select[name=\\"size\\"]".'),
                 value: z
                     .string()
@@ -1600,10 +1716,11 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     ),
                 responseFormat: responseFormatSchema,
             }),
-            execute: async ({selector, value, label, index, responseFormat}) => {
-                const invalid = selectorError(selector);
-                if (invalid) return invalid;
-                await browserCall('guidance',{tabId,action:'cue',selector,index,cue:'click'}).catch(()=>{});
+            execute: async ({ref, selector: given, value, label, index, responseFormat}) => {
+                const target = await targetOf({ref, selector: given});
+                if (!("selector" in target)) return target;
+                const selector = target.selector;
+                await cue(selector, 0, 'click');
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId},
                     func: (
@@ -1677,7 +1794,9 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     },
                     args: [selector, value ?? null, label ?? null, index ?? null, responseFormat ?? "concise"],
                 });
-                return result.result;
+                const selected = result?.result as {selected?: boolean} | undefined;
+                // A choice often reveals or changes other fields.
+                return selected?.selected ? {...selected, ...await changesSince()} : result?.result;
             },
         }),
 
@@ -1817,10 +1936,12 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
 
         submitForm: tool({
             description:
-                "Submit a form and wait for navigation. Obtain confirmation for consequential submissions.",
+                "Submit a form, then wait for the navigation it starts or, when the page handles it in place, for the page to settle. Reports what changed (messages, invalid fields, new controls). Obtain confirmation for consequential submissions.",
             inputSchema: z.object({
+                ref: z.string().optional().describe('Ref of the form or of a control inside it. Use instead of selector.'),
                 selector: z
                     .string()
+                    .optional()
                     .describe(
                         'CSS selector for the <form> element, e.g. "#login-form", "form[action=\\"/search\\"]". ' +
                         "If the selector points to an element inside a form, the closest parent form is submitted."
@@ -1830,16 +1951,18 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     .optional()
                     .default(5000)
                     .describe(
-                        "Maximum time in ms to wait for navigation or page changes after submission (default: 5000)."
+                        "Maximum time in ms to wait for a navigation the submission starts (default: 5000)."
                     ),
                 responseFormat: responseFormatSchema,
             }),
-            execute: async ({selector, timeout, responseFormat}) => {
-                const invalid = selectorError(selector);
-                if (invalid) return invalid;
-                await browserCall('guidance',{tabId,action:'cue',selector,cue:'click'}).catch(()=>{});
+            execute: async ({ref, selector: given, timeout, responseFormat}) => {
+                const target = await targetOf({ref, selector: given});
+                if (!("selector" in target)) return target;
+                const selector = target.selector;
+                await cue(selector, 0, 'click');
                 const timeoutMs = timeout ?? 5000;
                 const beforeTab = await chrome.tabs.get(tabId);
+                const submission = watchSubmission();
 
                 const [result] = await chrome.scripting.executeScript({
                     target: {tabId},
@@ -1878,39 +2001,106 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                         return {submitted: true, ...(formInfo && {form: formInfo})};
                     },
                     args: [selector, responseFormat ?? "concise"],
-                });
-
-                const navigated = await new Promise<boolean>((resolve) => {
-                    const timer = setTimeout(() => {
-                        chrome.tabs.onUpdated.removeListener(listener);
-                        resolve(false);
-                    }, timeoutMs);
-
-                    const listener = (
-                        updatedTabId: number,
-                        changeInfo: { status?: string }
-                    ) => {
-                        if (updatedTabId !== tabId) return;
-                        if (changeInfo.status === "complete") {
-                            clearTimeout(timer);
-                            chrome.tabs.onUpdated.removeListener(listener);
-                            resolve(true);
-                        }
-                    };
-
-                    chrome.tabs.onUpdated.addListener(listener);
-                });
+                }).catch(async error => { await submission(0); throw error; });
+                const submitted = (result?.result as {submitted?: boolean} | undefined)?.submitted;
+                const navigated = await submission(submitted ? timeoutMs : 0);
 
                 const afterTab = await chrome.tabs.get(tabId);
 
                 return {
-                    ...result.result,
+                    ...result?.result,
                     navigated,
                     ...(navigated && afterTab.url !== beforeTab.url && {
                         newUrl: afterTab.url,
                         newTitle: afterTab.title,
                     }),
+                    ...(submitted ? await changesSince() : {}),
                 };
+            },
+        }),
+
+        fillForm: tool({
+            description:
+                "Fill several form fields in one call, in order: text inputs, textareas, contenteditable, selects (by option value or visible label) " +
+                "and checkboxes/radios (value \"true\" or \"false\"). Name each field by ref (from listControls or a changes report) or selector. " +
+                "Stops at the first field it cannot fill. submit then clicks a control (e.g. the Save button) or, with true, submits the last field's form, " +
+                "and waits like submitForm. Reports what changed. Obtain confirmation for consequential submissions.",
+            inputSchema: z.object({
+                fields: z.array(z.object({
+                    ref: z.string().optional(),
+                    selector: z.string().optional(),
+                    index: z.number().int().min(0).optional(),
+                    value: z.string(),
+                })).min(1).max(30),
+                submit: z.union([z.boolean(), z.object({ref: z.string().optional(), selector: z.string().optional()})]).optional()
+                    .describe('A control to click after filling, or true to submit the form of the last field.'),
+                timeout: z.number().int().min(500).max(15000).default(5000)
+                    .describe('Maximum time in ms to wait for a navigation the submission starts.'),
+            }),
+            execute: async ({fields, submit, timeout}) => {
+                const resolved: {selector: string; index: number; value: string}[] = [];
+                for (const [i, field] of fields.entries()) {
+                    const target = await targetOf(field);
+                    if (!("selector" in target)) return {...target, failedField: i, filled: 0};
+                    resolved.push({selector: target.selector, index: field.ref ? 0 : field.index ?? 0, value: field.value});
+                }
+                const submitTarget = submit && typeof submit === "object" ? await targetOf(submit) : undefined;
+                if (submitTarget && !("selector" in submitTarget)) return {...submitTarget, failedField: "submit", filled: 0};
+                await cue(resolved[0].selector, resolved[0].index, 'type');
+                const submission = submit ? watchSubmission() : undefined;
+                const [result] = await chrome.scripting.executeScript({
+                    target: {tabId},
+                    func: (list: {selector: string; index: number; value: string}[], submitSelector: string | null, submitForm: boolean) => {
+                        const fail = (i: number, error: string, extra = {}) => ({filled: i, failedField: i, error, ...extra});
+                        let last: Element | undefined;
+                        for (const [i, field] of list.entries()) {
+                            const el = document.querySelectorAll(field.selector)[field.index] as HTMLElement | undefined;
+                            if (!el) return fail(i, `No element for field ${i + 1}: ${field.selector}`);
+                            if ((el as HTMLInputElement).disabled || (el as HTMLInputElement).readOnly) return fail(i, `Field ${i + 1} is disabled or read-only`);
+                            try {(window as any).__tamperSlothGuidance?.cue(el, 'type');} catch { /* Decoration is optional. */ }
+                            if (el instanceof HTMLSelectElement) {
+                                const wanted = field.value.trim().toLowerCase();
+                                const options = Array.from(el.options);
+                                const option = options.find(o => o.value === field.value) ?? options.find(o => (o.textContent ?? "").trim().toLowerCase() === wanted);
+                                if (!option) return fail(i, `No option "${field.value}" in field ${i + 1}`, {options: options.slice(0, 30).map(o => (o.textContent ?? "").trim())});
+                                el.value = option.value;
+                            } else if (el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio")) {
+                                const on = !/^(false|off|no|0|unchecked)$/i.test(field.value.trim());
+                                // A click flips it the way a person would, with the events frameworks listen for.
+                                if (el.checked !== on) el.click();
+                                last = el;
+                                continue;
+                            } else if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+                                el.focus();
+                                const setter = Object.getOwnPropertyDescriptor(el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, "value")?.set;
+                                if (setter) setter.call(el, field.value); else el.value = field.value;
+                            } else if (el.isContentEditable) {
+                                el.focus();
+                                el.textContent = field.value;
+                            } else return fail(i, `Field ${i + 1} (<${el.tagName.toLowerCase()}>) is not a form field`);
+                            el.dispatchEvent(new Event("input", {bubbles: true}));
+                            el.dispatchEvent(new Event("change", {bubbles: true}));
+                            last = el;
+                        }
+                        if (submitSelector) {
+                            const control = document.querySelector(submitSelector) as HTMLElement | null;
+                            if (!control) return {filled: list.length, error: `No submit control found for ${submitSelector}`};
+                            control.click();
+                            return {filled: list.length, submitted: true};
+                        }
+                        if (submitForm) {
+                            const form = last?.closest("form");
+                            if (!form) return {filled: list.length, error: "The last field is not inside a form; pass the submit control instead"};
+                            try { form.requestSubmit(); } catch { form.submit(); }
+                            return {filled: list.length, submitted: true};
+                        }
+                        return {filled: list.length};
+                    },
+                    args: [resolved, submitTarget && "selector" in submitTarget ? submitTarget.selector : null, submit === true],
+                }).catch(async error => { await submission?.(0); throw error; });
+                const output = (result?.result ?? {error: "The page did not report a result"}) as {filled?: number; submitted?: boolean; error?: string};
+                const navigated = submission ? await submission(output.submitted ? timeout : 0) : false;
+                return {...output, ...(navigated ? {navigated} : {}), ...(output.filled ? await changesSince() : {})};
             },
         }),
 

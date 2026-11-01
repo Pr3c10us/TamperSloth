@@ -16,7 +16,7 @@ const OPENAI_TPM = 'Rate limit reached for gpt-6-luna on tokens per min (TPM): L
 const reply = {content: [{type: 'text', text: 'done'}], finishReason: {unified: 'stop', raw: 'stop'},
     usage: {inputTokens: {total: 1}, outputTokens: {total: 1}}, warnings: []};
 
-test('a rate-limited call waits a minute, shows why, and carries on', async () => {
+test('a rate-limited call waits out the provider hint, shows why, and carries on', async () => {
     const {withRateLimitRetry, rateLimitWait} = fresh();
     const waited = [];
     let calls = 0;
@@ -30,8 +30,21 @@ test('a rate-limited call waits a minute, shows why, and carries on', async () =
         waited.push(ms);
     }});
     assert.equal(result, 'ok');
-    assert.deepEqual(waited, [60_000, 60_000]);
+    assert.deepEqual(waited, [21_000, 21_000]);
     assert.equal(rateLimitWait('c'), null);
+});
+
+test('without a hint the wait is a minute; a tiny hint still waits a second', async () => {
+    const {withRateLimitRetry} = fresh();
+    const waited = [];
+    for (const error of [rateLimited('Too many requests.'), rateLimited('x', {responseHeaders: {'retry-after-ms': '20'}})]) {
+        let calls = 0;
+        await withRateLimitRetry(async () => {
+            if (++calls < 2) throw error;
+            return 'ok';
+        }, {conversationId: 'c', modelName: 'M', wait: async (ms) => { waited.push(ms); }});
+    }
+    assert.deepEqual(waited, [60_000, 1020]);
 });
 
 test('a provider hint longer than a minute is honoured', async () => {

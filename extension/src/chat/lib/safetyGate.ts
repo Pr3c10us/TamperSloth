@@ -16,6 +16,8 @@ export interface ToolSafety {
 
 /** How to find an element in the live page. */
 export interface TargetSpec {
+    /** A listControls ref, kept by the page overlay in this same isolated world. */
+    ref?: string;
     selector?: string;
     index?: number;
     x?: number;
@@ -66,6 +68,7 @@ function inspectTargets(specs: TargetSpec[]) {
     };
     return specs.map(spec => {
         try {
+            if (spec.ref) return describe((globalThis as any).__tamperSlothGuidance?.refs?.get(spec.ref)?.el ?? null);
             if (spec.focused) return describe(deepActive());
             if (spec.selector) return describe(document.querySelectorAll(spec.selector)[spec.index ?? 0] ?? null);
             if (typeof spec.x === "number" && typeof spec.y === "number") return describe(document.elementFromPoint(spec.x, spec.y));
@@ -81,7 +84,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined>
 async function readPageTargets(tabId: number, specs: TargetSpec[]): Promise<(TargetInfo | undefined)[]> {
     const pageSpecs = specs.map(spec => spec.known ? {} : spec);
     let found: (TargetInfo | null)[] = [];
-    if (tabId > 0 && pageSpecs.some(spec => spec.selector || spec.focused || spec.x !== undefined)) {
+    if (tabId > 0 && pageSpecs.some(spec => spec.ref || spec.selector || spec.focused || spec.x !== undefined)) {
         try {
             const results = await withTimeout(chrome.scripting.executeScript({target: {tabId}, func: inspectTargets, args: [pageSpecs]}), PAGE_LOOKUP_MS);
             found = (results?.[0]?.result as (TargetInfo | null)[] | undefined) ?? [];
@@ -90,12 +93,15 @@ async function readPageTargets(tabId: number, specs: TargetSpec[]): Promise<(Tar
     return specs.map((spec, i) => found[i] ? {...spec.known, ...found[i]!} : spec.known);
 }
 
-type Target = { selector?: string; index?: number; role?: string; name?: string; text?: string; mark?: number; snapshotId?: string; x?: number; y?: number };
+type Target = { ref?: string; selector?: string; index?: number; role?: string; name?: string; text?: string; mark?: number; snapshotId?: string; x?: number; y?: number };
 
 /** The page elements a tool call acts on, one spec per targeted step. */
 export function targetSpecs(name: string, input: Record<string, any>, lookupMark: (snapshotId: string, mark: number) => {selector?: string; info: TargetInfo} | undefined): TargetSpec[] {
+    const element = (target?: {ref?: string; selector?: string; index?: number}): TargetSpec =>
+        target?.ref ? {ref: target.ref} : {selector: target?.selector, index: target?.index};
     const fromTarget = (target?: Target): TargetSpec => {
         if (!target) return {focused: true};
+        if (target.ref) return {ref: target.ref};
         if (target.selector) return {selector: target.selector, index: target.index};
         if (target.mark !== undefined && target.snapshotId) {
             const mark = lookupMark(target.snapshotId, target.mark);
@@ -109,7 +115,13 @@ export function targetSpecs(name: string, input: Record<string, any>, lookupMark
         case "clickElement":
         case "typeText":
         case "submitForm":
-            return [{selector: input.selector, index: input.index}];
+            return [element(input)];
+        case "fillForm": {
+            // One spec per field, then the submit control (or the last field, whose form is submitted).
+            const fields: Target[] = Array.isArray(input.fields) ? input.fields : [];
+            const submit = input.submit && typeof input.submit === "object" ? [element(input.submit)] : input.submit === true ? [element(fields.at(-1))] : [];
+            return [...fields.map(element), ...submit];
+        }
         case "clickTarget":
             return [fromTarget(input.target)];
         case "trustedInput":

@@ -187,6 +187,11 @@ const toolMeta: Record<string, ToolMeta> = {
         icon: Keyboard,
         category: 'web',
     },
+    fillForm: {
+        displayName: 'Fill Form',
+        icon: Keyboard,
+        category: 'web',
+    },
     selectOption: {
         displayName: 'Select Option',
         icon: ListChecks,

@@ -17,7 +17,8 @@ import SYSTEM_PROMPT from "../lib/prompt.ts";
 import {makeAttachmentFromFile, MAX_ATTACHMENTS, type PendingAttachment} from "../components/AttachmentChip.tsx";
 import type {PickedElement} from "../components/PickedElementChip.tsx";
 import type {Quote} from "../lib/panelRequests";
-import {createToolRuntime} from "../lib/toolRuntime";
+import {createToolRuntime, initialToolGroups} from "../lib/toolRuntime";
+import {scanUntrusted} from "../lib/contentScreen";
 import {clip, createStepMessagePreparer, isFailed, serialize, summarizeSelectedElement, sumUsage, usageRecord, type RunMetrics, type UsageRecord} from "../lib/efficiency";
 import {createGuidanceGuard, GUIDANCE_RESUME_NOTE} from "../lib/guidanceGuard";
 import {loadAgentSettings, runStopReason, saveLastThinkingLevel, withPlanRunBudget} from "../lib/agentSettings";
@@ -530,6 +531,32 @@ function toModelMessages(messages: ChatMessage[], files: Map<string, Blob>) {
     });
 }
 
+/**
+ * What the run starts knowing about the working tab: its URL and title, this chat's task tabs and,
+ * for page work, the controls on screen with refs, so the first step can act instead of reading.
+ */
+async function loadTabContext(conversationId: string, request: string): Promise<{tabContext: string; task?: unknown}> {
+    const tabId = Number(new URLSearchParams(window.location.search).get("tabId"));
+    const groups = initialToolGroups(request);
+    const pageWork = groups.includes("browsing") || groups.includes("guidance");
+    const [tab, task, listed] = await Promise.all([
+        tabId > 0 ? chrome.tabs.get(tabId).catch(() => undefined) : undefined,
+        // A task paused for the user's answer resumes with the tabs, group and notes it already had.
+        browserCall('task', {conversationId}).then(r => r.task, () => undefined),
+        pageWork && tabId > 0 ? browserCall('guidance', {tabId, action: 'controls', limit: 40}).catch(() => undefined) : undefined,
+    ]);
+    let tabContext = tab
+        ? serialize({tabId, url: tab.url, title: tab.title}) + "\nThis is the working tab: make the user's requested result here (navigate it if the work belongs on another site), and keep other tabs for references."
+        : "Tab metadata unavailable; call getCurrentTab if needed.";
+    const controls = listed?.controls?.length ? {controls: listed.controls, ...(listed.moreControls ? {moreControls: listed.moreControls} : {})} : undefined;
+    // This reaches the model without passing a tool's injection screen, so anything suspicious is left for listControls to fetch.
+    if (controls && !scanUntrusted(controls).flagged) tabContext += `
+On-screen controls at the start (refs work as targets for clickElement, typeText, fillForm, selectOption, submitForm and clickTarget; call listControls once the page changes): ${serialize(controls)}`;
+    if (task) tabContext += `
+This task's tabs (open from earlier in this chat; reuse them, and finish when done): ${serialize(task)}`;
+    return {tabContext, task};
+}
+
 async function sendMessage(
     conversationId: string,
     text: string,
@@ -554,9 +581,15 @@ async function sendMessage(
     patchSession(conversationId, {error: null, isLoading: true});
     setCreditsExhausted(conversationId, null);
     const editNote = commitEdit(conversationId);
-    const modelOptions: ModelOptions = providerId === "vertex"
-        ? {vertexProject: (await getApiKeys().catch((): Record<string, string> => ({})))[VERTEX_PROJECT_KEY]}
-        : {};
+    // Setup lookups don't depend on each other, so they all start now and are awaited where needed.
+    const modelOptionsReady: Promise<ModelOptions> = providerId === "vertex"
+        ? getApiKeys().catch((): Record<string, string> => ({})).then(keys => ({vertexProject: keys[VERTEX_PROJECT_KEY]}))
+        : Promise.resolve({});
+    // The server holds each Sloth run to the plan's budget; stopping at it here ends the run cleanly.
+    const planBudgetReady = providerId === "tampersloth" ? getAccount().then(account => account?.plan.runTokenBudget, () => undefined) : Promise.resolve(undefined);
+    const settingsReady = loadAgentSettings();
+    const tabContextReady = loadTabContext(conversationId, text);
+    const modelOptions = await modelOptionsReady;
 
     const {message: userMsg, files: sentFiles, saved: attachmentsSaved} =
         await prepareUserMessage(conversationId, text, elementContext, attachments, quotes);
@@ -588,7 +621,8 @@ async function sendMessage(
             patchSession(conversationId, {title: named || fallback});
         })();
     }
-    await attachmentsSaved;
+    // This message's files go to the model from memory; storing them needn't hold up the run (failures still show).
+    void attachmentsSaved;
 
     const modelMessages = await toModelMessages(updatedMessages, sentFiles);
 
@@ -611,9 +645,8 @@ async function sendMessage(
         const model = withRateLimits(getModel(providerId, apiKey, resolvedModelId, undefined, modelOptions),
             {conversationId, modelName: formatModelName(resolvedModelId)});
         const sloth = providerId === "tampersloth";
-        // The server holds each Sloth run to the plan's budget; stopping at it here ends the run cleanly.
-        const planBudget = sloth ? (await getAccount().catch(() => null))?.plan.runTokenBudget : undefined;
-        const settings = withPlanRunBudget(await loadAgentSettings(), planBudget);
+        const planBudget = await planBudgetReady;
+        const settings = withPlanRunBudget(await settingsReady, planBudget);
         // Stopped by the plan's budget rather than the user's own: the plan-limit notice says so instead of an error line.
         const budgetStopped = () => Boolean(stopReason) && stopReason === runStopReason(settings, metrics.steps);
         const planStopped = () => Boolean(planBudget) && settings.tokenBudget === planBudget && budgetStopped();
@@ -671,19 +704,8 @@ async function sendMessage(
             },
             onResult: () => updateAssistant(m => ({...m, taskState: clip(serialize(runtime.taskState()), 9000)})),
         });
-        let tabContext = "Tab metadata unavailable; call getCurrentTab if needed.";
-        try {
-            const tabId = Number(new URLSearchParams(window.location.search).get("tabId"));
-            if (tabId > 0) {
-                const tab = await chrome.tabs.get(tabId);
-                tabContext = serialize({tabId, url: tab.url, title: tab.title}) + "\nThis is the working tab: make the user's requested result here (navigate it if the work belongs on another site), and keep other tabs for references.";
-            }
-        } catch { /* Browsing tools report actionable permission/tab errors. */ }
-        // A task paused for the user's answer resumes with the tabs, group and notes it already had.
-        const task = await browserCall('tabs', {action: 'list', conversationId}).then(r => r.task, () => undefined);
+        const {tabContext, task} = await tabContextReady;
         if (task) void setTaskStatus(conversationId, 'working');
-        if (task) tabContext += `
-This task's tabs (open from earlier in this chat; reuse them, and finish when done): ${serialize(task)}`;
 
         const providerOptions = agentProviderOptions(providerId,
             sessions.get(conversationId)?.thinkingLevel ?? settings.thinkingLevel, resolvedModelId);

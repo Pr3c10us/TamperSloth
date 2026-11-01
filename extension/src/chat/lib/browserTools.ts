@@ -66,16 +66,19 @@ export function compactGestureOutput(output: any) {
     if (f.newDialogs?.length) step.dialogs = f.newDialogs.map(label);
     if (f.javascriptDialogs?.length) step.jsDialogs = f.javascriptDialogs.map((event: any) => ({type: event.params?.type, message: event.params?.message}));
     if (f.mutationCount !== undefined) step.mutations = f.mutationCount;
+    // What the action opened or changed, with refs, so the next step needs no page read.
+    if (output.changes && Object.keys(output.changes).length) step.changes = output.changes;
     return step;
 }
 
-/** Batched steps usually hit the same element; name it only when it changes. */
+/** Batched steps usually hit the same element; name it only when it changes. Only the last step reports page changes. */
 export function compactGestureSteps(results: any[]) {
     let previous: unknown;
-    return results.map(result => {
+    return results.map((result, index) => {
         const step = compactGestureOutput(result);
         if (step?.target !== undefined && step.target === previous) delete step.target;
         else previous = step?.target;
+        if (index < results.length - 1 && step) delete step.changes;
         return step;
     });
 }
@@ -305,7 +308,7 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
             },
         }),
         clickTarget: tool({
-            description: 'Trusted click on target {selector[,index]}, {role,name[,exact]}, {text[,exact]}, {mark,snapshotId}, or viewport CSS {x,y} as fallback. Scrolls into view, rejects ambiguity/occlusion, returns actual hit/focus/DOM/URL feedback. postScreenshot adds a crop.',
+            description: 'Trusted click on target {ref} (from listControls or a changes report), {selector[,index]}, {role,name[,exact]}, {text[,exact]}, {mark,snapshotId}, or viewport CSS {x,y} as fallback. Scrolls into view, rejects ambiguity/occlusion, returns actual hit/focus/DOM/URL feedback and changes (new controls with refs, dialogs, messages). postScreenshot adds a crop.',
             inputSchema: toolSchemas.clickTarget,
             execute: async input => browserCall('gesture', {...input, action: 'click', tabId: input.tabId ?? getTabId()}),
             toModelOutput: ({output}: {output: any}) => gestureModelOutput(
@@ -319,7 +322,8 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
                 for (const [index, step] of gestures.entries()) {
                     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
                     try {
-                        results.push(await browserCall('gesture', {...scope, ...step, tabId, postScreenshot: postScreenshot && index === gestures.length - 1}));
+                        const last = index === gestures.length - 1;
+                        results.push(await browserCall('gesture', {...scope, ...step, tabId, postScreenshot: postScreenshot && last, baseline: index === 0, reportChanges: last}));
                     } catch (error) {
                         if (!results.length) throw error;
                         // Earlier steps already changed the page; report them so the model resumes rather than repeats.

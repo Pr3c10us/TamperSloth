@@ -158,6 +158,20 @@ test('tools expand monotonically and group guidance is sent only once', async ()
     assert.equal(runtime.activeTools().length, count);
 });
 
+test('action requests load action tools up front; questions, walkthroughs and saved changes do not', () => {
+    const {initialToolGroups, wantsAction} = createLoader()('src/chat/lib/toolRuntime.ts');
+    for (const request of ['Add the XL hoodie to my cart', 'change my delivery address', 'Can you create a GitHub repo called notes?',
+        'Please book a table for two at 7', 'remove this item from my cart']) {
+        const groups = initialToolGroups(request);
+        assert.ok(groups.includes('browsing') && groups.includes('input'), request);
+    }
+    for (const request of ['Summarize this article', 'What does this page say about refunds?', 'How do I change my address?',
+        'Can you explain this chart', 'Always hide the cookie banner', 'walk me through the billing settings']) {
+        assert.equal(wantsAction(request), false, request);
+    }
+    assert.equal(new Set(initialToolGroups('drag the card to Done')).size, initialToolGroups('drag the card to Done').length, 'Groups are listed once');
+});
+
 test('identical failing calls are detected despite different UI labels', async () => {
     const {load, tools} = fixture();
     tools.getCurrentTab.execute = async () => ({error: 'Tab gone'});

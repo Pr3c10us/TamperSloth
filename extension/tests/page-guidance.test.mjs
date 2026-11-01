@@ -1077,6 +1077,49 @@ test('errors raised in the page come back with their reason instead of "unavaila
     assert.equal(calls[0].reportErrors,true);
 });
 
+test('an agent action reports what it changed against the page just before it, and refs resolve to unique selectors',()=>{
+    const f=controlsFixture([{id:'menu',text:'Open menu'},{id:'email',tag:'input',text:'',attrs:{'aria-label':'Email'}}]);
+    // Live regions are not controls; dialogs and invalid fields are absent here.
+    const base=f.document.querySelectorAll,live=el=>['status','alert'].includes(el.attrs.role);
+    f.document.querySelectorAll=selector=>selector.includes('[role="status"]') ? f.all.filter(live)
+        : selector.includes('dialog') || selector.includes('aria-invalid') ? [] : base(selector).filter(el=>!live(el));
+    // A new document has no baseline: the report hands over its controls instead.
+    const fresh=f.run({action:'changes'});
+    assert.equal(fresh.page.url,'https://example.com');assert.ok(fresh.controls.some(line=>/button "Open menu"/.test(line)));
+    f.run({action:'cue',selector:'#menu',cue:'click',baseline:true});
+    assert.deepEqual(JSON.parse(JSON.stringify(f.run({action:'changes'}))),{},'Nothing changed, nothing to report');
+    f.add({tag:'a',id:'profile',text:'Profile',box:{x:40,y:120,width:100,height:30}});
+    f.add({tag:'div',id:'toast',text:' Saved ',attrs:{role:'status'}});
+    const report=f.run({action:'changes'});
+    assert.equal(report.newControls.length,1);assert.match(report.newControls[0],/^c\d+ link "Profile"/);
+    assert.deepEqual([...report.messages],['Saved']);assert.equal(report.url,undefined);
+    const ref=report.newControls[0].split(' ')[0];
+    const resolved=f.run({action:'resolveRef',ref});
+    assert.equal(resolved.selector,'#profile');assert.equal(resolved.name,'Profile');
+    assert.throws(()=>f.run({action:'resolveRef',ref:'c99'}),/c99 is not a control on this page/);
+});
+
+test('the overlay is injected once per build; later calls run the installed copy',async()=>{
+    const f=fixture(),calls=[],writes=[];
+    const chrome={storage:{session:{set:async value=>{writes.push(value);}}},runtime:{getURL:path=>path},
+        scripting:{executeScript:async ({func,args})=>{calls.push(func.name);return [{result:func(...args)}];}}};
+    const page=createLoader({globals:{chrome,window:f.window,document:f.document,location:{href:'https://example.com'},innerWidth:800,innerHeight:600,
+        getComputedStyle:()=>({visibility:'visible'}),matchMedia:()=>({matches:true}),requestAnimationFrame:fn=>{fn();return 0;},cancelAnimationFrame:()=>{},
+        MutationObserver:class{observe(){}disconnect(){}},ResizeObserver:class{observe(){}unobserve(){}disconnect(){}},sessionStorage:{getItem:()=>null,setItem(){},removeItem(){}}}})('src/background/pageGuidance.ts');
+    await page.runPageGuidance(7,{action:'agentLock',locked:true});
+    await page.runPageGuidance(7,{action:'agentLock',locked:false});
+    await page.runPageGuidance(7,{action:'cursor',method:'Input.dispatchMouseEvent',params:{type:'mouseMoved',x:1,y:1}});
+    assert.deepEqual(calls,['runInstalledGuidance','pageGuidance','runInstalledGuidance','runInstalledGuidance']);
+    assert.equal(writes.length,1,'The overlay flag is written once per tab');
+    // An overlay left by another build (an extension reload) is rebuilt with the full script.
+    f.window.__tamperSlothGuidance.build='older-build';
+    await page.runPageGuidance(7,{action:'agentLock',locked:false});
+    assert.deepEqual(calls.slice(4),['runInstalledGuidance','pageGuidance']);
+    await page.runPageGuidance(7,{action:'dispose'});
+    await page.runPageGuidance(7,{action:'agentLock',locked:true});
+    assert.equal(writes.length,2,'Disposing forgets the flag, so the next overlay is recorded again');
+});
+
 test('the browser service keeps every guidance field the tools send',()=>{
     const {browserSchemas}=createLoader()('src/chat/lib/browserSchemas.ts');
     const parsed=browserSchemas.guidance.parse({action:'start',tabId:7,target:{ref:'c4'},path:[{x:1,y:2},{x:3,y:4}],shape:'ellipse',completion:{state:'expanded'}});

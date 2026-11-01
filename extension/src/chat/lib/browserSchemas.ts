@@ -3,6 +3,7 @@ const tabId = z.number().int().positive().optional();
 const sessionId = z.string().max(200).optional();
 const point = z.object({x: z.number().finite(), y: z.number().finite()});
 export const elementTarget = z.union([
+    z.object({ref: z.string().min(1).max(20)}),
     z.object({selector: z.string().min(1).max(1000), index: z.number().int().nonnegative().optional()}),
     z.object({role: z.string().min(1).max(100), name: z.string().min(1).max(300), exact: z.boolean().default(true), index: z.number().int().nonnegative().optional()}),
     z.object({text: z.string().min(1).max(300), exact: z.boolean().default(true), index: z.number().int().nonnegative().optional()}),
@@ -13,10 +14,10 @@ export const elementTarget = z.union([
 // Model-facing gesture schemas. Tool definitions are re-sent on every agent step,
 // so these stay flat and skip limits/defaults; the browser service re-parses each
 // call with browserSchemas.gesture, which applies defaults and enforces limits.
-const toolTarget = z.object({selector: z.string().optional(), role: z.string().optional(), name: z.string().optional(),
+const toolTarget = z.object({ref: z.string().optional(), selector: z.string().optional(), role: z.string().optional(), name: z.string().optional(),
     text: z.string().optional(), exact: z.boolean().optional(), index: z.number().int().optional(),
     mark: z.number().int().optional(), snapshotId: z.string().optional(), x: z.number().optional(), y: z.number().optional()})
-    .refine(target => elementTarget.safeParse(target).success, 'Target needs selector, role+name, text, mark+snapshotId, or x+y');
+    .refine(target => elementTarget.safeParse(target).success, 'Target needs ref, selector, role+name, text, mark+snapshotId, or x+y');
 const toolScope = {tabId: z.number().int().optional(), sessionId: z.string().optional(), frameId: z.string().optional(),
     contextId: z.number().int().optional(), feedbackMs: z.number().int().optional(), postScreenshot: z.boolean().optional()};
 /** Large enough for a whole sketch, including tool-switch key presses, in one call. */
@@ -41,8 +42,10 @@ export const guideTarget = z.object({ref:z.string().min(1).max(20).optional(), r
     .refine(target=>!!(target.ref || target.name || target.text),'Target needs ref, role+name, or text');
 
 export const browserSchemas = {
-    guidance: z.object({tabId, action:z.enum(['draw','remove','clear','start','poll','cancel','cue','controls']),
+    guidance: z.object({tabId, action:z.enum(['draw','remove','clear','start','poll','cancel','cue','controls','changes','resolveRef']),
         index:z.number().int().nonnegative().default(0), cue:z.enum(['click','type','scroll','hover']).default('hover'),
+        // cue: remember the page as it is, so the following changes call reports what the action did.
+        baseline:z.boolean().default(false), ref:z.string().min(1).max(20).optional(),
         id:z.string().min(1).max(100).optional(), selector:z.string().min(1).max(1000).optional(), target:guideTarget.optional(),
         query:z.string().max(200).optional(), limit:z.number().int().min(1).max(80).default(40), fresh:z.boolean().default(false),
         path:z.array(point).min(2).max(500).optional(), shape:z.enum(['rectangle','ellipse']).default('rectangle'),
@@ -73,7 +76,9 @@ export const browserSchemas = {
         deltaX: z.number().finite().default(0), deltaY: z.number().finite().default(0), smooth: z.boolean().default(false),
         duration: z.number().int().min(0).max(5000).default(300), steps: z.number().int().min(2).max(100).default(12), humanize: z.boolean().default(false),
         perKeyDelay: z.number().int().min(0).max(500).default(0), factor: z.number().min(0.1).max(10).default(1.5), angle: z.number().min(-360).max(360).default(90),
-        feedbackMs: z.number().int().min(0).max(1000).default(500), postScreenshot: z.boolean().default(false)}),
+        feedbackMs: z.number().int().min(0).max(1000).default(500), postScreenshot: z.boolean().default(false),
+        // Set by browserGesture so a batch is measured from its first step and reported after its last.
+        baseline: z.boolean().default(true), reportChanges: z.boolean().default(true)}),
     tabs: z.object({action: z.enum(['list', 'create', 'select', 'close', 'waitPopup', 'move', 'pin', 'unpin', 'mute', 'unmute', 'note', 'finish']), tabId,
         tabIds: z.array(z.number().int().positive()).min(1).max(100).optional().describe('move/pin/unpin/mute/unmute/close several tabs at once instead of tabId.'),
         url: z.url().optional(), urls: z.array(z.url()).min(1).max(10).optional().describe('create: open several pages at once; they load concurrently in the background.'),
@@ -97,8 +102,9 @@ export const browserSchemas = {
         title: z.string().max(100).optional(), color: z.enum(['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange']).optional(),
         collapsed: z.boolean().optional(), index: z.number().int().min(-1).optional().describe('move: tab index the group starts at; -1 is the end.'),
         windowId: z.number().int().nonnegative().optional().describe('move: destination window.')}),
-    // Run lifecycle only; not a model tool.
+    // Run lifecycle only; not model tools.
     taskStatus: z.object({conversationId: z.string().min(1).max(200), status: z.enum(['working', 'waiting'])}),
+    task: z.object({conversationId: z.string().min(1).max(200)}),
     evaluate: z.object({tabId, code: z.string().min(1).max(100000), world: z.enum(['ISOLATED', 'MAIN']).default('ISOLATED'),
         frameIds: z.array(z.number().int().nonnegative()).min(1).max(50).optional(), timeoutMs: z.number().int().min(100).max(30000).default(10000)}),
     store: z.object({action: z.enum(['get', 'set', 'delete', 'list']), namespace: z.string().min(1).max(200), key: z.string().min(1).max(200).optional(), value: z.json().optional()}),
