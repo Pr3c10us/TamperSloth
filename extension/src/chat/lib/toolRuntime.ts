@@ -15,11 +15,11 @@ export const TOOL_GROUPS = {
     input: ['clickTarget', 'browserGesture', 'trustedInput', 'deepDOM', 'takeMarkedScreenshot'],
     network: ['networkCapture', 'deepDOM'],
     system: ['clipboard', 'browserDownload', 'browserNotify'],
-    guidance: ['annotatePage', 'waitForUserAction'],
+    guidance: ['annotatePage', 'waitForUserAction', 'listControls'],
 } as const;
 type Group = keyof typeof TOOL_GROUPS;
 type ModelOutputOptions = Parameters<NonNullable<ToolSet[string]["toModelOutput"]>>[0];
-const CORE = ["getCurrentTab", "getPageText", "getPageStructure", "getElementDetails", "navigateTo", "askUser", "getSkill", "enableTools", "readToolResult", 'annotatePage', 'waitForUserAction', 'wait', 'showTab'];
+const CORE = ["getCurrentTab", "getPageText", "getPageStructure", "getElementDetails", "navigateTo", "askUser", "getSkill", "enableTools", "readToolResult", 'annotatePage', 'waitForUserAction', 'listControls', 'wait', 'showTab'];
 const PAGE_BARRIERS = new Set(['takeScreenshot', 'takeMarkedScreenshot', 'navigateTo', 'navigateHistory', 'reloadPage',
     'clickElement', 'typeText', 'selectOption', 'scrollPage', 'submitForm', 'waitForElement', 'executeContentScript',
     'saveScript', 'toggleScript', 'removeScript', 'evaluateJavaScript', 'clickTarget', 'browserGesture', 'trustedInput', 'annotatePage', 'waitForUserAction', 'wait']);

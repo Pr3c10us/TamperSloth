@@ -2100,7 +2100,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     });
                     if (!found?.result) return;
                     if (tipShown) await browserCall('guidance', {tabId, action: 'remove', id: tipId}).catch(() => {});
-                    await browserCall('guidance', {tabId, action: 'draw', id: tipId, kind: 'bracket',
+                    await browserCall('guidance', {tabId, action: 'draw', id: tipId, kind: 'highlight', lineStyle: 'dashed',
                         selector: `[data-tampersloth-tip="${tipId}"]`, label: tip.text});
                     tipShown = true;
                 };

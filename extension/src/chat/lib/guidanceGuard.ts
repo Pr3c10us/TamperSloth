@@ -6,7 +6,7 @@ const MAX_FAILURES = 3;
 
 export const GUIDANCE_RESUME_NOTE = 'Runtime note (not from the user): the walkthrough is still in progress, but your last reply ended it with chat text. ' +
     'That text was not shown. Do not list remaining steps in chat. Resume visual guidance now: inspect the latest page evidence, ' +
-    'then call waitForUserAction for the first unfinished step with a fresh selector (or measured region once allowed). ' +
+    'then call waitForUserAction for the first unfinished step with a fresh target ref from listControls (or a selector, or a measured region once allowed). ' +
     'If you genuinely need the user\'s help with this specific step, call askUser instead.';
 
 export function createGuidanceGuard() {
@@ -19,7 +19,7 @@ export function createGuidanceGuard() {
             if (status === 'needsReview') {
                 if (output.checkInAllowed) {pending = false; return;}
                 if (output.idle) {pending = !output.checkInAllowed; return;}
-                if (output.observationPhase !== 'navigated') failures++;
+                if (!['navigated', 'actedUnconfirmed'].includes(output.observationPhase)) failures++;
                 pending = true;
             } else if (toolName === 'waitForUserAction') {
                 // A completed, visually checked, or cancelled step leaves the model free to finish.

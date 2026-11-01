@@ -1,10 +1,19 @@
 /** Serialized into Chrome's isolated world; keep every dependency inside this function. */
 export function pageGuidance(args: any): any {
+    // executeScript drops exceptions thrown by an injected function, so a bad target used to surface
+    // only as "unavailable". The entry call returns them as data for runPageGuidance to rethrow.
+    if (args.reportErrors) {
+        const fail=(error: any)=>({guidanceError:String(error?.message ?? error)});
+        try {
+            const result=pageGuidance({...args,reportErrors:false});
+            return typeof result?.then==='function' ? result.catch(fail) : result;
+        } catch(error) {return fail(error);}
+    }
     const win = window as any;
     const actionTypes=['click','input','change','submit','focusin','pointerup','pointerdown'];
     // Bump when the overlay's behavior changes. Its state, functions included, outlives an
     // extension reload on the page; an older overlay is disposed and built afresh.
-    const VERSION=14;
+    const VERSION=16;
     let state = win.__tamperSlothGuidance;
     if (state && state.version!==VERSION) {
         state.version=VERSION;
@@ -140,11 +149,14 @@ export function pageGuidance(args: any): any {
             if(!Number.isFinite(t.clientX)) return true;
             return state.agentPoints.some((p: any)=>now-p.at<1500 && Math.abs(p.x-t.clientX)<=2 && Math.abs(p.y-t.clientY)<=2);
         };
+        state.inputLocked=false;
         state.setInputLocked=(locked: boolean)=>{
             if(state.inputLocked===locked) return;
             state.inputLocked=locked;inputGuard.hidden=!locked;state.renderLock();
             clearTimeout(state.inputLockTimer);
             if(locked){state.message('Drawing the guide','Site input is briefly paused. Escape cancels.');state.inputLockTimer=setTimeout(()=>pageGuidance({action:'clear'}),7000);}
+            // However drawing ends, the user can act now, so the step's clocks must run.
+            else state.wait?.armTimeout?.();
         };
         state.blockInput=(event: Event)=>{
             if(!event.isTrusted) return;
@@ -209,7 +221,7 @@ export function pageGuidance(args: any): any {
             const type=()=>{
                 if(!state.marks.has(mark.id)) return;
                 count=Math.min(text.length,count+1);cursorBody.textContent=text.slice(0,count);state.positionTooltip();
-                if(count<text.length) state.typingTimer=setTimeout(type,45);
+                if(count<text.length) state.typingTimer=setTimeout(type,16);
                 else cursorBody.setAttribute('data-typing','false');
             };type();
         };
@@ -258,7 +270,8 @@ export function pageGuidance(args: any): any {
             // Paint the live ink directly; restore its subtle shadow when complete.
             mark.group.style.filter='none';
             mark.group.style.visibility='visible';
-            const start=performance.now(),duration=Math.max(500,Math.min(2000,length*1.8));cursorName.textContent='Sloth · drawing';
+            // Site input waits while the guide draws, so keep it short.
+            const start=performance.now(),duration=Math.max(250,Math.min(700,length*.7));cursorName.textContent='Sloth · drawing';
             // A background tab can suspend RAF; never leave a drawing tool waiting forever.
             mark.animationTimer=setTimeout(()=>{
                 if(state.drawing!==mark) return;
@@ -352,13 +365,14 @@ export function pageGuidance(args: any): any {
             status.replaceChildren(); const strong = document.createElement('strong'); strong.textContent = title;
             status.append(strong, document.createTextNode(text)); status.hidden = false;
         };
-        state.find = (selector: string) => {
-            const matches: Element[] = [];
-            const visit = (root: Document | ShadowRoot) => {
-                matches.push(...Array.from(root.querySelectorAll(selector)));
-                for (const el of root.querySelectorAll('*')) if (el.shadowRoot) visit(el.shadowRoot);
-            };
-            visit(document);
+        // The document and every open shadow root, where guidance targets can live.
+        state.roots = () => {
+            const roots: (Document | ShadowRoot)[] = [document];
+            for (let i = 0; i < roots.length; i++) for (const el of roots[i].querySelectorAll('*')) if (el.shadowRoot) roots.push(el.shadowRoot);
+            return roots;
+        };
+        state.find = (selector: string, roots=state.roots()) => {
+            const matches: Element[] = roots.flatMap((root: Document | ShadowRoot) => Array.from(root.querySelectorAll(selector)));
             // Apps such as Figma keep hidden duplicates (tooltips, menus); a single rendered match is unambiguous,
             // even when it is scrolled out of view (e.g. GitHub's desktop + collapsed mobile settings nav).
             if (matches.length > 1) {
@@ -375,6 +389,199 @@ export function pageGuidance(args: any): any {
             const path=event.composedPath();
             if(el && path.includes(el)) return true;
             return path.some((node: any)=>{try{return node?.nodeType===1 && node.matches?.(selector);}catch{return false;}});
+        };
+        // Controls named the way a person sees them, so the model can point at "Settings" without writing CSS.
+        state.controlQuery='a[href],button,input:not([type="hidden"]),select,textarea,summary,[role="button"],[role="link"],[role="menuitem"],[role="menuitemcheckbox"],'+
+            '[role="menuitemradio"],[role="tab"],[role="option"],[role="checkbox"],[role="radio"],[role="switch"],[role="combobox"],[role="textbox"],[role="searchbox"],'+
+            '[role="treeitem"],[role="slider"],[contenteditable="true"],[contenteditable=""]';
+        state.containerQuery='dialog,[role="dialog"],[role="alertdialog"],[role="menu"],[role="menubar"],[role="listbox"],[role="tablist"],[role="toolbar"],[role="navigation"],nav,header,footer,aside,form';
+        state.clean=(text: any)=>String(text ?? '').replace(/\s+/g,' ').trim();
+        state.tagOf=(el: any)=>String(el.localName ?? el.tagName ?? '').toLowerCase();
+        state.roleOf=(el: any)=>{
+            const explicit=state.clean(el.getAttribute?.('role')).split(' ')[0];
+            if(explicit) return explicit;
+            const tag=state.tagOf(el),type=String(el.getAttribute?.('type') ?? '').toLowerCase();
+            if(tag==='a') return 'link';
+            if(tag==='button' || tag==='summary') return 'button';
+            if(tag==='select') return 'combobox';
+            if(tag==='textarea') return 'textbox';
+            if(tag==='input') return ({checkbox:'checkbox',radio:'radio',range:'slider',button:'button',submit:'button',reset:'button',image:'button',search:'searchbox'} as any)[type] ?? 'textbox';
+            return el.isContentEditable ? 'textbox' : tag;
+        };
+        state.nameOf=(el: any)=>{
+            const tag=state.tagOf(el),type=String(el.getAttribute?.('type') ?? '').toLowerCase(),field=['input','select','textarea'].includes(tag);
+            const root=el.getRootNode?.() ?? document;
+            const labelled=state.clean(el.getAttribute?.('aria-labelledby')).split(' ').filter(Boolean)
+                .map((id: string)=>(root.getElementById?.(id) ?? document.getElementById?.(id))?.textContent ?? '').join(' ');
+            const labels=el.labels?.length ? Array.from(el.labels).map((label: any)=>label.textContent).join(' ') : '';
+            const value=tag==='input' && ['button','submit','reset'].includes(type) ? el.value : '';
+            // Icon buttons are named by their image's alt text or label.
+            const icons=field ? '' : Array.from(el.querySelectorAll?.('img[alt],[aria-label]') ?? []).map((child: any)=>child.getAttribute('alt') || child.getAttribute('aria-label')).join(' ');
+            // A select's text is every option, so only its label names it.
+            return state.clean(state.clean(labelled) || el.getAttribute?.('aria-label') || state.clean(labels) || el.getAttribute?.('alt') || value
+                || (field ? '' : state.clean(el.textContent)) || state.clean(icons) || el.getAttribute?.('title') || el.getAttribute?.('placeholder') || (field ? el.getAttribute?.('name') : '')).slice(0,80);
+        };
+        state.shown=(el: any)=>{
+            const b=el.getBoundingClientRect();
+            return b.width>0 && b.height>0 && getComputedStyle(el).visibility!=='hidden' && !el.closest?.('[aria-hidden="true"],[inert]');
+        };
+        state.inView=(b: any)=>b.x<innerWidth && b.y<innerHeight && b.x+b.width>0 && b.y+b.height>0;
+        state.controls=(roots=state.roots())=>{
+            const entries: any[]=[],byElement=new Map();
+            for(const root of roots) for(const el of root.querySelectorAll(state.controlQuery)) {
+                if(entries.length>=600) return entries;
+                if(byElement.has(el) || !state.shown(el)) continue;
+                // A button inside a link is one control; keep the outer one.
+                const name=state.nameOf(el),outer=byElement.get((el as any).parentElement?.closest?.(state.controlQuery));
+                if(outer && outer.name===name) continue;
+                const entry={el,name,role:state.roleOf(el),box:el.getBoundingClientRect()};
+                byElement.set(el,entry);entries.push(entry);
+            }
+            return entries;
+        };
+        // Refs stay stable for an element while the page lives, so later results name controls the same way.
+        state.refs=new Map();state.refIds=new WeakMap();state.refCount=0;
+        state.refFor=(entry: any)=>{
+            let ref=state.refIds.get(entry.el);
+            if(!ref){ref=`c${++state.refCount}`;state.refIds.set(entry.el,ref);}
+            state.refs.delete(ref);state.refs.set(ref,{el:entry.el,role:entry.role,name:entry.name});
+            if(state.refs.size>1500) state.refs.delete(state.refs.keys().next().value);
+            return ref;
+        };
+        state.contextOf=(el: any)=>{
+            const container=el.parentElement?.closest?.(state.containerQuery);
+            if(!container) return '';
+            const label=state.clean(container.getAttribute('aria-label')).slice(0,40);
+            return (container.getAttribute('role') ?? state.tagOf(container))+(label ? ` "${label}"` : '');
+        };
+        state.describeControl=(entry: any,context=false)=>{
+            const el=entry.el,attr=(name: string)=>el.getAttribute?.(name),flags: string[]=[];
+            if(el.disabled || attr('aria-disabled')==='true') flags.push('disabled');
+            if(attr('aria-pressed')==='true') flags.push('pressed');
+            if(el.checked===true || attr('aria-checked')==='true') flags.push('checked');
+            if(attr('aria-selected')==='true') flags.push('selected');
+            if((attr('aria-current') ?? 'false')!=='false') flags.push('current');
+            if(attr('aria-expanded')) flags.push(attr('aria-expanded')==='true' ? 'expanded' : 'collapsed');
+            if(!state.inView(entry.box)) flags.push('offscreen');
+            const where=context ? state.contextOf(el) : '';
+            return `${state.refFor(entry)} ${entry.role} "${entry.name}"${flags.length ? ` [${flags.join(',')}]` : ''}${where ? ` in ${where}` : ''}`;
+        };
+        state.fresh=(entry: any)=>!!state.baseline && !state.baseline.has(entry.el);
+        // On-screen controls, or matches for a query anywhere on the page. With fresh, controls that appeared
+        // since the step began (an opened menu or dialog) come first, apart from the rest.
+        state.listControls=(query?: string,limit=40,fresh=false)=>{
+            const wanted: string=state.clean(query).toLowerCase();
+            let entries=state.controls().filter((entry: any)=>entry.name);
+            if(wanted) {
+                const named=entries.filter((entry: any)=>entry.name.toLowerCase().includes(wanted));
+                const words=wanted.split(' ').filter(word=>word.length>=3);
+                entries=named.length ? named : entries.filter((entry: any)=>words.some(word=>entry.name.toLowerCase().includes(word)));
+            } else entries=entries.filter((entry: any)=>state.inView(entry.box));
+            entries=entries.map((entry: any,index: number)=>({...entry,index,isNew:fresh && state.fresh(entry)}))
+                .sort((a: any,b: any)=>Number(b.isNew)-Number(a.isNew) || Number(state.inView(b.box))-Number(state.inView(a.box)) || a.index-b.index);
+            const listed=entries.slice(0,limit),counts=new Map<string,number>();
+            for(const entry of listed) counts.set(entry.role+entry.name,(counts.get(entry.role+entry.name) ?? 0)+1);
+            // Context only where it tells same-named controls apart, or places a new one.
+            const line=(entry: any)=>state.describeControl(entry,entry.isNew || counts.get(entry.role+entry.name)!>1);
+            const added=listed.filter((entry: any)=>entry.isNew);
+            return {...(added.length ? {newControls:added.map(line)} : {}),controls:listed.filter((entry: any)=>!entry.isNew).map(line),
+                ...(entries.length>limit ? {moreControls:entries.length-limit} : {})};
+        };
+        // Clickable elements without a control role, found by their visible text.
+        state.textMatches=(wanted: string,exact?: boolean)=>{
+            const found: any[]=[];let scanned=0;
+            for(const root of state.roots()) for(const el of root.querySelectorAll('*')) {
+                if(++scanned>8000 || found.length>=20) return found;
+                if((el.children?.length ?? 0)>4 || ['script','style','noscript','template','svg','path','html','head','body'].includes(state.tagOf(el))) continue;
+                const text=state.clean(el.textContent).toLowerCase();
+                if(!text || text.length>wanted.length+40) continue;
+                const tier=text===wanted ? 3 : exact ? 0 : text.startsWith(wanted) ? 2 : text.includes(wanted) ? 1 : 0;
+                if(!tier || !state.shown(el)) continue;
+                // A parent holding the same text adds nothing; keep the deepest element.
+                if(found.at(-1)?.source.contains?.(el)) found.pop();
+                // A click on the text lands in its clickable container: the nearest control, or the
+                // element that made it a pointer target (cursor is inherited, so climb while it holds).
+                let target=(el as any).parentElement?.closest?.(state.controlQuery);
+                if(!target) {
+                    target=el;
+                    for(let node=(el as any).parentElement,depth=0;node && depth<4 && getComputedStyle(node).cursor==='pointer';node=node.parentElement,depth++) target=node;
+                }
+                found.push({el:target,source:el,name:text,role:state.roleOf(target),box:target.getBoundingClientRect(),tier});
+            }
+            return found;
+        };
+        state.similar=(wanted: string)=>{
+            const words=wanted.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(word=>word.length>=3);
+            const entries=state.controls().filter((entry: any)=>entry.name);
+            const close=entries.filter((entry: any)=>words.some(word=>entry.name.toLowerCase().includes(word)));
+            return close.length ? close : entries.filter((entry: any)=>state.inView(entry.box)).slice(0,12);
+        };
+        state.targetError=(message: string,entries: any[])=>
+            new Error(entries.length ? `${message}. Candidates: ${entries.slice(0,10).map((entry: any)=>state.describeControl(entry,true)).join('; ')}` : message);
+        state.locate=(spec: any)=>{
+            if(spec.selector) return state.find(spec.selector);
+            if(spec.ref) {
+                const known=state.refs.get(spec.ref);
+                if(!known) throw state.targetError(`Guidance target not found: ${spec.ref} is not a control on this page; list controls again`,[]);
+                if(known.el.isConnected && state.shown(known.el)) return known.el;
+                // A re-render replaced the node; the control with the same role and name is the same control.
+                const same=state.controls().filter((entry: any)=>entry.role===known.role && entry.name===known.name);
+                if(same.length===1){state.refIds.set(same[0].el,spec.ref);known.el=same[0].el;return known.el;}
+                throw state.targetError(`Guidance target not found: ${spec.ref} (${known.role} "${known.name}") is no longer on the page`,state.similar(known.name));
+            }
+            const asked=spec.name ?? spec.text,wanted=state.clean(asked).toLowerCase();
+            if(!wanted) throw new Error('A guidance target needs ref, role and name, text, or selector');
+            const tier=(name: string)=>name===wanted ? 3 : spec.exact ? 0 : name.startsWith(wanted) ? 2 : name.includes(wanted) ? 1 : 0;
+            let pool=state.controls().map((entry: any)=>({...entry,tier:tier(entry.name.toLowerCase())})).filter((entry: any)=>entry.tier);
+            if(!pool.length) pool=state.textMatches(wanted,spec.exact);
+            const best=Math.max(0,...pool.map((entry: any)=>entry.tier));
+            pool=pool.filter((entry: any)=>entry.tier===best);
+            // Each preference narrows the pool only when some candidates meet it: the asked role, on screen,
+            // new since the last step (the menu it opened), then inside an open dialog or menu.
+            const prefer=(test: (entry: any)=>boolean)=>{const kept=pool.filter(test);if(kept.length) pool=kept;};
+            if(spec.role) prefer((entry: any)=>entry.role===spec.role);
+            prefer((entry: any)=>state.inView(entry.box));
+            prefer(state.fresh);
+            prefer((entry: any)=>!!entry.el.closest?.('dialog[open],[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"],[aria-modal="true"]'));
+            if(spec.index!==undefined && pool[spec.index]) return pool[spec.index].el;
+            if(pool.length===1) return pool[0].el;
+            if(!pool.length) throw state.targetError(`Guidance target not found: no control is named "${asked}"`,state.similar(wanted));
+            throw state.targetError(`Guidance target is ambiguous: ${pool.length} controls match "${asked}"; pass one ref`,pool);
+        };
+        // A selector that finds exactly this element, so tracking and hit tests work as for CSS targets.
+        state.selectorFor=(el: any)=>{
+            const roots=state.roots();
+            const esc=(value: string)=>typeof CSS!=='undefined' && CSS.escape ? CSS.escape(value) : value.replace(/[^\w-]/g,c=>`\\${c}`);
+            const quote=(value: string)=>`"${value.replace(/["\\]/g,c=>`\\${c}`)}"`;
+            // Strictly one match: hit tests accept any element matching the selector, so a selector that
+            // also matches hidden or off-screen elements would count clicks on them too.
+            const unique=(selector: string)=>{
+                try{const found=roots.flatMap((root: any)=>Array.from(root.querySelectorAll(selector)));return found.length===1 && found[0]===el;}
+                catch{return false;}
+            };
+            const tag=state.tagOf(el);
+            if(el.id && unique(`#${esc(el.id)}`)) return `#${esc(el.id)}`;
+            for(const attr of ['data-testid','data-test-id','data-test','data-qa','data-cy','aria-label','name','title','placeholder','href']) {
+                const value=el.getAttribute?.(attr),selector=value && value.length<=200 ? `${tag}[${attr}=${quote(value)}]` : '';
+                if(selector && unique(selector)) return selector;
+            }
+            // A position path from the element up, anchored at the nearest ancestor with an id.
+            const steps: string[]=[];
+            for(let node=el;node && steps.length<14;node=node.parentElement) {
+                if(node!==el && node.id && unique(`#${esc(node.id)} > ${steps.join(' > ')}`)) return `#${esc(node.id)} > ${steps.join(' > ')}`;
+                const siblings=node.parentElement ? Array.from(node.parentElement.children).filter((child: any)=>child.localName===node.localName) : [];
+                steps.unshift(siblings.length>1 ? `${state.tagOf(node)}:nth-of-type(${siblings.indexOf(node)+1})` : state.tagOf(node));
+                if(unique(steps.join(' > '))) return steps.join(' > ');
+            }
+            // Last resort: mark the element itself.
+            const mark=`ts${++state.refCount}`;el.setAttribute('data-tampersloth-target',mark);
+            return `[data-tampersloth-target="${mark}"]`;
+        };
+        // Turns a ref, name or text target into a selector before drawing or watching it.
+        state.anchor=(args: any)=>{
+            if(args.selector || !args.target) return args;
+            const el=state.locate(args.target);
+            return {...args,selector:state.selectorFor(el),targetLabel:state.describeControl({el,name:state.nameOf(el),role:state.roleOf(el),box:el.getBoundingClientRect()})};
         };
         // Toolbars that re-render on press retarget the click to an ancestor; the press itself proves intent.
         state.sameAction=(type: string,wanted: string)=>type===wanted || (wanted==='click' && type==='pointerdown');
@@ -395,8 +602,23 @@ export function pageGuidance(args: any): any {
             if(state.wait && !state.wait.result) state.wait.armIdle?.();
         };
         state.inRegion=(p: any,box: any)=>Number.isFinite(p.x) && Number.isFinite(p.y) && p.x>=box.x-6 && p.x<=box.x+box.width+6 && p.y>=box.y-6 && p.y<=box.y+box.height+6;
+        // Outlining a canvas that fills the viewport puts the marks at the screen edges, where nobody sees them.
+        // Mark a clear drawing area in the middle of its visible part instead. Small canvases keep their outline.
+        state.drawingArea=(el: Element,event?: string)=>{
+            const b=el.getBoundingClientRect();
+            const x0=Math.max(0,b.x),y0=Math.max(0,b.y),x1=Math.min(innerWidth,b.x+b.width),y1=Math.min(innerHeight,b.y+b.height);
+            const w=x1-x0,h=y1-y0,view=innerWidth*innerHeight;
+            if(w<=0 || h<=0) return null;
+            const surface=el.localName==='canvas' || (event==='pointerup' && w*h>=view*.5);
+            if(!surface || w*h<view*.25) return null;
+            const side=Math.round(Math.max(80,Math.min(260,Math.min(w,h)*.3)));
+            return {x:Math.round(x0+(w-side)/2),y:Math.round(y0+(h-side)/2),width:side,height:side};
+        };
+        // Canvas apps stack several canvases, so the selected one may sit under the canvas that gets the input.
+        // On a drawing surface, input on any canvas within its bounds counts; toolbar clicks over it do not.
+        state.surfaceHit=(entry: any,el?: Element | null)=>!!el && entry.path.some((node: any)=>node?.localName==='canvas') && state.inRegion(entry,el.getBoundingClientRect());
         state.recentRegionHit=(box: any,wanted: string)=>state.recent.some((entry: any)=>state.sameAction(entry.type,wanted) && state.inRegion(entry,box));
-        state.recentHit=(selector: string,el: Element | null,wanted: string)=>state.recent.some((entry: any)=>state.sameAction(entry.type,wanted) && state.hits({composedPath:()=>entry.path} as any,selector,el));
+        state.recentHit=(selector: string,el: Element | null,wanted: string,surface=false)=>state.recent.some((entry: any)=>state.sameAction(entry.type,wanted) && (state.hits({composedPath:()=>entry.path} as any,selector,el) || (surface && state.surfaceHit(entry,el))));
         state.recordEvents=['pointerdown','click','input','change','submit','focusin','pointerup','pointercancel','keyup'];
         for(const type of state.recordEvents) window.addEventListener(type,state.recordAction,{capture:true,passive:true});
         // Clean geometry: straight edges, rounded corners and true curves. Dashes come
@@ -461,7 +683,9 @@ export function pageGuidance(args: any): any {
         state.resize = new ResizeObserver(state.schedule);
         state.resize.observe(document.documentElement);
         state.resize.observe(status);
-        state.mutations = new MutationObserver(state.schedule);
+        // The last page change tells a finished action apart from one still loading its result.
+        state.lastMutation=0;
+        state.mutations = new MutationObserver(()=>{state.lastMutation=Date.now();state.schedule();});
         state.mutations.observe(document.documentElement, {subtree:true,childList:true,attributes:true});
         state.annotationListener=(event: Event)=>{
             if(!event.isTrusted || state.inputLocked) return;
@@ -498,8 +722,8 @@ export function pageGuidance(args: any): any {
         };
         state.finish = (result: any) => {
             const w = state.wait; if (!w || w.result) return;
-            w.result = {...result, actionObserved:w.acted && w.event!=='state', elapsedMs:Date.now()-w.started, unexpectedActions:w.unexpected, interactions:w.interactions, url:location.href,...(w.region ? {verification:'visual'} : {})};
-            clearTimeout(w.timer); clearTimeout(w.idleTimer); clearInterval(w.check); state.recent=[];
+            w.result = {...result, actionObserved:w.acted && w.event!=='state', elapsedMs:Date.now()-w.started, unexpectedActions:w.unexpected, interactions:w.interactions, url:location.href,...(w.region ? {verification:'visual'} : {}),...(w.guideArea ? {guideArea:w.guideArea} : {}),...(w.targetLabel ? {target:w.targetLabel} : {})};
+            w.finishedAt=Date.now();clearTimeout(w.timer); clearTimeout(w.idleTimer); clearInterval(w.check); state.recent=[];
             for (const type of [...actionTypes,'keydown']) document.removeEventListener(type,w.listener,true);
             for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);
             if(result.status==='completed') {status.hidden=true;}
@@ -576,7 +800,10 @@ export function pageGuidance(args: any): any {
         if (state.marks.size >= 30) throw new Error('Clear an annotation before adding more (limit 30).');
         if (args.kind==='label' && !args.label) throw new Error('Label annotations require label text');
         if (args.kind==='freehand' && !args.points?.length) throw new Error('Freehand annotations require points');
-        const el=args.selector ? state.find(args.selector) : null;
+        args=state.anchor(args);
+        let el=args.selector ? state.find(args.selector) : null;
+        const area=el && !args.box && ['rectangle','ellipse','bracket','highlight'].includes(args.kind) ? state.drawingArea(el,args.event) : null;
+        if(area){args={...args,selector:undefined,box:area};el=null;}
         if(el && args.reveal!==false) state.reveal(el);
         else if(!el && args.reveal!==false && (args.box || args.points?.length)) {
             const xs=[...(args.box ? [args.box.x,args.box.x+args.box.width] : []),...(args.points ?? []).map((p: any)=>p.x)];
@@ -616,15 +843,18 @@ export function pageGuidance(args: any): any {
         state.render();
         state.drawQueue.push(mark);state.drawNext();
         if (args.lifetimeMs) mark.timer=setTimeout(()=>state.remove(id),args.lifetimeMs);
-        if(args.waitForDrawing && !mark.drawn) return new Promise(resolve=>{(mark as any).resolveDrawing=resolve;});
-        return {ok:true,id};
+        const drawn={ok:true,id,...(area ? {drawnBox:area} : {}),...(args.targetLabel ? {target:args.targetLabel} : {})};
+        if(args.waitForDrawing && !mark.drawn) return new Promise(resolve=>{(mark as any).resolveDrawing=(result: any)=>resolve({...drawn,...result});});
+        return drawn;
     }
     if (args.action === 'start') {
         if (!args.id || !args.instruction) throw new Error('Step id and instruction are required');
         if (state.wait && !state.wait.result) state.finish({status:'cancelled',hint:'A new step replaced this step.'});
         const conditionMatches=(condition: any) => {
             let el: any;
-            try {el=state.find(condition.selector);} catch(error) {
+            try {el=state.locate(condition);} catch(error) {
+                // Text shown more than once is still shown.
+                if(condition.state==='visible' && condition.text && String(error).includes('ambiguous')) return true;
                 // Ambiguity or invalid syntax is never proof that an element is absent.
                 return condition.state==='absent' && String(error).includes('target not found');
             }
@@ -632,19 +862,33 @@ export function pageGuidance(args: any): any {
             if(condition.state==='checked') return el.checked===true || el.getAttribute('aria-checked')==='true';
             if(condition.state==='selected') return el.selected===true || el.getAttribute('aria-selected')==='true' || el.getAttribute('data-state')==='checked';
             if(condition.state==='pressed') return el.getAttribute('aria-pressed')==='true';
+            if(condition.state==='expanded') return el.getAttribute('aria-expanded')==='true' || el.open===true;
             const b=el.getBoundingClientRect();return b.width>0 && b.height>0 && getComputedStyle(el).visibility!=='hidden';
         };
-        if(args.completion && conditionMatches(args.completion)) {
+        const satisfied=()=>{
             for(const id of [...state.marks.keys()]) state.remove(id);
             clearTimeout(state.statusTimer);state.status.hidden=true;
             return {status:'completed',alreadySatisfied:true,proof:args.completion,url:location.href,
-                hint:'The declared completion condition is already true. Inspect the current page and continue from the first unfinished step; do not repeat this action.'};
+                hint:'The declared completion condition is already true. Continue from the first unfinished step, using the returned controls; do not repeat this action.'};
+        };
+        // A condition with no selector, ref or text is about the step's own target, which must resolve first.
+        // Any other condition is checked before the target, which may already be gone after a finished step.
+        const ownCompletion=!!args.completion && !args.completion.selector && !args.completion.ref && !args.completion.text;
+        if(args.completion && !ownCompletion && conditionMatches(args.completion)) return satisfied();
+        args=state.anchor(args);
+        if(ownCompletion) {
+            if(!args.selector) throw new Error('A completion condition without selector, ref or text needs a step target');
+            args={...args,completion:{...args.completion,selector:args.selector}};
+            if(conditionMatches(args.completion)) return satisfied();
         }
         const target=args.selector ? state.find(args.selector) : null;
         let region=!args.selector && args.region ? args.region : null;
         if (args.event !== 'state' && !target && !region) throw new Error('An action step requires a unique target selector or a measured region');
+        // What the user can operate now; controls missing from it later are what this step opened.
+        state.baseline=new WeakSet(state.controls().map((entry: any)=>entry.el));
         // The user may act before the wait starts, e.g. while the agent is still inspecting.
-        let alreadyActed=args.event!=='state' && (region ? state.recentRegionHit(region,args.event) : state.recentHit(args.selector,target,args.event));
+        const surface=!!target && !region && !!state.drawingArea(target,args.event);
+        let alreadyActed=args.event!=='state' && (region ? state.recentRegionHit(region,args.event) : state.recentHit(args.selector,target,args.event,surface));
         state.recent=[];
         // Scroll an off-screen region into view and keep its hit area aligned with the page.
         if(region && !alreadyActed) {
@@ -667,16 +911,17 @@ export function pageGuidance(args: any): any {
             if (args.expectedState==='checked') return el.checked === true || el.getAttribute('aria-checked')==='true';
             const b=el.getBoundingClientRect(); return b.width>0 && b.height>0 && getComputedStyle(el).visibility!=='hidden';
         };
-        const w: any=state.wait={id:args.id,event:args.event,region,interactions:0,pointerActive:false,started:Date.now(),waitingForDraw:true,unexpected:0,acted:alreadyActed || args.event==='state',result:null,timer:null,check:null,listener:null};
+        const w: any=state.wait={id:args.id,event:args.event,region,targetLabel:args.targetLabel,interactions:0,pointerActive:false,started:Date.now(),waitingForDraw:true,unexpected:0,acted:alreadyActed || args.event==='state',result:null,timer:null,check:null,listener:null};
         // Persist the action so a poll after a full page load (link click) still knows the user acted.
-        const markActed=()=>{w.acted=true;try{sessionStorage.setItem('__tamperSlothActed',w.id);}catch{}};
+        const markActed=()=>{if(!w.acted || !w.actedAt) w.actedAt=Date.now();w.acted=true;try{sessionStorage.setItem('__tamperSlothActed',w.id);}catch{}};
         if(alreadyActed){markActed();for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);}
         w.listener=(event:any)=> {
             if (!event.isTrusted || state.inputLocked) return;
             if (event.type==='keydown' && event.key==='Escape') {state.finish({status:'cancelled',hint:'Cancelled with Escape.'});return;}
             // Framework updates may replace the original DOM node while drawing.
             let currentTarget=target;try{if(args.selector) currentTarget=state.find(args.selector);}catch{currentTarget=null;}
-            const hit=region ? state.inRegion({x:event.clientX,y:event.clientY},region) : !!args.selector && state.hits(event,args.selector,currentTarget);
+            const hit=region ? state.inRegion({x:event.clientX,y:event.clientY},region) : !!args.selector && (state.hits(event,args.selector,currentTarget)
+                || (surface && state.surfaceHit({x:event.clientX,y:event.clientY,path:event.composedPath()},currentTarget)));
             if (state.sameAction(event.type,args.event) && hit) {
                 markActed();
                 // Remove the instruction immediately, even if its resulting state takes time.
@@ -691,9 +936,14 @@ export function pageGuidance(args: any): any {
         w.check=setInterval(()=>{
             // Fall back to the window-level log when the page stops propagation before document listeners run.
             if(!w.acted && region && state.recentRegionHit(region,args.event)){markActed();for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);}
-            if(!w.acted && args.selector && state.recentHit(args.selector,(()=>{try{return state.find(args.selector);}catch{return target;}})(),args.event)){markActed();for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);}
+            if(!w.acted && args.selector && state.recentHit(args.selector,(()=>{try{return state.find(args.selector);}catch{return target;}})(),args.event,surface)){markActed();for(const [id,mark] of state.marks) if(mark.stepId===w.id) state.remove(id);}
             // A declared success condition proves completion even if the action event was missed.
-            if((w.acted || args.completion) && matches()) state.finish({status:'completed',...(args.completion ? {proof:args.completion} : {})});
+            if((w.acted || args.completion) && matches()) {state.finish({status:'completed',...(args.completion ? {proof:args.completion} : {})});return;}
+            // The action happened but its declared change has not. Once the page settles, waiting longer
+            // rarely helps (e.g. the click closed a menu that was already open), so hand back for a look.
+            const since=w.actedAt ? Date.now()-w.actedAt : 0;
+            if(w.acted && args.event!=='state' && (since>=10000 || (since>=4000 && Date.now()-state.lastMutation>=1000)))
+                state.finish({status:'unconfirmed',hint:'The user did the marked action, but the expected change did not appear after the page settled.'});
         },200);
         w.armTimeout=()=>{
             if(w.result || w.timer) return;
@@ -717,10 +967,24 @@ export function pageGuidance(args: any): any {
                     if(mark.drawn){state.describe(mark);state.park(mark);}
                 }
                 state.render();
-            } else pageGuidance({action:'draw',id:'__step',kind:'bracket',...(region ? {box:region} : {selector:args.selector}),label:args.instruction});
+            } else {
+                // On a canvas the guide shows the gesture: a stroke path for lines and drags, an area for shapes.
+                // Without either, a full-surface canvas gets a dashed area in its middle.
+                const path=!region && target && args.path?.length>=2 ? args.path : null;
+                const area=!region && target && !path ? (args.region ?? state.drawingArea(target,args.event)) : null;
+                if(area) w.guideArea=area;
+                const guide=path ? {kind:path.length===2 ? 'arrow' : 'freehand',lineStyle:'dashed',points:path}
+                    : area ? {kind:args.shape==='ellipse' ? 'ellipse' : 'rectangle',lineStyle:'dashed',box:area}
+                    : {kind:'highlight',lineStyle:'dashed',...(region ? {box:region} : {selector:args.selector})};
+                pageGuidance({action:'draw',id:'__step',...guide,label:args.instruction});
+            }
         }
         if(!state.inputLocked) w.armTimeout();
-        return {status:'waiting',id:w.id,ready:!w.waitingForDraw};
+        return {status:'waiting',id:w.id,ready:!w.waitingForDraw,...(w.guideArea ? {guideArea:w.guideArea} : {}),...(w.targetLabel ? {target:w.targetLabel} : {})};
+    }
+    if (args.action === 'controls') {
+        return {...state.listControls(args.query,args.limit ?? 40,!!args.fresh),url:location.href,title:document.title,
+            quietMs:Date.now()-(state.lastMutation ?? 0),...(state.wait?.finishedAt ? {sinceStep:Date.now()-state.wait.finishedAt} : {})};
     }
     if (args.action === 'poll' || args.action === 'cancel') {
         if (!state.wait || state.wait.id!==args.id) return {status:'lost',hint:'This step was replaced or the page navigated. Inspect the current page.'};
@@ -738,7 +1002,8 @@ export async function runPageGuidance(tabId: number, args: any) {
         sans:chrome.runtime.getURL('fonts/geist-latin-wght-normal.woff2'),
         heading:chrome.runtime.getURL('fonts/instrument-serif-latin-400-italic.woff2'),
     } : undefined;
-    const [result] = await chrome.scripting.executeScript({target:{tabId},func:pageGuidance,args:[{...args,assets,waitForDrawing:args.action==='draw'}]});
+    const [result] = await chrome.scripting.executeScript({target:{tabId},func:pageGuidance,args:[{...args,assets,waitForDrawing:args.action==='draw',reportErrors:true}]});
     if (!result?.result) throw new Error('Guidance is unavailable on this page');
+    if (result.result.guidanceError) throw new Error(result.result.guidanceError);
     return result.result;
 }

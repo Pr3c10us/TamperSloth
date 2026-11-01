@@ -54,7 +54,7 @@ export interface ActionAssessment {
 const READ_ONLY = new Set([
     "getCurrentTab", "getPageText", "getPageStructure", "getElementDetails", "getSkill", "enableTools", "readToolResult",
     "takeScreenshot", "takeMarkedScreenshot", "accessibilityTree", "getDebugInfo", "viewCodeFiles", "listScripts",
-    "wait", "showTab", "waitForElement", "annotatePage", "waitForUserAction", "askUser", "getLocalStorage", "getCookies",
+    "wait", "showTab", "waitForElement", "annotatePage", "waitForUserAction", "listControls", "askUser", "getLocalStorage", "getCookies",
     "createFileTool", "strReplaceTool", "deleteFileTool", "browserNotify",
 ]);
 

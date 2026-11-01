@@ -18,7 +18,7 @@ const VERBS: Record<string, string> = {
     executeContentScript: "ran a script", evaluateJavaScript: "ran JavaScript", saveScript: "saved a change",
     listScripts: "listed changes", toggleScript: "toggled a change", removeScript: "removed a change",
     viewCodeFiles: "viewed files", getSkill: "loaded guidance", enableTools: "enabled tools",
-    readToolResult: "reread a result", annotatePage: "drew guidance", waitForUserAction: "guided a step",
+    readToolResult: "reread a result", annotatePage: "drew guidance", waitForUserAction: "guided a step", listControls: "found controls",
     browserTabs: "managed tabs", browserTabGroups: "grouped tabs", accessibilityTree: "read accessibility", persistentStore: "used storage",
     siteRecipes: "used site recipes", clipboard: "used the clipboard", browserDownload: "downloaded a file",
     browserNotify: "sent a notification", trustedInput: "sent input", networkCapture: "inspected the network",

@@ -34,18 +34,28 @@ export const toolSchemas = {
         .describe(`Run in order; stops at the first failure. Up to ${MAX_GESTURE_STEPS} steps: batch every stroke of a drawing in one call, splitting only beyond that.`)}),
 };
 
+/** A control named the way a person would see it: a ref from listControls, role and name, or visible text. */
+export const guideTarget = z.object({ref:z.string().min(1).max(20).optional(), role:z.string().min(1).max(60).optional(),
+    name:z.string().min(1).max(300).optional(), text:z.string().min(1).max(300).optional(),
+    exact:z.boolean().optional(), index:z.number().int().nonnegative().optional()})
+    .refine(target=>!!(target.ref || target.name || target.text),'Target needs ref, role+name, or text');
+
 export const browserSchemas = {
-    guidance: z.object({tabId, action:z.enum(['draw','remove','clear','start','poll','cancel','cue']),
+    guidance: z.object({tabId, action:z.enum(['draw','remove','clear','start','poll','cancel','cue','controls']),
         index:z.number().int().nonnegative().default(0), cue:z.enum(['click','type','scroll','hover']).default('hover'),
-        id:z.string().min(1).max(100).optional(), selector:z.string().min(1).max(1000).optional(),
-        kind:z.enum(['arrow','highlight','rectangle','ellipse','bracket','freehand','label']).default('bracket'),
+        id:z.string().min(1).max(100).optional(), selector:z.string().min(1).max(1000).optional(), target:guideTarget.optional(),
+        query:z.string().max(200).optional(), limit:z.number().int().min(1).max(80).default(40), fresh:z.boolean().default(false),
+        path:z.array(point).min(2).max(500).optional(), shape:z.enum(['rectangle','ellipse']).default('rectangle'),
+        kind:z.enum(['arrow','highlight','rectangle','ellipse','bracket','freehand','label']).default('highlight'),
         box:point.extend({width:z.number().nonnegative(),height:z.number().nonnegative()}).optional(),
         points:z.array(point).min(2).max(500).optional(), label:z.string().max(300).optional(), labelPosition:point.optional(),
-        color:z.enum(['lime','moss','amber','sky','rose']).default('lime').describe('All guide drawings use the app lime accent. Other values are accepted for legacy calls.'), lineStyle:z.enum(['solid','dashed']).default('solid'),
+        color:z.enum(['lime','moss','amber','sky','rose']).default('lime').describe('All guide drawings use the app lime accent. Other values are accepted for legacy calls.'), lineStyle:z.enum(['solid','dashed']).default('dashed'),
         lineWidth:z.number().min(1).max(8).default(2.5), lifetimeMs:z.number().int().min(0).max(120000).default(0),
         annotationIds:z.array(z.string().min(1).max(100)).max(30).default([]),
-        region:point.extend({width:z.number().positive(),height:z.number().positive()}).optional().describe('Coordinate fallback: viewport CSS box measured from a screenshot, used instead of selector.'),
-        completion:z.object({selector:z.string().min(1).max(1000),state:z.enum(['visible','absent','checked','selected','pressed'])}).optional(),
+        region:point.extend({width:z.number().positive(),height:z.number().positive()}).optional().describe('Viewport CSS box measured from a screenshot. Alone: coordinate fallback used instead of selector. With a canvas selector: where on that canvas to mark the drawing area.'),
+        completion:z.object({selector:z.string().min(1).max(1000).optional(), ref:z.string().min(1).max(20).optional(), text:z.string().min(1).max(300).optional(),
+            state:z.enum(['visible','absent','checked','selected','pressed','expanded'])}).optional()
+            .describe('Success condition. With no selector, ref or text it applies to the step target itself, e.g. {state:"expanded"} for a menu button or {state:"pressed"} for a tool.'),
         instruction:z.string().min(1).max(300).optional(), event:z.enum(['click','input','change','submit','focusin','pointerup','state']).default('click'),
         expectedSelector:z.string().min(1).max(1000).optional(), expectedState:z.enum(['visible','absent','checked']).default('visible'),
         timeoutMs:z.number().int().min(1000).max(120000).default(20000).describe('Maximum time to observe the step. Increase only for a known slow page change.'),

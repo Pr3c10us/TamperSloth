@@ -46,6 +46,7 @@ export interface ToolMeta {
 const toolMeta: Record<string, ToolMeta> = {
     annotatePage: {displayName:'Page annotations',icon:MousePointerClick,category:'web'},
     waitForUserAction: {displayName:'Guided step',icon:Route,category:'web'},
+    listControls: {displayName:'Find controls',icon:ScanSearch,category:'web'},
     clickTarget: {displayName: 'Click target',icon: MousePointerClick, category: 'web'},
     browserGesture: {displayName: 'Browser gesture',icon: MousePointerClick, category: 'web'},
     takeMarkedScreenshot: {displayName: 'Marked screenshot',icon: Camera, category: 'media'},

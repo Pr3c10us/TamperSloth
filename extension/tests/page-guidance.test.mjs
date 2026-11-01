@@ -241,7 +241,7 @@ test('already-completed tool starts return directly and do not poll a nonexisten
     const tools=createLoader({globals:{chrome}})('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{});
     const input=tools.waitForUserAction.inputSchema.parse({selector:'#target',instruction:'Select Rectangle',completion:{selector:'#rectangle',state:'pressed'}});
     const result=await tools.waitForUserAction.execute(input,{abortSignal:new AbortController().signal});
-    assert.equal(result.alreadySatisfied,true);assert.deepEqual(calls,['start']);
+    assert.equal(result.alreadySatisfied,true);assert.deepEqual(calls.filter(action=>action!=='controls'),['start']);
 });
 
 test('a guided step replaces old tips and removes retained drawings immediately on action',()=>{
@@ -460,7 +460,7 @@ test('cursor traces lime guide strokes, streams its description, and cancels ani
     const first=[...f.frames][0];f.frames.delete(first[0]);first[1](performance.now()+100);
     assert.equal(state.cursor.hidden,false);assert.equal(mark.drawn,undefined);
     assert.match(mark.shape.attrs.d,/^ M0,0 L/);assert.equal(mark.echo.style.display,'none');
-    const middle=[...f.frames][0];f.frames.delete(middle[0]);middle[1](performance.now()+250);
+    const middle=[...f.frames][0];f.frames.delete(middle[0]);middle[1](performance.now()+150);
     assert.notEqual(state.cursor.icon.style.transform,'rotate(0deg)');
     const finish=[...f.frames][0];f.frames.delete(finish[0]);finish[1](performance.now()+6000);
     assert.equal(mark.drawn,true);assert.equal(state.cursorBody.hidden,false);
@@ -471,7 +471,7 @@ test('cursor traces lime guide strokes, streams its description, and cancels ani
     assert.equal(state.cursorBody.style.minHeight,'');
     assert.equal(state.cursorTag.style.width,'');
     assert.equal(state.cursorTag.style.top,'34px');
-    for(const timer of [...f.timers.values()]) if(timer.ms===45)timer.fn();
+    for(const timer of [...f.timers.values()]) if(timer.ms===16)timer.fn();
     assert.equal(state.cursorBody.textContent,'Cl');
     f.run({action:'clear'});assert.equal(state.drawing,null);assert.equal(state.cursorBody.hidden,true);
     assert.equal(f.frames.size,0);assert.equal(state.marks.size,0);
@@ -512,7 +512,7 @@ test('a zero-progress first frame preserves the move command so later strokes pa
     const tick=time=>{const [id,frame]=[...f.frames][0];f.frames.delete(id);frame(time);};
     tick(0);
     assert.equal(mark.shape.attrs.d,' M0,0');
-    tick(performance.now()+250);
+    tick(performance.now()+150);
     assert.match(mark.shape.attrs.d,/^ M0,0 L/);
     assert.equal(mark.drawn,undefined);
     f.run({action:'clear'});
@@ -526,7 +526,7 @@ test('live ink and the cursor hotspot stay together after layout shifts and at v
     state.render();
     assert.equal(mark.group.attrs.transform,'translate(790,595)');
     assert.equal(mark.shape.attrs.d,'');
-    const frame=[...f.frames][0];f.frames.delete(frame[0]);frame[1](performance.now()+250);
+    const frame=[...f.frames][0];f.frames.delete(frame[0]);frame[1](performance.now()+150);
     const end=mark.shape.attrs.d.match(/L([\d.]+),([\d.]+)$/);
     assert.ok(end,'A partial stroke must be visible before completion');
     assert.equal(mark.drawn,undefined);
@@ -758,7 +758,6 @@ test('coordinate fallback unlocks only after repeated selector failures and retu
     assert.doesNotMatch(first.hint,/fall back to coordinates/);
     const second=await tools.waitForUserAction.execute(schema.parse({selector:'#frame-tool',instruction:'Pick the Frame tool'}),options);
     assert.match(second.hint,/fall back to coordinates/);
-    await assert.rejects(tools.waitForUserAction.execute({...regional,selector:'#frame'},options),/either selector or region/);
     const result=await tools.waitForUserAction.execute(regional,options);
     assert.equal(result.status,'visualCheck');assert.equal(result.trigger,'regionAction');assert.equal(result.actionObserved,true);
     assert.ok(result.screenshot);assert.match(result.hint,/Judge from this screenshot/);
@@ -889,4 +888,233 @@ test('guidance joins the top layer and rises above modals and popovers the page 
     f.run({action:'dispose'});
     f.fire('toggle',dialog,true,{target:dialog,newState:'open'});
     assert.deepEqual(shown,['show','hide','show']);
+});
+
+test('a full-page canvas step marks a visible drawing area instead of outlining the viewport edges',()=>{
+    const f=fixture();
+    const canvas=f.document.createElement('canvas');canvas.localName='canvas';canvas.box={x:0,y:0,width:800,height:600};
+    f.elements.set('canvas.interactive',canvas);
+    const started=f.run({action:'start',id:'square',selector:'canvas.interactive',event:'pointerup',instruction:'Drag out a square',timeoutMs:1000});
+    const state=f.window.__tamperSlothGuidance,mark=state.marks.get('__step');
+    assert.equal(JSON.stringify(started.guideArea),JSON.stringify({x:310,y:210,width:180,height:180}));
+    assert.equal(mark.kind,'rectangle');assert.equal(mark.lineStyle,'dashed');assert.equal(mark.selector,undefined);
+    assert.equal(mark.group.attrs.transform,'translate(310,210)');
+    f.fire('pointerup',canvas);
+    assert.equal(f.run({action:'poll',id:'square'}).status,'completed');
+    // A measured region with the selector places the area; small canvases keep their outline.
+    f.run({action:'start',id:'back',selector:'canvas.interactive',region:{x:400,y:150,width:120,height:120},event:'pointerup',instruction:'Draw the back square',timeoutMs:1000});
+    assert.equal(state.marks.get('__step').group.attrs.transform,'translate(400,150)');
+    canvas.box={x:20,y:20,width:200,height:100};
+    f.run({action:'start',id:'small',selector:'canvas.interactive',event:'pointerup',instruction:'Pick a color',timeoutMs:1000});
+    assert.equal(state.marks.get('__step').kind,'highlight');
+});
+
+test('an action whose expected change never comes hands back once the page settles',()=>{
+    const f=fixture();
+    f.run({action:'start',id:'toggle',selector:'#target',event:'click',instruction:'Open the menu',expectedSelector:'#expected',timeoutMs:60000});
+    f.fire('click');
+    const state=f.window.__tamperSlothGuidance,check=[...f.intervals.values()].at(-1);
+    check();assert.equal(f.run({action:'poll',id:'toggle'}).status,'waiting');
+    state.wait.actedAt-=4500;state.lastMutation=Date.now();check();
+    assert.equal(f.run({action:'poll',id:'toggle'}).status,'waiting','a page still changing keeps the wait');
+    state.lastMutation=0;check();
+    const result=f.run({action:'poll',id:'toggle'});
+    assert.equal(result.status,'unconfirmed');assert.equal(result.actionObserved,true);
+});
+
+test('an unconfirmed action returns page evidence without counting as an observer failure',async()=>{
+    const f=timedToolFixture(()=>({status:'unconfirmed',actionObserved:true,hint:'settled'}));
+    const result=await f.run({selector:'#target',expectedSelector:'#expected',instruction:'Open the menu'});
+    assert.equal(result.status,'needsReview');assert.equal(result.observationPhase,'actedUnconfirmed');assert.equal(result.actionObserved,true);
+    assert.ok(result.screenshot);assert.match(result.hint,/Do not wait for the same condition again/);
+    assert.doesNotMatch(result.hint,/fall back to coordinates/);
+    assert.equal(createLoader()('src/chat/lib/guidanceStatus.ts').guidanceStatusLabel(result),'Action seen; checking result');
+});
+
+test('a step that never reports ready still gets prompt progress checks',async()=>{
+    const f=timedToolFixture(()=>({status:'waiting',ready:false,interactions:1,actionObserved:false}),{status:'waiting',ready:false});
+    const result=await f.run({selector:'#target',instruction:'Open the menu'});
+    assert.equal(result.observationPhase,'interactionPause');assert.ok(f.elapsed()<=12000,`took ${f.elapsed()}ms`);
+});
+
+test('releasing the drawing guard starts the step clocks',()=>{
+    const f=fixture();
+    f.run({action:'start',id:'step',selector:'#target',event:'click',instruction:'Continue',timeoutMs:30000,idleTimeoutMs:5000});
+    const state=f.window.__tamperSlothGuidance;
+    state.setInputLocked(true);state.wait.waitingForDraw=true;clearTimeout(state.wait.timer);state.wait.timer=null;
+    state.setInputLocked(false);
+    assert.equal(state.wait.waitingForDraw,false);assert.ok([...f.timers.values()].some(timer=>timer.ms===30000));
+});
+
+test('a drag on a stacked canvas counts for the selected canvas, but a toolbar click over it does not',()=>{
+    const f=fixture();
+    const lower=f.document.createElement('canvas'),upper=f.document.createElement('canvas'),tool=f.document.createElement('button');
+    lower.localName=upper.localName='canvas';lower.box=upper.box={x:0,y:0,width:800,height:600};
+    f.elements.set('canvas.static',lower);
+    f.run({action:'start',id:'square',selector:'canvas.static',event:'pointerup',instruction:'Drag out a square',timeoutMs:1000});
+    f.fire('pointerup',tool,true,{clientX:400,clientY:20});
+    assert.equal(f.run({action:'poll',id:'square'}).status,'waiting');
+    f.fire('pointerup',upper,true,{clientX:420,clientY:330});
+    assert.equal(f.run({action:'poll',id:'square'}).status,'completed');
+});
+
+test('a check-in after a missed action asks the model to judge the screenshot before asking',async()=>{
+    const f=timedToolFixture(()=>({status:'waiting',ready:true,interactions:1,actionObserved:false}));
+    const result=await f.run({selector:'canvas',event:'pointerup',instruction:'Drag out a square'});
+    assert.equal(result.checkInAllowed,true);assert.match(result.hint,/First judge the screenshot/);
+});
+
+test('a canvas line step draws the stroke to make, and shape steps can show an ellipse area',()=>{
+    const f=fixture();
+    const canvas=f.document.createElement('canvas');canvas.localName='canvas';canvas.box={x:0,y:0,width:800,height:600};
+    f.elements.set('canvas',canvas);
+    const path=[{x:300,y:190},{x:380,y:135}];
+    const started=f.run({action:'start',id:'edge',selector:'canvas',path,event:'pointerup',instruction:'Drag corner to corner',timeoutMs:1000});
+    const state=f.window.__tamperSlothGuidance,mark=state.marks.get('__step');
+    assert.equal(mark.kind,'arrow');assert.equal(mark.lineStyle,'dashed');assert.equal(started.guideArea,undefined);
+    assert.match(mark.shape.attrs.d,/^M0,0 L80,-55/);
+    f.run({action:'start',id:'curve',selector:'canvas',path:[...path,{x:420,y:160}],event:'pointerup',instruction:'Trace the curve',timeoutMs:1000});
+    assert.equal(state.marks.get('__step').kind,'freehand');
+    f.run({action:'start',id:'circle',selector:'canvas',region:{x:100,y:100,width:150,height:150},shape:'ellipse',event:'pointerup',instruction:'Draw a circle',timeoutMs:1000});
+    assert.equal(state.marks.get('__step').kind,'ellipse');
+});
+
+test('a stroke path needs the canvas selector and cannot be mixed with a shape area',async()=>{
+    const f=timedToolFixture(()=>({status:'completed'}));
+    await assert.rejects(f.run({path:[{x:1,y:1},{x:9,y:9}],instruction:'Draw a line'}),/pass the canvas selector/);
+    await assert.rejects(f.run({selector:'canvas',path:[{x:1,y:1},{x:9,y:9}],region:{x:0,y:0,width:5,height:5},instruction:'Draw a line'}),/not both/);
+    assert.equal((await f.run({selector:'canvas',event:'pointerup',path:[{x:1,y:1},{x:9,y:9}],instruction:'Draw a line'})).status,'completed');
+});
+
+test('drawing step evidence carries contour boxes for measuring the next shape, other steps a plain screenshot',async()=>{
+    for(const [event,mode] of [['pointerup','contours'],['click','plain']]) {
+        const f=timedToolFixture(()=>({status:'waiting',ready:true,interactions:1,actionObserved:false}));
+        await f.run({selector:'canvas',event,instruction:'Draw the back square'});
+        assert.equal(f.calls.find(call=>call.operation==='perception').input.mode,mode);
+    }
+});
+
+// Controls the user can operate, with ids so generated selectors resolve in the fake DOM.
+function controlsFixture(specs) {
+    const f=fixture(),all=[];
+    const add=({tag='button',id,text='',attrs={},box={x:40,y:40,width:100,height:30}})=>{
+        const el=f.document.createElement(tag);
+        Object.assign(el,{localName:tag,id,textContent:text,box,isConnected:true});Object.assign(el.attrs,attrs);
+        all.push(el);return el;
+    };
+    for(const spec of specs) add(spec);
+    f.document.querySelectorAll=selector=>{
+        if(selector==='*' || selector.includes('[role="button"]')) return all.filter(el=>!el.removed);
+        const attribute=/^(\w*)\[([\w-]+)="(.*)"\]$/.exec(selector);
+        if(attribute) return all.filter(el=>(!attribute[1] || el.localName===attribute[1]) && el.attrs[attribute[2]]===attribute[3]);
+        return all.filter(el=>`#${el.id}`===selector || el.localName===selector);
+    };
+    return {...f,add,all};
+}
+
+test('generated selectors match only the target, never a hidden duplicate a click could land on',()=>{
+    const f=controlsFixture([{text:'Frame',attrs:{'aria-label':'Frame'},box:{x:0,y:0,width:0,height:0}},{text:'Frame',attrs:{'aria-label':'Frame'}}]);
+    f.run({action:'start',id:'frame',target:{name:'Frame'},event:'click',instruction:'Pick the Frame tool',timeoutMs:1000});
+    const selector=f.window.__tamperSlothGuidance.marks.get('__step').selector;
+    assert.notEqual(selector,'button[aria-label="Frame"]');
+    assert.equal(f.document.querySelectorAll(selector).length,1);assert.equal(f.document.querySelectorAll(selector)[0],f.all[1]);
+});
+
+test('controls are listed as short refs, and a ref target is guided without any CSS',()=>{
+    const f=controlsFixture([{id:'save',text:'Save'},{tag:'a',id:'billing',text:' Billing ',attrs:{href:'/billing'}},{id:'delete',text:'Delete',box:{x:40,y:2000,width:100,height:30}}]);
+    const listed=f.run({action:'controls'});
+    assert.equal(JSON.stringify(listed.controls),JSON.stringify(['c1 button "Save"','c2 link "Billing"']));
+    assert.equal(listed.newControls,undefined);assert.equal(listed.url,'https://example.com');
+    assert.equal(JSON.stringify(f.run({action:'controls',query:'delete'}).controls),JSON.stringify(['c3 button "Delete" [offscreen]']));
+    const started=f.run({action:'start',id:'bill',target:{ref:'c2'},event:'click',instruction:'Open Billing',timeoutMs:1000});
+    const state=f.window.__tamperSlothGuidance;
+    assert.equal(started.status,'waiting');assert.equal(started.target,'c2 link "Billing"');
+    assert.equal(state.marks.get('__step').selector,'#billing');
+    f.fire('click',f.all[1]);
+    const result=f.run({action:'poll',id:'bill'});
+    assert.equal(result.status,'completed');assert.equal(result.target,'c2 link "Billing"');
+});
+
+test('names and text resolve case-insensitively, ties prefer what the last step opened, and misses list candidates',()=>{
+    const f=controlsFixture([{id:'menu',text:'Open user menu',attrs:{'aria-expanded':'false'}},{tag:'a',id:'repo-settings',text:'Settings'}]);
+    f.run({action:'start',id:'open',target:{role:'button',name:'open user menu'},event:'click',instruction:'Open your menu',timeoutMs:1000});
+    const state=f.window.__tamperSlothGuidance;
+    assert.equal(state.marks.get('__step').selector,'#menu');
+    f.add({tag:'a',id:'menu-settings',text:'Settings',box:{x:40,y:120,width:100,height:30}});
+    f.fire('click',f.all[0]);
+    assert.equal(f.run({action:'poll',id:'open'}).status,'completed');
+    const listed=f.run({action:'controls',fresh:true});
+    assert.equal(listed.newControls.length,1);assert.match(listed.newControls[0],/^c\d+ link "Settings"$/);
+    assert.ok(listed.controls.some(line=>/link "Settings"/.test(line)));
+    f.run({action:'start',id:'settings',target:{text:'Settings'},event:'click',instruction:'Open Settings',timeoutMs:1000});
+    assert.equal(state.marks.get('__step').selector,'#menu-settings');
+    // Once both were on screen at the step start, neither is new, so the name alone is ambiguous.
+    assert.throws(()=>f.run({action:'draw',id:'again',target:{text:'Settings'}}),/ambiguous: 2 controls match "Settings"; pass one ref\. Candidates: c\d+ link "Settings"; c\d+ link "Settings"/);
+    assert.throws(()=>f.run({action:'draw',id:'none',target:{text:'Emails'}}),/target not found: no control is named "Emails"\. Candidates: c\d+/);
+    assert.throws(()=>f.run({action:'draw',id:'old',target:{ref:'c99'}}),/c99 is not a control on this page/);
+});
+
+test('a completion condition without a selector applies to the step target itself',()=>{
+    const f=controlsFixture([{id:'menu',text:'Account',attrs:{'aria-expanded':'true'}}]);
+    const done=f.run({action:'start',id:'a',target:{text:'Account'},completion:{state:'expanded'},event:'click',instruction:'Open Account',timeoutMs:1000});
+    assert.equal(done.alreadySatisfied,true);assert.equal(done.proof.selector,'#menu');
+    f.all[0].attrs['aria-expanded']='false';
+    const waiting=f.run({action:'start',id:'b',target:{text:'Account'},completion:{state:'expanded'},event:'click',instruction:'Open Account',timeoutMs:1000});
+    assert.equal(waiting.status,'waiting');
+    f.all[0].attrs['aria-expanded']='true';[...f.intervals.values()].at(-1)();
+    const result=f.run({action:'poll',id:'b'});
+    assert.equal(result.status,'completed');assert.equal(result.proof.state,'expanded');
+});
+
+test('errors raised in the page come back with their reason instead of "unavailable"',async()=>{
+    const f=fixture();
+    assert.equal(f.run({action:'draw',id:'gone',selector:'#missing',reportErrors:true}).guidanceError,'Guidance target not found');
+    const calls=[];
+    const chrome={storage:{session:{set:async()=>{}}},runtime:{getURL:path=>path},
+        scripting:{executeScript:async options=>{calls.push(options.args[0]);return [{result:{guidanceError:'Guidance selector is ambiguous (3 matches)'}}];}}};
+    const {runPageGuidance}=createLoader({globals:{chrome}})('src/background/pageGuidance.ts');
+    await assert.rejects(runPageGuidance(7,{action:'start'}),/ambiguous \(3 matches\)/);
+    assert.equal(calls[0].reportErrors,true);
+});
+
+test('the browser service keeps every guidance field the tools send',()=>{
+    const {browserSchemas}=createLoader()('src/chat/lib/browserSchemas.ts');
+    const parsed=browserSchemas.guidance.parse({action:'start',tabId:7,target:{ref:'c4'},path:[{x:1,y:2},{x:3,y:4}],shape:'ellipse',completion:{state:'expanded'}});
+    assert.equal(parsed.target.ref,'c4');assert.equal(parsed.path.length,2);assert.equal(parsed.shape,'ellipse');assert.equal(parsed.completion.state,'expanded');
+    assert.throws(()=>browserSchemas.guidance.parse({action:'start',target:{role:'button'}}),/ref, role\+name, or text/);
+    const tools=createLoader()('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{});
+    assert.equal('target' in tools.annotatePage.inputSchema.shape,true);assert.equal('query' in tools.annotatePage.inputSchema.shape,false);
+});
+
+test('a completed step hands over the controls it opened once the page settles',async()=>{
+    const messages=[];let elapsed=0;
+    const listings=()=>messages.filter(msg=>msg.input.action==='controls').length;
+    const chrome={runtime:{sendMessage:async msg=>{
+        messages.push(msg);
+        if(msg.input.action==='start') return {status:'waiting',ready:true};
+        if(msg.input.action==='poll') return {status:'completed',actionObserved:true,target:'c3 button "Open menu"'};
+        if(msg.input.action==='controls') return {newControls:['c7 menuitem "Settings"'],controls:['c3 button "Open menu" [expanded]'],url:'u',title:'t',quietMs:listings()===1 ? 50 : 400};
+        return {ok:true};
+    }},tabs:{get:async()=>({url:'https://example.com',title:'Page'})}};
+    const load=createLoader({globals:{chrome,Date:class extends Date {static now(){return elapsed;}},setTimeout:(fn,ms)=>{elapsed+=ms;queueMicrotask(fn);return 0;}}});
+    const tool=load('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{}).waitForUserAction;
+    const result=await tool.execute(tool.inputSchema.parse({target:{ref:'c3'},instruction:'Open the menu'}),{abortSignal:new AbortController().signal});
+    assert.equal(messages.find(msg=>msg.input.action==='start').input.target.ref,'c3');
+    assert.equal(result.status,'completed');assert.equal(result.newControls[0],'c7 menuitem "Settings"');assert.equal(result.controls.length,1);
+    assert.equal(result.quietMs,undefined);assert.equal(result.title,undefined);assert.equal(listings(),2,'a page still changing is listed again');
+    assert.match(result.hint,/guide the next step with one of their refs/);
+});
+
+test('a target that does not resolve returns its candidates without a screenshot',async()=>{
+    const operations=[];
+    const chrome={runtime:{sendMessage:async msg=>{
+        operations.push(msg.operation);
+        if(msg.input.action==='start') return {error:'Guidance target is ambiguous: 2 controls match "Settings"; pass one ref. Candidates: c2 link "Settings" in nav; c9 menuitem "Settings" in menu'};
+        return {ok:true};
+    }},tabs:{get:async()=>({url:'https://example.com',title:'Page'})}};
+    const tool=createLoader({globals:{chrome}})('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{}).waitForUserAction;
+    const result=await tool.execute(tool.inputSchema.parse({target:{text:'Settings'},instruction:'Open Settings'}),{abortSignal:new AbortController().signal});
+    assert.equal(result.status,'needsReview');assert.equal(result.observationPhase,'notStarted');
+    assert.match(result.reason,/c9 menuitem "Settings" in menu/);assert.match(result.hint,/Pick the intended ref/);
+    assert.equal(result.screenshot,undefined);assert.equal(operations.includes('perception'),false);
 });
