@@ -109,6 +109,18 @@ export async function loadScriptsByConversation(conversationId: string): Promise
     return all.filter((s) => s.conversationId === conversationId);
 }
 
+/** Calls back with the full list whenever saved scripts change, from any page. Returns an unsubscribe. */
+export function subscribeToScripts(callback: (scripts: BackgroundScript[]) => void): () => void {
+    if (!isChromeExtension) return () => {};
+    const listener = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+        if (area === "local" && SCRIPTS_KEY in changes) {
+            callback((changes[SCRIPTS_KEY].newValue as BackgroundScript[]) ?? []);
+        }
+    };
+    chrome.storage.onChanged.addListener(listener);
+    return () => chrome.storage.onChanged.removeListener(listener);
+}
+
 async function saveScripts(scripts: BackgroundScript[]): Promise<void> {
     if (!isChromeExtension) return;
     await chrome.storage.local.set({ [SCRIPTS_KEY]: scripts });
@@ -182,8 +194,8 @@ export async function clearScriptStorage(scriptId: string): Promise<void> {
 
 // ── Import/export ───────────────────────────────────────────
 
-function downloadJson(json: string, filename: string): void {
-    const blob = new Blob([json], { type: "application/json" });
+function downloadFile(text: string, filename: string, type: string): void {
+    const blob = new Blob([text], { type });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -192,8 +204,19 @@ function downloadJson(json: string, filename: string): void {
     URL.revokeObjectURL(url);
 }
 
+function downloadJson(json: string, filename: string): void {
+    downloadFile(json, filename, "application/json");
+}
+
+const scriptFileName = (script: BackgroundScript) => script.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+
 export function exportScript(script: BackgroundScript): void {
-    downloadJson(JSON.stringify(script, null, 2), `${script.name.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`);
+    downloadJson(JSON.stringify(script, null, 2), `${scriptFileName(script)}.json`);
+}
+
+/** Downloads just the script's source, for reading or diffing outside TamperSloth. */
+export function downloadScriptSource(script: BackgroundScript): void {
+    downloadFile(script.code, `${scriptFileName(script)}.js`, "text/javascript");
 }
 
 export async function exportAllScripts(): Promise<void> {

@@ -1,10 +1,11 @@
 import {memo, useCallback, useState} from "react";
-import {ArrowDown, ArrowUp, Check, Coins, Copy, DatabaseZap, Hash, Sigma, type LucideIcon} from "lucide-react";
+import {ArrowDown, ArrowUp, Check, Coins, Copy, DatabaseZap, Hash, Sigma, Timer, type LucideIcon} from "lucide-react";
 import type {ChatMessage} from "@/src/chat/hooks";
 import {MarkdownContent} from "./Markdown";
 import {CARD_TOOLS, ToolCallInline} from "./ToolCallInline";
 import {isTrivialThinking} from "./ThinkingBlock";
 import {LiveStatus, StepSequence, type SequenceBlock} from "./StepSequence";
+import {useNow} from "./steps/Step";
 import {Button} from "@/components/ui/button";
 import {cn} from "@/lib/utils";
 import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
@@ -46,7 +47,7 @@ function TextBlockContent({text}: { text: string }) {
     );
 }
 
-function CopyMessageButton({text}: { text: string }) {
+export function CopyMessageButton({text}: { text: string }) {
     const [copied, setCopied] = useState(false);
     const handle = useCallback(() => {
         navigator.clipboard.writeText(text).then(() => {
@@ -82,6 +83,17 @@ function MetricChip({icon: Icon, value, label, className}: { icon?: LucideIcon; 
             </TooltipTrigger>
             <TooltipContent side="bottom">{label}</TooltipContent>
         </Tooltip>
+    );
+}
+
+/** Time since the run began, ticking until it ends; it ticks on its own so the message itself does not re-render. */
+function RunTimer({since}: { since: number }) {
+    const now = useNow(true);
+    return (
+        <div className="-ml-1 flex h-6 items-center gap-1 px-1 text-xs tabular-nums text-muted-foreground" aria-label="Elapsed time">
+            <Timer className="size-3.5" strokeWidth={1.75}/>
+            {formatElapsedTime(Math.max(0, now - since))}
+        </div>
     );
 }
 
@@ -138,12 +150,13 @@ export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, 
                     <TextBlockContent key={group.key} text={group.block.text}/>
                 ) : null)}
             </div>
-            {/* Before the first step or reply text arrives, the run still shows it is alive. */}
+            {/* Before the first step or reply text arrives, the run still shows it is alive; the timer below counts for it. */}
             {live && groups.length === 0 && (
                 <div role="status" className="flex items-center gap-2 text-[13px] leading-6 text-muted-foreground">
-                    <LiveStatus label="Working" since={msg.runMetrics?.startedAt}/>
+                    <LiveStatus label="Working"/>
                 </div>
             )}
+            {live && msg.runMetrics?.startedAt !== undefined && <RunTimer since={msg.runMetrics.startedAt}/>}
             {!live && msg.stopped && (
                 <div className="font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground">
                     Stopped

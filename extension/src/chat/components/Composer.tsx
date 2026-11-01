@@ -24,7 +24,6 @@ import { useDictation } from "../hooks/useDictation";
 import {
     DEFAULT_DICTATION_SETTINGS,
     loadDictationSettings,
-    saveDictationSettings,
     type DictationSettings,
 } from "../lib/dictation";
 import { DictationButton } from "./DictationButton";
@@ -32,6 +31,7 @@ import { DictationWave } from "./DictationWave";
 import type { Quote } from "../lib/panelRequests";
 import { QuoteChip } from "./QuoteChip";
 import { ModelSelector, type SelectedModelEntry } from "./ModelSelector";
+import { PermissionModeSelector } from "./PermissionModeSelector";
 import { useAccount } from "@/src/settings/lib/useAccount";
 import type { ThinkingLevel } from "../lib/thinkingLevel";
 import { PickedElementChip, type PickedElement } from "./PickedElementChip";
@@ -135,6 +135,7 @@ export function Composer({
     const previewRef = useRef<HTMLDivElement>(null);
     const [skippedFiles, setSkippedFiles] = useState(0);
     const filesFull = pendingFiles.length >= MAX_ATTACHMENTS;
+    // The mic and language picked earlier still apply; the composer no longer offers to change them.
     const [dictationSettings, setDictationSettings] = useState<DictationSettings>(DEFAULT_DICTATION_SETTINGS);
     const dictation = useDictation(conversationId, dictationSettings);
     // While the mic is on, the input shows the transcript with the words still being heard after it.
@@ -145,11 +146,6 @@ export function Composer({
     useEffect(() => {
         void loadDictationSettings().then(setDictationSettings);
     }, []);
-
-    const changeDictationSettings = (next: DictationSettings) => {
-        setDictationSettings(next);
-        void saveDictationSettings(next).catch((error) => console.warn("[Tampersloth] Could not save dictation options:", error));
-    };
 
     // The limit notice clears itself after a few seconds.
     useEffect(() => {
@@ -284,11 +280,12 @@ export function Composer({
     const { loaded: accountLoaded, signedIn } = useAccount();
     const slothSignedOut = selectedModel?.providerId === "tampersloth" && accountLoaded && !signedIn;
 
+    // Send only shows once there are words to send, typed or dictated.
+    const hasText = draft.trim().length > 0 || (listening && dictation.interim.length > 0);
     const canSend =
         !!selectedModel &&
         !slothSignedOut &&
-        (draft.trim().length > 0 ||
-            (listening && dictation.interim.length > 0) ||
+        (hasText ||
             pendingFiles.length > 0 ||
             pickedElements.length > 0 ||
             quotes.length > 0);
@@ -463,6 +460,22 @@ export function Composer({
                     )}
 
                     <div className="flex items-end gap-2">
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    onClick={handleAttach}
+                                    disabled={filesFull}
+                                    aria-label={filesFull ? `Attachment limit reached (${MAX_ATTACHMENTS} files)` : "Attach file"}
+                                    className="-ml-1 -mr-2 shrink-0 text-muted-foreground hover:text-foreground"
+                                >
+                                    <Plus strokeWidth={1.75} />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">Attach file</TooltipContent>
+                        </Tooltip>
                         {listening && (
                             <div
                                 ref={previewRef}
@@ -502,6 +515,13 @@ export function Composer({
                             value={draft}
                             onChange={(e) => setDraft(e.target.value)}
                             onPaste={handlePaste}
+                            // Chrome ignores `cursor` on scrollbar parts, so the arrow is set while over the scrollbar's column.
+                            onMouseMove={(e) => {
+                                const ta = e.currentTarget;
+                                const overScrollbar = ta.scrollHeight > ta.clientHeight && e.clientX - ta.getBoundingClientRect().left >= ta.clientLeft + ta.clientWidth;
+                                ta.style.cursor = overScrollbar ? "default" : "";
+                            }}
+                            onMouseLeave={(e) => { e.currentTarget.style.cursor = ""; }}
                             onKeyDown={(e) => {
                                 if (e.key === "Enter" && !e.shiftKey) {
                                     e.preventDefault();
@@ -513,7 +533,7 @@ export function Composer({
                             }}
                             placeholder={isLoading ? "Add to what Sloth is doing…" : "Tell the sloth what to do…"}
                             rows={1}
-                            className={cn(listening && "hidden", "min-w-0 flex-1 resize-none border-0 bg-transparent px-1 py-0.5 font-sans text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground")}
+                            className={cn(listening && "hidden", "ts-slim-scrollbar min-w-0 flex-1 resize-none border-0 bg-transparent px-1 py-0.5 font-sans text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground")}
                         />
 
                         {listening && (
@@ -527,7 +547,7 @@ export function Composer({
                             </button>
                         )}
 
-                        {isLoading && canSend && (
+                        {isLoading && hasText && canSend && (
                             <Button
                                 type="button"
                                 variant="ghost"
@@ -553,7 +573,7 @@ export function Composer({
                                     <span aria-hidden className="size-2 rounded-[2px] bg-current" />
                                 </span>
                             </button>
-                        ) : (
+                        ) : hasText && (
                             <Button
                                 type="button"
                                 variant="ghost"
@@ -566,6 +586,7 @@ export function Composer({
                                 <CornerDownLeft strokeWidth={1.75} />
                             </Button>
                         )}
+                        <DictationButton status={dictation.status} onToggle={toggleDictation} />
                     </div>
                 </div>
 
@@ -590,22 +611,6 @@ export function Composer({
 
                 <div className="flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-0.5">
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon-xs"
-                                    onClick={handleAttach}
-                                    disabled={filesFull}
-                                    aria-label={filesFull ? `Attachment limit reached (${MAX_ATTACHMENTS} files)` : "Attach file"}
-                                    className="text-muted-foreground hover:text-foreground"
-                                >
-                                    <Plus strokeWidth={1.75} />
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">Attach file</TooltipContent>
-                        </Tooltip>
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button
@@ -652,12 +657,6 @@ export function Composer({
                                 Draw on the page
                             </TooltipContent>
                         </Tooltip>
-                        <DictationButton
-                            status={dictation.status}
-                            settings={dictationSettings}
-                            onSettingsChange={changeDictationSettings}
-                            onToggle={toggleDictation}
-                        />
                         {(isPicking || isDrawing || queuedAction || pageNotice || dictation.status !== "idle" || dictation.notice) && (
                             <span role="status" className="ml-1.5 flex min-w-0 items-center gap-1.5 font-mono text-[11px] text-accent">
                                 {(isPicking || isDrawing || dictation.status === "listening") && (
@@ -690,6 +689,7 @@ export function Composer({
                     </div>
 
                     <div className="flex shrink-0 items-center gap-1">
+                        <PermissionModeSelector />
                         <ModelSelector
                             selected={selectedModel}
                             onChange={setSelectedModel}

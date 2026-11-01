@@ -21,7 +21,7 @@ const APPROVAL_OPTIONS: {value: AgentSettings["actionApproval"]; label: string; 
     {value: "auto", label: "Automatically approve",
         hint: "Sloth checks each action for risk and for hidden instructions from web pages before running it. Lower-risk actions run; anything that looks unsafe is blocked or waits for you."},
     {value: "ask", label: "Ask before acting",
-        hint: "Every action that clicks, types, navigates or runs code waits for your approval. You can allow the rest of a task at once."},
+        hint: "Actions that save, send, submit, delete or run code wait for your approval; browsing and typing don't. One approval covers that action's follow-up steps on the same site, and you can allow the rest of a task at once."},
 ];
 
 const THEME_OPTIONS: {value: ThemePreference; label: string; icon: LucideIcon}[] = [

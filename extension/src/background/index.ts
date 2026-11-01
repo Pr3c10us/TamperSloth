@@ -353,6 +353,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'DRAW_ENDED') return false;
     // The pricing page's relay; installPricingBridge answers it, so the refusal below must not.
     if (message.type === BILLING_TOKEN_REQUEST) return false;
+    // After a saved script is paused, resumed, deleted or imported: re-register
+    // first so reloaded pages get the change, then reload every tab its pattern
+    // covers. Any extension page may ask, including the script viewer's own tab.
+    if (message.type === 'RELOAD_SCRIPT_TABS') {
+        if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL(''))) return false;
+        void (async () => {
+            invalidateCache();
+            await syncRegisteredScripts();
+            const ids = new Set<number>();
+            for (const url of (message.patterns ?? []) as string[]) {
+                try {
+                    (await chrome.tabs.query({url})).forEach(tab => tab.id !== undefined && ids.add(tab.id));
+                } catch { /* a pattern tabs.query rejects; nothing to reload for it */ }
+            }
+            await Promise.all([...ids].map(id => chrome.tabs.reload(id).catch(() => {})));
+            sendResponse({count: ids.size});
+        })().catch(error => sendResponse({error: error.message}));
+        return true;
+    }
     // Only the extension's own UI may control tabs or evaluate code.
     if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL('')) || sender.tab) {
         sendResponse({error: 'Browser control is restricted to the extension UI'});
@@ -435,14 +454,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             ? executionLogs.filter(l => l.scriptId === message.scriptId)
             : executionLogs;
         sendResponse({logs});
-        return true;
-    }
-    // Reload a specific tab (e.g. after pausing/deleting a script)
-    if (message.type === 'RELOAD_TAB') {
-        void (async () => {
-            if (message.tabId) await chrome.tabs.reload(message.tabId);
-            sendResponse({ok: true});
-        })().catch(error => sendResponse({error: error.message}));
         return true;
     }
 

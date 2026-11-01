@@ -5,6 +5,7 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Settings from "@/src/settings";
 import Chat from "@/src/chat";
 import MicrophoneAccess from "@/src/microphone";
+import ScriptViewer from "@/src/scripts";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { usePanelRequestRouting } from "@/src/chat/hooks/usePanelRequests";
 import { initTheme } from "@/src/settings/lib/theme";
@@ -31,6 +32,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/gallery" element={<App />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/microphone" element={<MicrophoneAccess />} />
+          <Route path="/scripts/:id" element={<ScriptViewer />} />
           <Route path="/chat" element={<Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

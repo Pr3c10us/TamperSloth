@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Trash2, FileCode, RefreshCw } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Trash2, FileCode, RefreshCw, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -21,17 +22,21 @@ import {
   type CodeFileEntry,
   type ConversationSummary,
 } from "@/src/chat/lib/storage";
+import { openConversation } from "@/src/chat/hooks/useAgent";
 import { SettingsGroup, SettingsSection, TabIntro } from "./Section";
 
 interface ConversationGroup {
   conversationId: string;
   title: string;
+  /** False when the chat was deleted but its files were kept. */
+  hasChat: boolean;
   files: CodeFileEntry[];
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n !== 1 ? "s" : ""}`;
 
 export function CodeTab() {
+  const navigate = useNavigate();
   const [groups, setGroups] = useState<ConversationGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [confirmGroup, setConfirmGroup] = useState<ConversationGroup | null>(null);
@@ -56,9 +61,11 @@ export function CodeTab() {
 
     const result: ConversationGroup[] = [];
     for (const [convId, fileList] of byConv) {
+      const conv = convMap.get(convId);
       result.push({
         conversationId: convId,
-        title: convMap.get(convId)?.title || "Untitled conversation",
+        title: conv?.title || "Untitled conversation",
+        hasChat: !!conv,
         files: fileList,
       });
     }
@@ -83,6 +90,16 @@ export function CodeTab() {
         )
         .filter((g) => g.files.length > 0),
     );
+  };
+
+  const handleOpenChat = async (conversationId: string) => {
+    try {
+      await openConversation(conversationId);
+      navigate("/");
+    } catch {
+      // The chat vanished since the list loaded; refresh so its button goes away.
+      void load();
+    }
   };
 
   const handleDeleteAll = async (conversationId: string) => {
@@ -146,6 +163,17 @@ export function CodeTab() {
                       {plural(group.files.length, "file")}
                     </p>
                   </div>
+                  {group.hasChat && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground"
+                      onClick={() => void handleOpenChat(group.conversationId)}
+                    >
+                      <MessageSquare strokeWidth={1.5} />
+                      Open chat
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"

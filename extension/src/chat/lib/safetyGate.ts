@@ -1,6 +1,6 @@
 import {
-    assessAction, decide, describeTarget, parseVerdict, screenPrompt, SCREENER_INSTRUCTIONS,
-    type ApprovalMode, type FlaggedContent, type ScreenVerdict, type TargetInfo,
+    assessAction, decide, describeTarget, isGrantable, parseVerdict, screenPrompt, SCREENER_INSTRUCTIONS,
+    type ApprovalMode, type FlaggedContent, type RiskCategory, type ScreenVerdict, type TargetInfo,
 } from "./actionScreen";
 import {injectionNotice, injectionRegions, scanUntrusted, type InjectionScan} from "./contentScreen";
 import {requestConfirmation, type ConfirmAnswer} from "./confirmBus";
@@ -93,6 +93,20 @@ async function readPageTargets(tabId: number, specs: TargetSpec[]): Promise<(Tar
     return specs.map((spec, i) => found[i] ? {...spec.known, ...found[i]!} : spec.known);
 }
 
+/** The host of the tab actions land in; approvals are remembered per site. */
+async function readTabHost(tabId: number): Promise<string> {
+    if (!(tabId > 0)) return "";
+    try {
+        const tab = await chrome.tabs.get(tabId);
+        return tab.url ? new URL(tab.url).host : "";
+    } catch {
+        return "";
+    }
+}
+
+/** An askUser answer that says go ahead, as opposed to a choice between options or a no. */
+const AFFIRMATIVE = /^\s*(?:yes|yeah|yep|sure|ok(?:ay)?|confirm|proceed|go ahead|continue|allow|approve|delete|remove|send|submit|save|publish|post)\b/i;
+
 type Target = { ref?: string; selector?: string; index?: number; role?: string; name?: string; text?: string; mark?: number; snapshotId?: string; x?: number; y?: number };
 
 /** The page elements a tool call acts on, one spec per targeted step. */
@@ -144,7 +158,8 @@ export interface SafetyGateOptions {
     conversationId: string;
     /** The user's message that started this run; a function when messages sent mid-run extend it. */
     request: string | (() => string);
-    mode: ApprovalMode;
+    /** A function when the user can switch modes mid-run; each action uses the mode at that moment. */
+    mode: ApprovalMode | (() => ApprovalMode);
     /** Asks a model for a verdict; without it, flagged actions go to the user. */
     screen?: (instructions: string, prompt: string, signal?: AbortSignal) => Promise<string>;
     onSafety?: (toolCallId: string, safety: ToolSafety) => void;
@@ -154,6 +169,8 @@ export interface SafetyGateOptions {
     readTargets?: (tabId: number, specs: TargetSpec[]) => Promise<(TargetInfo | undefined)[]>;
     /** Overrides the confirmation card (tests). */
     confirm?: typeof requestConfirmation;
+    /** Overrides the tab's host lookup (tests). */
+    readHost?: (tabId: number) => Promise<string>;
 }
 
 /** What the model receives instead of a result when an action does not run. */
@@ -161,15 +178,20 @@ export type HeldOutput = { error: string; blocked?: true; declined?: true; hint:
 
 /**
  * One run's safety state: which results were flagged as possible prompt
- * injection, which tab actions land in, and whether the user allowed every
- * remaining action.
+ * injection, which tab actions land in, whether the user allowed every
+ * remaining action, and which kinds of action the user approved on each site.
  */
 export function createSafetyGate(options: SafetyGateOptions) {
     const flagged: FlaggedContent[] = [];
     const scans = new Map<string, InjectionScan>();
     let tabId = Number(new URLSearchParams(globalThis.location?.search ?? "").get("tabId")) || 0;
     let allowAll = false;
+    // One approval covers the follow-up steps of the same kind on that site, like a delete dialog's
+    // confirmations; a "yes" to the agent's own askUser question counts as approving its next held action.
+    const granted = new Map<string, Set<RiskCategory>>();
+    let preApproved = false;
     const readTargets = options.readTargets ?? readPageTargets;
+    const readHost = options.readHost ?? readTabHost;
     const confirm = options.confirm ?? requestConfirmation;
     const lookupMark = options.lookupMark ?? (() => undefined);
 
@@ -193,12 +215,30 @@ export function createSafetyGate(options: SafetyGateOptions) {
             const code = (name === "executeContentScript" || name === "saveScript") && typeof input.path === "string" && options.readScript
                 ? await options.readScript(input.path).catch(() => null) ?? undefined : undefined;
             const assessment = assessAction(name, input, targets, code);
-            const decision = decide(assessment, {mode: options.mode, flagged, allowAll});
+            const mode = typeof options.mode === "function" ? options.mode() : options.mode;
+            const host = await readHost(input.tabId ?? tabId);
+            const grants = granted.get(host);
+            const decision = decide(assessment, {mode, flagged, allowAll, granted: grants && [...grants]});
             const target = targets.map(describeTarget).find(Boolean)
                 ?? (typeof input.url === "string" ? input.url : undefined);
             const report = (safety: ToolSafety) => options.onSafety?.(call.toolCallId, safety);
+            const grant = () => {
+                if (!isGrantable(assessment)) return;
+                granted.set(host, (granted.get(host) ?? new Set()).add(assessment.category!));
+            };
 
-            if (decision.kind === "allow") return undefined;
+            if (decision.kind === "allow") {
+                if (grants && decide(assessment, {mode, flagged, allowAll}).kind === "confirm") {
+                    report({verdict: "approved", note: "Covered by your earlier approval."});
+                }
+                return undefined;
+            }
+            if (decision.kind === "confirm" && !decision.injection && preApproved && isGrantable(assessment)) {
+                preApproved = false;
+                grant();
+                report({verdict: "approved", note: "You approved this when Sloth asked."});
+                return undefined;
+            }
             if (decision.kind === "block") {
                 const why = decision.reasons[0] ?? "the action looks unsafe";
                 report({verdict: "blocked", note: why});
@@ -238,13 +278,14 @@ export function createSafetyGate(options: SafetyGateOptions) {
                 target,
                 reasons: reasons.length ? reasons : ["This action changes something in your browser."],
                 injection,
-                allowAll: options.mode === "ask" && !assessment.confirm && !injection,
+                allowAll: mode === "ask" && !assessment.confirm && !injection,
             }, call.abortSignal);
             if (answer === "deny") {
                 report({verdict: "declined"});
                 return held("declined", "");
             }
             if (answer === "allow-all") allowAll = true;
+            if (!injection) grant();
             report({verdict: "approved"});
             return undefined;
         },
@@ -253,6 +294,7 @@ export function createSafetyGate(options: SafetyGateOptions) {
         inspect(toolCallId: string, name: string, output: unknown): InjectionScan | undefined {
             const value = output as Record<string, any> | null;
             if (name === "browserTabs" && value && typeof value.tabId === "number" && !value.error) tabId = value.tabId;
+            if (name === "askUser") preApproved = !!value && value.answer?.custom === false && AFFIRMATIVE.test(String(value.answer?.label ?? ""));
             if (UNSCANNED.has(name) || !value) return undefined;
             const scan = scanUntrusted(output);
             if (!scan.flagged) return undefined;

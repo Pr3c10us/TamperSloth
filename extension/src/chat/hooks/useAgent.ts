@@ -21,7 +21,7 @@ import {createToolRuntime, initialToolGroups} from "../lib/toolRuntime";
 import {scanUntrusted} from "../lib/contentScreen";
 import {clip, createStepMessagePreparer, isFailed, serialize, summarizeSelectedElement, sumUsage, usageRecord, type RunMetrics, type UsageRecord} from "../lib/efficiency";
 import {createGuidanceGuard, GUIDANCE_RESUME_NOTE} from "../lib/guidanceGuard";
-import {loadAgentSettings, runStopReason, saveLastThinkingLevel, withPlanRunBudget} from "../lib/agentSettings";
+import {loadAgentSettings, onAgentSettingsChange, runStopReason, saveLastThinkingLevel, withPlanRunBudget} from "../lib/agentSettings";
 import {isThinkingLevel, type ThinkingLevel} from "../lib/thinkingLevel";
 import {agentProviderOptions} from "../lib/providerCompatibility";
 import {createReasoningNormalizer, type NormalizedEvent, type ThinkingContent} from "../lib/reasoning";
@@ -638,6 +638,8 @@ async function sendMessage(
     ]);
     // Shows messages the user sent mid-run once the stream reaches their step; set up with the run.
     let showSent = () => {};
+    // The permission mode can be switched from the composer while the run works.
+    let stopWatchingApproval = () => {};
     // The part of the reply now being written: its first step and when it began.
     let segment = {step: 0, startedAt};
 
@@ -647,6 +649,8 @@ async function sendMessage(
         const sloth = providerId === "tampersloth";
         const planBudget = await planBudgetReady;
         const settings = withPlanRunBudget(await settingsReady, planBudget);
+        let approvalMode = settings.actionApproval;
+        stopWatchingApproval = onAgentSettingsChange(next => { approvalMode = next.actionApproval; });
         // Stopped by the plan's budget rather than the user's own: the plan-limit notice says so instead of an error line.
         const budgetStopped = () => Boolean(stopReason) && stopReason === runStopReason(settings, metrics.steps);
         const planStopped = () => Boolean(planBudget) && settings.tokenBudget === planBudget && budgetStopped();
@@ -688,7 +692,7 @@ async function sendMessage(
             safety: {
                 conversationId,
                 request: () => userRequest,
-                mode: settings.actionApproval,
+                mode: () => approvalMode,
                 screen: async (instructions, prompt, signal) => (await generateText({
                     model, instructions, prompt, abortSignal: signal, maxRetries: 1, headers: runHeaders,
                     providerOptions: titleProviderOptions(providerId, resolvedModelId),
@@ -1003,6 +1007,7 @@ async function sendMessage(
             patchSession(conversationId, {error: err.message ?? "Something went wrong"});
         }
     } finally {
+        stopWatchingApproval();
         // Read by the model but stopped before their step began.
         showSent();
         // A stopped or failed task can't finish its own tabs: close the disposable ones, keeping retained tabs.

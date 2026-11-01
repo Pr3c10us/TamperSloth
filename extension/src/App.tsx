@@ -28,8 +28,12 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {PageHeader, PageHeaderAction, PageHeaderTitle} from "@/components/page-header";
-import {deleteScript, exportScript, importScriptsFromJson, loadScripts, updateScriptStatus,} from "./chat/lib/storage";
+import {deleteScript, exportScript, importScriptsFromJson, loadScripts, subscribeToScripts, updateScriptStatus,} from "./chat/lib/storage";
 import type {BackgroundScript} from "./chat/lib/types";
+import {ScriptCode} from "./scripts/ScriptCode";
+import {openScriptViewer, reloadedNote, reloadTabsForScript, reloadTabsForScripts} from "./scripts/lib";
+
+const PREVIEW_LINES = 8;
 
 function App() {
     const navigate = useNavigate();
@@ -42,12 +46,6 @@ function App() {
     } | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const reloadSidebarTab = () => {
-        if (sidebarTabId) {
-            chrome.runtime.sendMessage({type: "RELOAD_TAB", tabId: sidebarTabId});
-        }
-    };
-
     const handleImport = () => {
         fileInputRef.current?.click();
     };
@@ -58,18 +56,23 @@ function App() {
         e.target.value = "";
         try {
             const text = await file.text();
+            const before = new Set((await loadScripts()).map((s) => s.id));
             const count = await importScriptsFromJson(text);
             const updated = await loadScripts();
             setScripts(updated);
-            reloadSidebarTab();
-            toast.success(`Imported ${count} script${count !== 1 ? "s" : ""} successfully.`);
+            const reloaded = await reloadTabsForScripts(updated.filter((s) => !before.has(s.id)));
+            toast.success(`Imported ${count} script${count !== 1 ? "s" : ""} successfully.`, {
+                description: reloadedNote(reloaded),
+            });
         } catch {
             toast.error("Invalid script file. Make sure it's a TamperSloth JSON export.");
         }
     };
 
+    // The viewer tab and the agent can also pause or delete scripts.
     useEffect(() => {
         loadScripts().then(setScripts);
+        return subscribeToScripts(setScripts);
     }, []);
 
     const q = search.trim().toLowerCase();
@@ -80,8 +83,6 @@ function App() {
                 s.description.toLowerCase().includes(q),
         )
         : scripts;
-    const sidebarTabId = Number(new URLSearchParams(window.location.search).get("tabId")) || 0;
-
 
     const handleToggleStatus = async (script: BackgroundScript) => {
         const next = script.status === "active" ? "paused" : "active";
@@ -89,22 +90,23 @@ function App() {
         setScripts((prev) =>
             prev.map((s) => (s.id === script.id ? {...s, status: next} : s)),
         );
-        reloadSidebarTab();
+        const reloaded = await reloadTabsForScript(script);
         toast.success(next === "paused" ? `"${script.name}" paused.` : `"${script.name}" resumed.`, {
-            description: "The page has been refreshed to apply the change.",
+            description: reloadedNote(reloaded),
         });
     };
 
     const confirmRemoval = async () => {
         if (!confirmDelete) return;
         const name = confirmDelete.name;           // capture before clearing
+        const removed = scripts.find((s) => s.id === confirmDelete.id);
         await deleteScript(confirmDelete.id);
         setScripts((prev) => prev.filter((s) => s.id !== confirmDelete.id));
         if (expanded === confirmDelete.id) setExpanded(null);
         setConfirmDelete(null);
-        reloadSidebarTab();
+        const reloaded = removed ? await reloadTabsForScript(removed) : 0;
         toast.success(`"${name}" deleted.`, {
-            description: "The page has been refreshed to apply the change.",
+            description: reloadedNote(reloaded),
         });
     };
 
@@ -267,6 +269,7 @@ function App() {
                                                     {script.description}
                                                 </p>
                                             )}
+                                            <CodePreview script={script}/>
                                             <div className="flex items-center gap-1.5">
                                                 <Button
                                                     variant="outline"
@@ -353,6 +356,30 @@ function App() {
                 </AlertDialogContent>
             </AlertDialog>
         </div>
+    );
+}
+
+/** The first few lines, enough to recognise a script; the whole thing opens in its own tab. */
+function CodePreview({script}: { script: BackgroundScript }) {
+    const lines = script.code.split("\n");
+    const more = lines.length - PREVIEW_LINES;
+    return (
+        <button
+            type="button"
+            onClick={() => openScriptViewer(script.id)}
+            aria-label={`Open the code of ${script.name} in a new tab`}
+            className="group relative mb-3 block w-full cursor-pointer overflow-hidden rounded-[8px] border border-border bg-card text-left transition-colors duration-[160ms] hover:border-muted-foreground/40"
+        >
+            <div className="pointer-events-none overflow-hidden">
+                <ScriptCode code={lines.slice(0, PREVIEW_LINES).join("\n")} fontSize="11px" padding="9px 11px"/>
+            </div>
+            {more > 0 && (
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card to-transparent"/>
+            )}
+            <span className="absolute right-2 bottom-1.5 rounded-full border border-border bg-background/90 px-2 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors group-hover:text-foreground">
+                {more > 0 ? `+${more} lines · Open ↗` : "Open ↗"}
+            </span>
+        </button>
     );
 }
 

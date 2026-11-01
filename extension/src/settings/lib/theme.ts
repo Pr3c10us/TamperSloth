@@ -4,7 +4,7 @@ export type ThemePreference = "dark" | "light" | "system";
 export type ResolvedTheme = "dark" | "light";
 
 const KEY = "ts_theme";
-export const DEFAULT_THEME: ThemePreference = "dark";
+export const DEFAULT_THEME: ThemePreference = "system";
 // Page backgrounds per theme, kept in sync with --background in index.css.
 const THEME_COLORS: Record<ResolvedTheme, string> = {dark: "#141513", light: "#f3f4f2"};
 

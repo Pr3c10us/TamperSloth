@@ -1,13 +1,19 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import type { ChatMessage, StoredAttachment } from "../hooks/useAgent";
 import { attachmentUrl } from "../lib/attachmentUrls";
 import { MarkdownContent } from "./Markdown";
 import { PickedElementChip } from "./PickedElementChip";
 import { AttachmentChip } from "./AttachmentChip";
 import { QuoteChip } from "./QuoteChip";
+import { CopyMessageButton } from "./AssistantMessage";
+
+// Messages taller than this fold to the collapsed height, with a toggle to read the rest.
+const COLLAPSE_AT = 200;
+const COLLAPSED_HEIGHT = 120;
 
 // Stored chats only keep an attachment id; the thumbnail URL is minted from IndexedDB.
 function SentAttachment({ att }: { att: StoredAttachment }) {
@@ -31,6 +37,47 @@ function SentPickedElement({ html, shotId }: { html: string; shotId?: string | n
         return () => { live = false; };
     }, [shotId]);
     return <PickedElementChip html={html} imageUrl={url} />;
+}
+
+/** The message text in its bubble; a long message folds behind "Show more". */
+function MessageBubble({ content }: { content: string }) {
+    const textRef = useRef<HTMLDivElement>(null);
+    const [long, setLong] = useState(false);
+    const [expanded, setExpanded] = useState(false);
+
+    // Re-measured when the panel's width changes, since that changes how the text wraps.
+    useLayoutEffect(() => {
+        const text = textRef.current;
+        if (!text) return;
+        const measure = () => setLong(text.scrollHeight > COLLAPSE_AT);
+        measure();
+        const observer = new ResizeObserver(measure);
+        observer.observe(text);
+        return () => observer.disconnect();
+    }, [content]);
+
+    const collapsed = long && !expanded;
+    return (
+        <div className="flex max-w-[85%] flex-col items-start gap-1.5 rounded-xl border border-border bg-secondary px-3.5 py-2.5 text-[14px] leading-relaxed text-secondary-foreground [&_p]:text-inherit [&_li]:text-inherit [&_strong]:text-inherit [&_em]:text-inherit [&_code]:text-inherit">
+            <div
+                ref={textRef}
+                className={cn("w-full overflow-hidden", collapsed && "[mask-image:linear-gradient(to_bottom,black_55%,transparent)]")}
+                style={collapsed ? { maxHeight: COLLAPSED_HEIGHT } : undefined}
+            >
+                <MarkdownContent content={content} />
+            </div>
+            {long && (
+                <button
+                    type="button"
+                    onClick={() => setExpanded((open) => !open)}
+                    aria-expanded={expanded}
+                    className="rounded-sm text-[12.5px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                    {expanded ? "Show less" : "Show more"}
+                </button>
+            )}
+        </div>
+    );
 }
 
 // Streaming re-renders the whole list on every delta; `msg` keeps its identity
@@ -59,11 +106,7 @@ export const UserMessage = memo(function UserMessage({ msg, onEdit }: { msg: Cha
                     ))}
                 </div>
             )}
-            {msg.content && (
-                <div className="max-w-[85%] rounded-xl border border-border bg-secondary px-3.5 py-2.5 text-[14px] leading-relaxed text-secondary-foreground [&_p]:text-inherit [&_li]:text-inherit [&_strong]:text-inherit [&_em]:text-inherit [&_code]:text-inherit">
-                    <MarkdownContent content={msg.content} />
-                </div>
-            )}
+            {msg.content && <MessageBubble content={msg.content} />}
             {picked.length > 0 && (
                 <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
                     {picked.map((html, i) => (
@@ -71,18 +114,21 @@ export const UserMessage = memo(function UserMessage({ msg, onEdit }: { msg: Cha
                     ))}
                 </div>
             )}
-            {onEdit && (
+            {(msg.content || onEdit) && (
                 // Out of the way until the message is hovered or focused, like the reply's actions.
-                <div className="-mr-1 opacity-0 transition-opacity group-hover/user:opacity-100 focus-within:opacity-100">
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon-xs" onClick={() => onEdit(msg.id)} aria-label="Edit message"
-                                className="text-muted-foreground hover:text-foreground">
-                                <Pencil className="size-3.5" />
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">Edit and resend</TooltipContent>
-                    </Tooltip>
+                <div className="-mr-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/user:opacity-100 focus-within:opacity-100">
+                    {msg.content && <CopyMessageButton text={msg.content} />}
+                    {onEdit && (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button variant="ghost" size="icon-xs" onClick={() => onEdit(msg.id)} aria-label="Edit message"
+                                    className="text-muted-foreground hover:text-foreground">
+                                    <Pencil className="size-3.5" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">Edit and resend</TooltipContent>
+                        </Tooltip>
+                    )}
                 </div>
             )}
         </div>

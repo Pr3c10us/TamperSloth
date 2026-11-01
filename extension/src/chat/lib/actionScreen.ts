@@ -1,7 +1,11 @@
 /**
  * Action screening: every tool call is triaged for risk before it runs.
  *
- * - Reads and harmless page actions run without delay.
+ * - Reads and harmless page actions run without delay. In "ask" (Manual) mode,
+ *   actions that change something (saving, sending, submitting, deleting,
+ *   running scripts) wait for the user; browsing and typing do not.
+ * - Once the user approves an action, the follow-up steps of the same kind on
+ *   the same site run without asking again (see safetyGate.ts).
  * - Certain high-risk actions (downloading a file, entering sensitive
  *   information, paying, deleting, running code that can send page data away)
  *   always stop for the user's confirmation.
@@ -20,7 +24,7 @@ export type Risk = "none" | "low" | "medium" | "high";
 
 export type RiskCategory =
     | "download" | "sensitive-input" | "payment" | "destructive" | "account"
-    | "code" | "navigation" | "network" | "persistent" | "input" | "communication";
+    | "code" | "navigation" | "network" | "persistent" | "input" | "communication" | "edit";
 
 /** What is known about the element an action targets, read from the live page. */
 export interface TargetInfo {
@@ -42,6 +46,8 @@ export interface ActionAssessment {
     category?: RiskCategory;
     /** Ask the user in every approval mode. */
     confirm?: boolean;
+    /** Saves, sends, submits or deletes something; Manual mode asks first. */
+    changes?: boolean;
     /** Never run. */
     block?: boolean;
     /** Why the action is risky, for the user and the screener. */
@@ -62,6 +68,9 @@ const PAYMENT = /\b(?:buy(?: now| it now)?|purchase|place (?:your |my )?order|co
 const DESTRUCTIVE = /\b(?:delete|erase|permanently remove|remove (?:account|permanently|forever)|empty (?:the )?trash|deactivate|close (?:my |your |the )?account|cancel (?:my |your |the )?(?:subscription|membership|account|plan|order)|wipe|factory reset|revoke)\b/i;
 const ACCOUNT = /\b(?:authorize|grant access|allow access|change (?:my |your )?(?:password|email|phone number)|reset (?:my |your )?password|disable (?:2fa|two[- ]factor|mfa)|add (?:a )?(?:recovery|backup) (?:email|phone)|accept (?:all|the)? ?(?:terms|invitation))\b/i;
 const COMMUNICATION = /\b(?:send|post|publish|tweet|reply|comment|share|submit|invite|message)\b/i;
+const EDIT = /\b(?:save|update|apply|create|rename|archive|unarchive|merge|transfer|change|confirm|make (?:it )?(?:private|public)|enable|disable|restore|remove|add|install|uninstall|upload|accept|decline|approve|reject|reopen)\b/i;
+/** Fields where Enter runs a search rather than submitting a change. */
+const SEARCH_FIELD = /\b(?:search|query|find|filter|q)\b/i;
 
 const SENSITIVE_FIELD = /pass(?:word|wd|code|phrase)?\b|\bpwd\b|card.?(?:number|num|no)\b|\bcc-?(?:num|number|csc|exp)|\bcvv\b|\bcvc\b|security.?code|\bssn\b|social.?security|\biban\b|routing|account.?(?:number|no)\b|sort.?code|\bpin\b|\botp\b|one.?time|verification.?code|\b2fa\b|\bmfa\b|api.?key|secret|\btoken\b|seed|mnemonic|private.?key|tax.?id|passport|driver'?s.?licen[cs]e/i;
 const SENSITIVE_AUTOCOMPLETE = /^(?:current-password|new-password|one-time-code|cc-number|cc-csc|cc-exp(?:-month|-year)?|cc-name)$/;
@@ -171,7 +180,8 @@ function assessClick(target: TargetInfo | undefined, label: string | undefined):
     if (target?.formSensitive && (target.type === "submit" || target.tag === "button")) {
         return {risk: "high", category: "sensitive-input", confirm: true, reasons: [`Clicking ${quoted} submits a form with password or payment fields`], payload};
     }
-    if (name && COMMUNICATION.test(name)) return {risk: "medium", category: "communication", reasons: [`Clicking ${quoted} may send or publish something`], payload};
+    if (name && COMMUNICATION.test(name)) return {risk: "medium", category: "communication", changes: true, reasons: [`Clicking ${quoted} may send or publish something`], payload};
+    if (name && EDIT.test(name)) return {risk: "medium", category: "edit", changes: true, reasons: [`Clicking ${quoted} may save or change something`], payload};
     return {risk: "medium", category: "input", reasons: [], payload};
 }
 
@@ -191,7 +201,7 @@ function assessCode(code: string, what: string): ActionAssessment {
         return {risk: "high", category: "code", confirm: true,
             reasons: [`${what} reads cookies, storage or credentials and can send data off the page`], payload: [code.slice(0, 2000)]};
     }
-    return {risk: "medium", category: "code", reasons: [], payload: [code.slice(0, 2000)]};
+    return {risk: "medium", category: "code", changes: true, reasons: [`${what} can change the page`], payload: [code.slice(0, 2000)]};
 }
 
 function stringOf(value: unknown): string {
@@ -201,6 +211,13 @@ function stringOf(value: unknown): string {
 /** Tools that only read: running them leaves the browser as it was. */
 export function isReadOnlyTool(name: string): boolean {
     return READ_ONLY.has(name);
+}
+
+/** Enter in a search box runs the search; anywhere else it may submit or send. */
+function submitsWithEnter(target?: TargetInfo): boolean {
+    if (!target) return true;
+    if (target.type === "search" || target.role === "searchbox" || target.role === "combobox") return false;
+    return !SEARCH_FIELD.test([target.fieldHints, target.label].filter(Boolean).join(" "));
 }
 
 const NONE: ActionAssessment = {risk: "none", reasons: [], payload: []};
@@ -248,7 +265,7 @@ export function assessAction(name: string, input: Record<string, any>, targets: 
             return LOW;
         case "siteRecipes":
             return input.action === "save" || input.action === "delete"
-                ? {risk: "medium", category: "persistent", reasons: [`${input.action === "save" ? "Saves" : "Deletes"} a reusable site recipe`],
+                ? {risk: "medium", category: "persistent", changes: true, reasons: [`${input.action === "save" ? "Saves" : "Deletes"} a reusable site recipe`],
                     payload: input.recipe ? [JSON.stringify(input.recipe).slice(0, 2000)] : []}
                 : LOW;
         case "networkCapture": {
@@ -267,11 +284,11 @@ export function assessAction(name: string, input: Record<string, any>, targets: 
             return assessCode(code ?? "", "This script");
         case "saveScript": {
             const assessed = assessCode(code ?? "", "The saved change");
-            return {...assessed, category: assessed.category === "code" && assessed.confirm ? "code" : "persistent",
+            return {...assessed, category: assessed.category === "code" && assessed.confirm ? "code" : "persistent", changes: true,
                 reasons: [...assessed.reasons, `Saves a change that runs automatically on ${stringOf(input.urlMatchPattern) || "matching pages"}`]};
         }
         case "removeScript":
-            return {risk: "medium", category: "persistent", reasons: ["Removes a saved change"], payload: []};
+            return {risk: "medium", category: "persistent", changes: true, reasons: ["Removes a saved change"], payload: []};
         case "clickElement":
         case "clickTarget":
             return assessClick(target, input.target?.name ?? input.target?.text);
@@ -279,7 +296,9 @@ export function assessAction(name: string, input: Record<string, any>, targets: 
             return {risk: "medium", category: "input", reasons: [], payload: [stringOf(input.value), stringOf(input.label)].filter(Boolean)};
         case "typeText": {
             const typed = assessTyping(stringOf(input.text), target);
-            if (typed.confirm || !input.pressEnter || !target?.formSensitive) return typed;
+            if (typed.confirm || !input.pressEnter) return typed;
+            if (!target?.formSensitive) return submitsWithEnter(target)
+                ? {...typed, category: "communication", changes: true, reasons: ["Pressing Enter may submit or send what was typed"]} : typed;
             return {...typed, risk: "high", category: "sensitive-input", confirm: true, reasons: ["Pressing Enter submits a form with password or payment fields"]};
         }
         case "fillForm": {
@@ -290,13 +309,13 @@ export function assessAction(name: string, input: Record<string, any>, targets: 
             if (input.submit && typeof input.submit === "object") steps.push(assessClick(submitTarget, undefined));
             else if (input.submit === true) steps.push(submitTarget?.formSensitive
                 ? {risk: "high", category: "sensitive-input", confirm: true, reasons: ["Submits a form with password or payment fields"], payload: [submitTarget.formAction ?? ""].filter(Boolean)}
-                : {risk: "medium", category: "input", reasons: [], payload: [submitTarget?.formAction ?? ""].filter(Boolean)});
+                : {risk: "medium", category: "communication", changes: true, reasons: ["Submits a form"], payload: [submitTarget?.formAction ?? ""].filter(Boolean)});
             return combine(steps);
         }
         case "submitForm":
             return target?.formSensitive
                 ? {risk: "high", category: "sensitive-input", confirm: true, reasons: ["Submits a form with password or payment fields"], payload: [target.formAction ?? ""].filter(Boolean)}
-                : {risk: "medium", category: "input", reasons: [], payload: [target?.formAction ?? ""].filter(Boolean)};
+                : {risk: "medium", category: "communication", changes: true, reasons: ["Submits a form"], payload: [target?.formAction ?? ""].filter(Boolean)};
         case "trustedInput":
             if (input.action === "text") return assessTyping(stringOf(input.text), target);
             return input.action === "mouse" && !/pressed|released/i.test(stringOf(input.type)) ? LOW : {risk: "medium", category: "input", reasons: [], payload: []};
@@ -310,8 +329,8 @@ export function assessAction(name: string, input: Record<string, any>, targets: 
                 return LOW;
             }));
         default:
-            // Unknown tools are treated as actions.
-            return {risk: "medium", reasons: [], payload: []};
+            // Unknown tools are treated as actions that change something.
+            return {risk: "medium", changes: true, reasons: [], payload: []};
     }
 }
 
@@ -324,6 +343,7 @@ export function combine(assessments: ActionAssessment[]): ActionAssessment {
     return {
         ...worst,
         confirm: assessments.some(a => a.confirm),
+        changes: assessments.some(a => a.changes || a.confirm),
         block: assessments.some(a => a.block),
         reasons: [...new Set(assessments.flatMap(a => a.reasons))],
         payload: assessments.flatMap(a => a.payload),
@@ -362,6 +382,14 @@ export function payloadFromFlagged(payload: string[], flagged: FlaggedContent[])
     return undefined;
 }
 
+/** Kinds of action approved one at a time, however many came before. */
+const ALWAYS_ASK = new Set<RiskCategory>(["payment", "download", "sensitive-input"]);
+
+/** Whether approving this action can cover later steps of the same kind on the same site. */
+export function isGrantable(assessment: ActionAssessment): boolean {
+    return !!assessment.category && !ALWAYS_ASK.has(assessment.category);
+}
+
 export type Decision =
     | { kind: "allow" }
     | { kind: "confirm"; reasons: string[]; injection: boolean }
@@ -374,6 +402,8 @@ export function decide(assessment: ActionAssessment, options: {
     flagged: FlaggedContent[];
     /** The user allowed every remaining action in this run ("ask" mode). */
     allowAll?: boolean;
+    /** Kinds of action the user already approved on this site in this run. */
+    granted?: RiskCategory[];
 }): Decision {
     if (assessment.block) return {kind: "block", reasons: assessment.reasons};
     if (assessment.risk === "none") return {kind: "allow"};
@@ -384,8 +414,10 @@ export function decide(assessment: ActionAssessment, options: {
             `It uses "${fromFlagged}", which appeared in page content flagged as a possible prompt injection`,
         ]};
     }
-    if (assessment.confirm) return {kind: "confirm", injection: false, reasons: assessment.reasons};
-    if (options.mode === "ask" && RANK[assessment.risk] >= RANK.medium && !options.allowAll) {
+    // One approval covers the follow-up steps of the same kind, such as a delete dialog's confirmations.
+    const covered = isGrantable(assessment) && !!options.granted?.includes(assessment.category!);
+    if (assessment.confirm && !covered) return {kind: "confirm", injection: false, reasons: assessment.reasons};
+    if (options.mode === "ask" && assessment.changes && !options.allowAll && !covered) {
         return {kind: "confirm", injection: false, reasons: assessment.reasons};
     }
     if (options.flagged.length && RANK[assessment.risk] >= RANK.medium) return {kind: "screen", reasons: assessment.reasons};
