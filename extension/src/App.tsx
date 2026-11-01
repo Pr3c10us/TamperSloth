@@ -2,6 +2,7 @@ import {useEffect, useRef, useState} from "react";
 import {Link, useNavigate} from "react-router-dom";
 import {
     ArrowLeft,
+    ArrowUpRight,
     ChevronDown,
     Download,
     Pause,
@@ -371,13 +372,14 @@ function CodePreview({script}: { script: BackgroundScript }) {
             className="group relative mb-3 block w-full cursor-pointer overflow-hidden rounded-[8px] border border-border bg-card text-left transition-colors duration-[160ms] hover:border-muted-foreground/40"
         >
             <div className="pointer-events-none overflow-hidden">
-                <ScriptCode code={lines.slice(0, PREVIEW_LINES).join("\n")} fontSize="11px" padding="9px 11px"/>
+                <ScriptCode code={lines.slice(0, PREVIEW_LINES).join("\n")} fontSize="11px" padding="9px 11px" clip/>
             </div>
             {more > 0 && (
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card to-transparent"/>
             )}
-            <span className="absolute right-2 bottom-1.5 rounded-full border border-border bg-background/90 px-2 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors group-hover:text-foreground">
-                {more > 0 ? `+${more} lines · Open ↗` : "Open ↗"}
+            <span className="absolute right-2 bottom-1.5 flex items-center gap-1 rounded-full border border-border bg-background/90 py-0.5 pr-1.5 pl-2 font-mono text-[10px] text-muted-foreground transition-colors group-hover:text-foreground">
+                {more > 0 ? `+${more} lines · Open` : "Open"}
+                <ArrowUpRight strokeWidth={2} className="size-3"/>
             </span>
         </button>
     );
