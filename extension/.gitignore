@@ -29,7 +29,5 @@ extension.zip
 
 # Cloudflare
 .wrangler
-store-assets/
-design-reference/
 film/
 .agents/
