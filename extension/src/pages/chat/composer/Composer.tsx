@@ -3,12 +3,7 @@ import { Link } from "react-router-dom";
 import {
     CornerDownLeft,
     LoaderCircle,
-    MousePointerClick,
-    MousePointerSquareDashed,
-    Paperclip,
-    PencilLine,
     Plus,
-    TextQuote,
 } from "lucide-react";
 import { Button } from "@/ui/shadcn/button";
 import {
@@ -21,6 +16,7 @@ import {clearPickedMarkers} from "@/injected/pickerOverlay";
 import {useElementPicker} from "@/pages/chat/hooks/useElementPicker";
 import { useDrawOverlay } from "@/pages/chat/hooks/useDrawOverlay";
 import { usePanelRequests } from "@/pages/chat/hooks/usePanelRequests";
+import { useComposerTextarea } from "@/pages/chat/hooks/useComposerTextarea";
 import { useDictation } from "@/pages/chat/hooks/useDictation";
 import {
     DEFAULT_DICTATION_SETTINGS,
@@ -30,15 +26,15 @@ import {
 import { DictationButton } from "./DictationButton";
 import { DictationWave } from "./DictationWave";
 import type { Quote } from "@/shared/panelRequests";
-import { QuoteChip } from "./QuoteChip";
+import { ComposerTrays } from "./ComposerTrays";
+import { DictationPreview } from "./DictationPreview";
+import { PageToolsBar } from "./PageToolsBar";
 import { ModelSelector, type SelectedModelEntry } from "./ModelSelector";
 import { PermissionModeSelector } from "./PermissionModeSelector";
 import { useAccount } from "@/account/useAccount";
 import type { ThinkingLevel } from "@/agent/models/thinkingLevel";
-import {PickedElementChip} from "./PickedElementChip";
 import type {PickedElement} from "@/agent/conversation/types";
-import {AttachmentChip} from "./AttachmentChip";
-import {MAX_ATTACHMENTS, type PendingAttachment} from "@/agent/conversation/attachments";
+import {dataUrlToFile, MAX_ATTACHMENTS, type PendingAttachment} from "@/agent/conversation/attachments";
 import { AskUserOverlay } from "@/pages/chat/prompts/AskUserOverlay";
 import { ActionConfirmOverlay } from "@/pages/chat/prompts/ActionConfirmOverlay";
 import { UserWaitNotice } from "@/pages/chat/notices/UserWaitNotice";
@@ -79,27 +75,6 @@ interface ComposerProps {
     onCancelEdit: () => void;
 }
 
-/** Label row for a group of attachments above the input: icon, name, count and "clear all". */
-function TrayHeader({ icon, label, count, onClear }: { icon: React.ReactNode; label: string; count: string; onClear: () => void }) {
-    return (
-        <div className="flex items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground">
-            <span className="flex min-w-0 items-center gap-1.5">
-                {icon}
-                <span className="truncate">{label}</span>
-                <span className="rounded-sm border border-border px-1 tabular-nums tracking-normal text-foreground/80">{count}</span>
-            </span>
-            <button
-                type="button"
-                onClick={onClear}
-                aria-label={`Clear all ${label.toLowerCase()}`}
-                className="shrink-0 uppercase tracking-[.08em] text-foreground underline underline-offset-2 hover:text-accent"
-            >
-                Clear all
-            </button>
-        </div>
-    );
-}
-
 export function Composer({
     draft,
     setDraft,
@@ -130,9 +105,8 @@ export function Composer({
     const [queuedAction, setQueuedAction] = useState<"pick" | "draw" | null>(null);
     const [pageNotice, setPageNotice] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const textareaRef = useComposerTextarea(draft);
     const containerRef = useRef<HTMLDivElement>(null);
-    const previewRef = useRef<HTMLDivElement>(null);
     const [skippedFiles, setSkippedFiles] = useState(0);
     const filesFull = pendingFiles.length >= MAX_ATTACHMENTS;
     // The mic and language picked earlier still apply; the composer no longer offers to change them.
@@ -236,50 +210,6 @@ export function Composer({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [queuedAction, isLoading]);
 
-    const fitTextarea = () => {
-        const ta = textareaRef.current;
-        if (!ta) return;
-        ta.style.height = "auto";
-        const lineHeight = parseFloat(getComputedStyle(ta).lineHeight) || 20;
-        const maxHeight = lineHeight * 6;
-        ta.style.height = `${Math.min(ta.scrollHeight, maxHeight)}px`;
-        ta.style.overflowY = ta.scrollHeight > maxHeight ? "auto" : "hidden";
-    };
-
-    useEffect(fitTextarea, [draft]);
-
-    // Opening the panel puts the caret in the input, so the user can type right away.
-    // The panel window can gain focus after mount, so focus again then unless something else has it.
-    useEffect(() => {
-        const focusInput = () => {
-            const active = document.activeElement;
-            if (active && active !== document.body) return;
-            textareaRef.current?.focus({ preventScroll: true });
-        };
-        focusInput();
-        const frame = requestAnimationFrame(focusInput);
-        window.addEventListener("focus", focusInput);
-        return () => {
-            cancelAnimationFrame(frame);
-            window.removeEventListener("focus", focusInput);
-        };
-    }, []);
-
-    // The side panel can mount this while still opening (near-zero width), which wraps
-    // the placeholder into many lines; refit whenever the width settles.
-    useEffect(() => {
-        const ta = textareaRef.current;
-        if (!ta) return;
-        let lastWidth = ta.clientWidth;
-        const observer = new ResizeObserver(() => {
-            if (ta.clientWidth === lastWidth) return;
-            lastWidth = ta.clientWidth;
-            fitTextarea();
-        });
-        observer.observe(ta);
-        return () => observer.disconnect();
-    }, []);
-
     const { loaded: accountLoaded, signedIn } = useAccount();
     const slothSignedOut = selectedModel?.providerId === "tampersloth" && accountLoaded && !signedIn;
 
@@ -325,16 +255,6 @@ export function Composer({
         if (canSend) onSend();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sendQueued]);
-
-    // The live transcript keeps its newest words in view, and takes keyboard focus so Enter and Esc work.
-    useEffect(() => {
-        const preview = previewRef.current;
-        if (!preview || !listening) return;
-        preview.scrollTop = preview.scrollHeight;
-    }, [listening, draft, dictation.interim]);
-    useEffect(() => {
-        if (listening) previewRef.current?.focus({ preventScroll: true });
-    }, [listening]);
 
     const handleAttach = () => fileInputRef.current?.click();
 
@@ -387,80 +307,18 @@ export function Composer({
             <QueuedMessages queued={queued} onRemove={(id) => onUnqueue(id)} onEdit={(id) => onUnqueue(id, true)} />
             <div className="flex flex-col gap-1.5 px-3 pb-2 pt-2">
                 <div className="flex flex-col gap-2.5 rounded-2xl border border-border bg-card p-2.5 shadow-xs transition-colors focus-within:border-foreground/40">
-                    {pickedElements.length > 0 && (
-                        <section aria-label="Picked elements" className="flex flex-col gap-1.5">
-                            <TrayHeader
-                                icon={<MousePointerClick className="size-3 text-accent" strokeWidth={1.75} />}
-                                label="Picked elements"
-                                count={String(pickedElements.length)}
-                                onClear={clearPicked}
-                            />
-                            {/* Previews wrap; past about two rows the list scrolls instead of pushing the input up. */}
-                            <div className="flex max-h-[12.5rem] flex-wrap items-start gap-1.5 overflow-y-auto [scrollbar-width:thin]">
-                                {pickedElements.map((picked, i) => (
-                                    <PickedElementChip
-                                        key={i}
-                                        html={picked.html}
-                                        imageUrl={picked.screenshot}
-                                        onRemove={() => removePicked(i)}
-                                    />
-                                ))}
-                            </div>
-                        </section>
-                    )}
-
-                    {pendingFiles.length > 0 && (
-                        <section
-                            aria-label="Attached files"
-                            className={cn("flex flex-col gap-1.5", pickedElements.length > 0 && "border-t border-dashed border-border pt-2.5")}
-                        >
-                            <TrayHeader
-                                icon={<Paperclip className="size-3" strokeWidth={1.75} />}
-                                label="Files"
-                                count={`${pendingFiles.length}/${MAX_ATTACHMENTS}`}
-                                onClear={clearFiles}
-                            />
-                            {/* One horizontally scrolling row, so many files never push the input up. */}
-                            <div className="-mx-2.5 flex gap-2 overflow-x-auto overscroll-x-contain px-2.5 pb-1 [scrollbar-width:thin]">
-                                {pendingFiles.map((f, i) => (
-                                    <div key={i} className="shrink-0">
-                                        <AttachmentChip att={f} large onRemove={() => removeFile(i)} />
-                                    </div>
-                                ))}
-                            </div>
-                            {skippedFiles > 0 && (
-                                <p role="status" className="font-mono text-[10px] uppercase tracking-[.1em] text-muted-foreground">
-                                    Up to {MAX_ATTACHMENTS} files · {skippedFiles} not added
-                                </p>
-                            )}
-                        </section>
-                    )}
-
-                    {quotes.length > 0 && (
-                        <section
-                            aria-label="Quotes"
-                            className={cn(
-                                "flex flex-col gap-1.5",
-                                (pickedElements.length > 0 || pendingFiles.length > 0) && "border-t border-dashed border-border pt-2.5",
-                            )}
-                        >
-                            <TrayHeader
-                                icon={<TextQuote className="size-3 text-accent" strokeWidth={1.75} />}
-                                label="Quotes"
-                                count={String(quotes.length)}
-                                onClear={clearQuotes}
-                            />
-                            <div className="flex max-h-[12.5rem] flex-col gap-2 overflow-y-auto [scrollbar-width:thin]">
-                                {quotes.map((quote, i) => (
-                                    <QuoteChip
-                                        key={i}
-                                        quote={quote}
-                                        onRemove={() => setQuotes((prev) => prev.filter((_, j) => j !== i))}
-                                    />
-                                ))}
-                            </div>
-                        </section>
-                    )}
+                    <ComposerTrays
+                        pickedElements={pickedElements}
+                        onRemovePicked={removePicked}
+                        onClearPicked={clearPicked}
+                        pendingFiles={pendingFiles}
+                        onRemoveFile={removeFile}
+                        onClearFiles={clearFiles}
+                        skippedFiles={skippedFiles}
+                        quotes={quotes}
+                        onRemoveQuote={(index) => setQuotes((prev) => prev.filter((_, j) => j !== index))}
+                        onClearQuotes={clearQuotes}
+                    />
 
                     <div className="flex items-end gap-2">
                         <Tooltip>
@@ -480,38 +338,13 @@ export function Composer({
                             <TooltipContent side="top">Attach file</TooltipContent>
                         </Tooltip>
                         {listening && (
-                            <div
-                                ref={previewRef}
-                                tabIndex={0}
-                                role="textbox"
-                                aria-readonly
-                                aria-label="Dictation"
-                                aria-live="polite"
-                                onClick={() => void stopDictationAndEdit()}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter" && !e.shiftKey) {
-                                        e.preventDefault();
-                                        void send();
-                                    } else if (e.key === "Escape") {
-                                        e.preventDefault();
-                                        void stopDictationAndEdit();
-                                    }
-                                }}
-                                className="max-h-[8.6rem] min-w-0 flex-1 cursor-text overflow-y-auto whitespace-pre-wrap break-words px-1 py-0.5 font-sans text-sm leading-relaxed text-foreground outline-none [scrollbar-width:thin]"
-                            >
-                                {draft}
-                                {dictation.interim && (
-                                    <span className="italic text-muted-foreground">
-                                        {draft && !/\s$/.test(draft) ? " " : ""}
-                                        {dictation.interim}
-                                    </span>
-                                )}
-                                {!draft && !dictation.interim && (
-                                    <span className="text-muted-foreground">
-                                        {dictation.status === "starting" ? "Starting the mic…" : "Listening… start talking"}
-                                    </span>
-                                )}
-                            </div>
+                            <DictationPreview
+                                draft={draft}
+                                interim={dictation.interim}
+                                status={dictation.status}
+                                onSend={() => void send()}
+                                onStopAndEdit={() => void stopDictationAndEdit()}
+                            />
                         )}
                         <textarea
                             ref={textareaRef}
@@ -611,83 +444,17 @@ export function Composer({
                 )}
 
                 <div className="flex items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-0.5">
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon-xs"
-                                    onClick={togglePicker}
-                                    disabled={isLoading}
-                                    aria-pressed={isPicking}
-                                    aria-label="Pick a page element"
-                                    className={cn(
-                                        "text-muted-foreground hover:text-foreground",
-                                        isPicking &&
-                                            "bg-foreground text-background hover:bg-foreground hover:text-background",
-                                    )}
-                                >
-                                    <MousePointerSquareDashed strokeWidth={1.5} />
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">
-                                Pick a page element
-                            </TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon-xs"
-                                    onClick={() => void toggleDrawing()}
-                                    disabled={isLoading}
-                                    aria-pressed={isDrawing}
-                                    aria-label="Draw on the page"
-                                    className={cn(
-                                        "text-muted-foreground hover:text-foreground",
-                                        isDrawing &&
-                                            "bg-foreground text-background hover:bg-foreground hover:text-background",
-                                    )}
-                                >
-                                    <PencilLine strokeWidth={1.5} />
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">
-                                Draw on the page
-                            </TooltipContent>
-                        </Tooltip>
-                        {(isPicking || isDrawing || queuedAction || pageNotice || dictation.status !== "idle" || dictation.notice) && (
-                            <span role="status" className="ml-1.5 flex min-w-0 items-center gap-1.5 font-mono text-[11px] text-accent">
-                                {(isPicking || isDrawing || dictation.status === "listening") && (
-                                    <span
-                                        className="size-1.5 shrink-0 rounded-full bg-accent"
-                                        style={{ animation: "slothPulse 1.4s infinite" }}
-                                    />
-                                )}
-                                <span className="truncate">
-                                    {dictation.status === "listening"
-                                        ? "Listening · Enter sends · Esc stops"
-                                        : dictation.status === "starting"
-                                          ? "Starting the mic…"
-                                          : dictation.status === "stopping"
-                                            ? "Finishing up…"
-                                            : dictation.status === "permission"
-                                              ? "Allow the mic in the window that opened"
-                                              : dictation.notice
-                                                ? dictation.notice
-                                                : isPicking
-                                        ? "Click elements · Esc when done"
-                                        : isDrawing
-                                          ? "Drawing · Add to chat when done"
-                                          : queuedAction
-                                            ? `${queuedAction === "pick" ? "Picking" : "Drawing"} starts when Sloth is done`
-                                            : pageNotice}
-                                </span>
-                            </span>
-                        )}
-                    </div>
+                    <PageToolsBar
+                        isPicking={isPicking}
+                        isDrawing={isDrawing}
+                        disabled={isLoading}
+                        onTogglePicker={togglePicker}
+                        onToggleDrawing={() => void toggleDrawing()}
+                        queuedAction={queuedAction}
+                        pageNotice={pageNotice}
+                        dictationStatus={dictation.status}
+                        dictationNotice={dictation.notice}
+                    />
 
                     <div className="flex shrink-0 items-center gap-1">
                         <PermissionModeSelector />
@@ -718,14 +485,3 @@ export function Composer({
         </div>
     );
 }
-
-/** A captured drawing arrives as a data URL; decoded in place so it joins the files at once. */
-function dataUrlToFile(dataUrl: string, name: string) {
-    const [head, body = ""] = dataUrl.split(",");
-    const type = head.match(/^data:([^;,]+)/)?.[1] ?? "image/jpeg";
-    const binary = atob(body);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return new File([bytes], name, { type });
-}
-

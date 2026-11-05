@@ -37,3 +37,13 @@ export async function fileToDataUrl(file: Blob): Promise<string> {
         reader.readAsDataURL(file);
     });
 }
+
+/** A captured drawing arrives as a data URL; decoded in place so it joins the files at once. */
+export function dataUrlToFile(dataUrl: string, name: string) {
+    const [head, body = ""] = dataUrl.split(",");
+    const type = head.match(/^data:([^;,]+)/)?.[1] ?? "image/jpeg";
+    const binary = atob(body);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new File([bytes], name, { type });
+}
