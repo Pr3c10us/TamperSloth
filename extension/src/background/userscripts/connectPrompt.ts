@@ -1,3 +1,4 @@
+import {CONNECT_DECISION, type ConnectAsk, type ConnectDecision} from "@/shared/connectPrompt";
 import type {BackgroundScript} from "@/userscripts/types";
 import {loadScripts, saveScript} from "@/storage/scripts";
 
@@ -5,18 +6,6 @@ import {loadScripts, saveScript} from "@/storage/scripts";
 // decides in a small window, as with Tampermonkey. "For now" lasts until the
 // browser closes; "always" is saved on the script.
 
-export const CONNECT_DECISION = "CONNECT_DECISION";
-
-export interface ConnectAsk {
-    scriptName: string;
-    host: string;
-    pageUrl: string;
-}
-
-export interface ConnectDecision {
-    allow: boolean;
-    remember: "session" | "always";
-}
 
 const askKey = (askId: string) => `ts_connect_ask_${askId}`;
 const SESSION_DECISIONS_KEY = "ts_connect_session";

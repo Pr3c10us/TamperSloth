@@ -12,7 +12,7 @@ const TABS = [
   { value: "code", label: "Code", icon: FileCode },
 ] as const;
 
-function Settings() {
+function SettingsPage() {
   const navigate = useNavigate();
   // Keep the active tab in the URL so returning to settings lands on the same tab.
   const [params, setParams] = useSearchParams();
@@ -64,4 +64,4 @@ function Settings() {
   );
 }
 
-export default Settings;
+export default SettingsPage;

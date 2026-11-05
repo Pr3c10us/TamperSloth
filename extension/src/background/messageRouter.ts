@@ -3,7 +3,7 @@ import {cdp, handleBrowserMessage} from "@/background/browser/browserService";
 import {captureConsole} from "@/background/browser/consoleCapture";
 import {captureAnnotatedViewport, captureRegion, captureViewportScreenshot} from "@/background/browser/screenshotCapture";
 import {cleanupBrowserGuidance} from "@/background/panel/panelLifecycle";
-import {CONNECT_DECISION} from "@/background/userscripts/connectPrompt";
+import {CONNECT_DECISION} from "@/shared/connectPrompt";
 import {executeOnTab} from "@/background/userscripts/executeOnTab";
 import {GREASYFORK_INSTALL, USERSCRIPT_INSTALLED} from "@/background/userscripts/greasyForkButton";
 import {invalidateCache, syncRegisteredScripts} from "@/background/userscripts/scriptRegistration";

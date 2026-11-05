@@ -1,3 +1,4 @@
+import {plural} from "@/shared/plural";
 import type {BackgroundScript} from "./types";
 import {queuePanelRequest} from "@/shared/panelRequests";
 import {scriptReloadPatterns} from "./userscript";
@@ -42,8 +43,6 @@ export async function reloadTabsForScripts(scripts: BackgroundScript[]): Promise
 }
 
 export const reloadTabsForScript = (script: BackgroundScript) => reloadTabsForScripts([script]);
-
-const plural = (n: number, word: string) => `${n} ${word}${n !== 1 ? "s" : ""}`;
 
 /** Toast copy for how many tabs a change reloaded. */
 export const reloadedNote = (count: number) =>

@@ -5,7 +5,7 @@ import {installMessageRouter} from "./messageRouter";
 import {installContextMenu} from "./panel/contextMenu";
 import {openPanel} from "./panel/openPanel";
 import {installPanelLifecycle} from "./panel/panelLifecycle";
-import {installConnectPrompt} from "./userscripts/connectPrompt";
+import {installConnectPrompt} from "@/background/userscripts/connectPrompt";
 import {installGreasyForkButton} from "./userscripts/greasyForkButton";
 import {installScriptMessages} from "./userscripts/scriptMessages";
 import {authenticateScript, getScripts, installScriptRegistration, scriptTokens} from "./userscripts/scriptRegistration";

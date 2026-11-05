@@ -17,7 +17,7 @@ function closeWindow() {
  * opens this page in a small window. Once allowed, the whole extension may use
  * the mic, the panel starts listening by itself, and this window closes.
  */
-export default function MicrophoneAccess() {
+export default function MicrophonePage() {
     const [step, setStep] = useState<Step>("asking");
 
     const ask = async () => {

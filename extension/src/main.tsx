@@ -1,14 +1,14 @@
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import App from '@/pages/gallery/GalleryPage'
+import GalleryPage from "@/pages/gallery/GalleryPage";
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import Settings from "@/pages/settings/SettingsPage";
-import Chat from "@/pages/chat/ChatPage";
-import MicrophoneAccess from "@/pages/microphone/MicrophonePage";
-import ScriptViewer from "@/pages/script-viewer/ScriptViewerPage";
-import InstallUserscript from "@/pages/install/InstallPage";
-import ConnectPrompt from "@/pages/connect/ConnectPage";
-import ImageLibrary from "@/pages/images/ImageLibraryPage";
+import SettingsPage from "@/pages/settings/SettingsPage";
+import ChatPage from "@/pages/chat/ChatPage";
+import MicrophonePage from "@/pages/microphone/MicrophonePage";
+import ScriptViewerPage from "@/pages/script-viewer/ScriptViewerPage";
+import InstallPage from "@/pages/install/InstallPage";
+import ConnectPage from "@/pages/connect/ConnectPage";
+import ImageLibraryPage from "@/pages/images/ImageLibraryPage";
 import { TooltipProvider } from "@/ui/shadcn/tooltip";
 import { usePanelRequestRouting } from "@/pages/chat/hooks/usePanelRequests";
 import { initTheme } from "@/ui/theme";
@@ -31,14 +31,14 @@ createRoot(document.getElementById('root')!).render(
     <TooltipProvider delayDuration={300}>
       <PanelRequestRouting />
       <Routes>
-          <Route path="/" element={<Chat />} />
-          <Route path="/gallery" element={<App />} />
-          <Route path="/images" element={<ImageLibrary />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/microphone" element={<MicrophoneAccess />} />
-          <Route path="/scripts/:id" element={<ScriptViewer />} />
-          <Route path="/install" element={<InstallUserscript />} />
-          <Route path="/connect/:id" element={<ConnectPrompt />} />
+          <Route path="/" element={<ChatPage />} />
+          <Route path="/gallery" element={<GalleryPage />} />
+          <Route path="/images" element={<ImageLibraryPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/microphone" element={<MicrophonePage />} />
+          <Route path="/scripts/:id" element={<ScriptViewerPage />} />
+          <Route path="/install" element={<InstallPage />} />
+          <Route path="/connect/:id" element={<ConnectPage />} />
           <Route path="/chat" element={<Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

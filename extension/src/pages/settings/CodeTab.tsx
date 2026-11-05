@@ -17,6 +17,7 @@ import {
 import {deleteFile, deleteAllFilesForConversation, listAllCodeFiles, type CodeFileEntry} from "@/storage/codeFiles";
 import {loadConversationHistory, type ConversationSummary} from "@/storage/conversations";
 import {openConversation} from "@/agent/conversation/sessions";
+import {plural} from "@/shared/plural";
 import { SettingsGroup, SettingsSection, TabIntro } from "./Section";
 
 interface ConversationGroup {
@@ -26,8 +27,6 @@ interface ConversationGroup {
   hasChat: boolean;
   files: CodeFileEntry[];
 }
-
-const plural = (n: number, word: string) => `${n} ${word}${n !== 1 ? "s" : ""}`;
 
 export function CodeTab() {
   const navigate = useNavigate();

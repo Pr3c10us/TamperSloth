@@ -41,7 +41,7 @@ import {openInstallPage, PENDING_USERSCRIPT_KEY, toBase64} from "@/userscripts/i
 
 const PREVIEW_LINES = 8;
 
-function App() {
+function GalleryPage() {
     const navigate = useNavigate();
     const [scripts, setScripts] = useState<BackgroundScript[]>([]);
     const [expanded, setExpanded] = useState<string | null>(null);
@@ -428,4 +428,4 @@ function CodePreview({script}: { script: BackgroundScript }) {
     );
 }
 
-export default App;
+export default GalleryPage;

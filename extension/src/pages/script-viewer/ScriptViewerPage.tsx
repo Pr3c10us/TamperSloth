@@ -3,6 +3,8 @@ import {useParams} from "react-router-dom";
 import {Check, Copy, Download, FileCode, Pause, Pencil, Play, RefreshCw, Save, Trash2, TriangleAlert, WrapText, X} from "lucide-react";
 import {toast} from "sonner";
 import {cn} from "@/ui/utils";
+import {closeTab} from "@/ui/closeTab";
+import {plural} from "@/shared/plural";
 import {Button} from "@/ui/shadcn/button";
 import {Skeleton} from "@/ui/shadcn/skeleton";
 import {Toaster} from "@/ui/shadcn/sonner";
@@ -41,15 +43,6 @@ function writeWrap(wrap: boolean) {
     try { localStorage.setItem(WRAP_KEY, wrap ? "1" : "0"); } catch { /* storage unavailable */ }
 }
 
-function closeTab() {
-    chrome.tabs.getCurrent((tab) => {
-        if (tab?.id) void chrome.tabs.remove(tab.id);
-        else window.close();
-    });
-}
-
-const plural = (n: number, word: string) => `${n} ${word}${n !== 1 ? "s" : ""}`;
-
 function Meta({label, children}: {label: string; children: React.ReactNode}) {
     return (
         <div className="min-w-0">
@@ -60,7 +53,7 @@ function Meta({label, children}: {label: string; children: React.ReactNode}) {
 }
 
 /** Full-tab view of a saved script's source, where it can also be edited. Opened from the gallery. */
-export default function ScriptViewer() {
+export default function ScriptViewerPage() {
     const {id = ""} = useParams();
     const [script, setScript] = useState<BackgroundScript | null | undefined>(undefined);
     // Null until found; a chat deleted since, or an imported script's, never is.

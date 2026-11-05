@@ -22,7 +22,7 @@ import type { Quote } from "@/shared/panelRequests";
 
 const tabId = Number(new URLSearchParams(window.location.search).get("tabId")) || 0;
 
-function Chat() {
+function ChatPage() {
     const navigate = useNavigate();
     const {
         messages,
@@ -179,4 +179,4 @@ function Chat() {
     );
 }
 
-export default Chat;
+export default ChatPage;

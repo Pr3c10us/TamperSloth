@@ -77,7 +77,7 @@ function ImageThumb({image, className}: {image: LibraryImage; className: string}
     );
 }
 
-export default function ImageLibrary() {
+export default function ImageLibraryPage() {
     const navigate = useNavigate();
     const [images, setImages] = useState<LibraryImage[] | null>(null);
     const [expanded, setExpanded] = useState<string | null>(null);

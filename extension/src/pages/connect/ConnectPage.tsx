@@ -2,7 +2,7 @@ import {useEffect, useState} from "react";
 import {useParams} from "react-router-dom";
 import {Globe} from "lucide-react";
 import {Button} from "@/ui/shadcn/button";
-import type {ConnectAsk} from "@/background/userscripts/connectPrompt";
+import type {ConnectAsk} from "@/shared/connectPrompt";
 
 const pageHost = (url: string) => {
     try {
@@ -13,7 +13,7 @@ const pageHost = (url: string) => {
 };
 
 /** The small window that asks whether a userscript may contact a site its @connect doesn't list. */
-export default function ConnectPrompt() {
+export default function ConnectPage() {
     const {id = ""} = useParams();
     const [ask, setAsk] = useState<ConnectAsk | null | undefined>(undefined);
 
