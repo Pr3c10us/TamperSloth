@@ -234,14 +234,6 @@ export function downloadScriptSource(script: BackgroundScript): void {
     downloadFile(script.code, `${scriptFileName(script)}.js`, "text/javascript");
 }
 
-export async function exportAllScripts(): Promise<void> {
-    const scripts = await Promise.all((await loadScripts()).map(withItsImages));
-    downloadJson(
-        JSON.stringify(scripts, null, 2),
-        `tampersloth-scripts-${new Date().toISOString().slice(0, 10)}.json`,
-    );
-}
-
 function isBackgroundScript(obj: unknown): obj is BackgroundScript {
     return !!obj && typeof obj === "object" && "name" in obj && "code" in obj && "urlMatchPattern" in obj;
 }

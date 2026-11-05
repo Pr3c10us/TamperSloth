@@ -35,16 +35,3 @@ export const VERTEX_PARTNER_MODELS: Record<string, VertexPartnerModel> = {
 export function vertexProtocol(modelId?: string): "gemini" | VertexApi {
     return (modelId && VERTEX_PARTNER_MODELS[modelId]?.api) || "gemini";
 }
-
-export const MODEL_GARDEN_URL = "https://console.cloud.google.com/agent-platform/model-garden";
-
-/** The model's Model Garden page, where its project enables it; undefined for Gemini, which needs no enabling. */
-export function modelGardenUrl(modelId: string, project?: string): string | undefined {
-    const partner = VERTEX_PARTNER_MODELS[modelId];
-    if (!partner) return undefined;
-    const [publisher, slug] = partner.api === "anthropic" ? ["anthropic", partner.id]
-        : partner.api === "mistral" ? ["mistralai", partner.id]
-            : partner.id.split("/") as [string, string];
-    const query = project?.trim() ? `?project=${encodeURIComponent(project.trim())}` : "";
-    return `https://console.cloud.google.com/agent-platform/publishers/${publisher}/model-garden/${slug}${query}`;
-}

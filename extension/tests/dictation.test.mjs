@@ -50,17 +50,9 @@ test('pauses and cancels stay quiet; real failures explain themselves', () => {
     assert.ok(recognitionErrorMessage('something-new'));
 });
 
-test('options fall back to the browser defaults and round-trip through storage', async () => {
-    const {loadDictationSettings, saveDictationSettings} = load();
+test('options fall back to the browser defaults', async () => {
+    const {loadDictationSettings} = load();
     assert.deepEqual(plain(await loadDictationSettings()), {deviceId: '', lang: ''});
-    await saveDictationSettings({deviceId: 'mic-2', lang: 'fr-FR'});
-    assert.deepEqual(plain(await loadDictationSettings()), {deviceId: 'mic-2', lang: 'fr-FR'});
     const partial = load({ts_dictation_settings: {lang: 'de-DE'}});
     assert.deepEqual(plain(await partial.loadDictationSettings()), {deviceId: '', lang: 'de-DE'});
-});
-
-test('language names come from Intl, with the code as a fallback', () => {
-    const {languageName} = load();
-    assert.equal(languageName('fr-FR', 'en'), 'French (France)');
-    assert.equal(languageName('not a code!', 'en'), 'not a code!');
 });

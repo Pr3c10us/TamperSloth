@@ -1,6 +1,6 @@
 import {memo, useCallback, useState} from "react";
 import {ArrowDown, ArrowUp, Check, Coins, Copy, DatabaseZap, Hash, Sigma, Timer, type LucideIcon} from "lucide-react";
-import type {ChatMessage} from "@/src/chat/hooks";
+import type {ChatMessage} from "@/src/chat/hooks/useAgent";
 import {MarkdownContent} from "./Markdown";
 import {CARD_TOOLS, ToolCallInline} from "./ToolCallInline";
 import {isTrivialThinking} from "./ThinkingBlock";
@@ -133,12 +133,6 @@ export const AssistantMessage = memo(function AssistantMessage({msg, isLoading, 
 
     return (
         <div className="group/assistant flex flex-col gap-2.5">
-            {/*<div className="flex items-center gap-2">*/}
-            {/*    <img src="icon-white.svg" alt="" className="size-4 opacity-85"/>*/}
-            {/*    <span className="font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground">*/}
-            {/*        Sloth*/}
-            {/*    </span>*/}
-            {/*</div>*/}
             <div className="flex flex-col gap-2">
                 {groups.map((group, i) => group.kind === "steps" ? (
                     // Only the trailing sequence of a streaming run is still in progress.

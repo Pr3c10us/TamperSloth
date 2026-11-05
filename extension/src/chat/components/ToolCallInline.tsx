@@ -1,7 +1,7 @@
 import {memo, useState} from "react";
 import {Check, Copy, ShieldAlert, ShieldCheck} from "lucide-react";
 import {getToolMeta, AlertCircle} from "../lib/toolMeta";
-import type {ToolCall} from "@/src/chat/hooks";
+import type {ToolCall} from "@/src/chat/hooks/useAgent";
 import {AskUserCard} from "@/src/chat/components/askUser/askUserCard.tsx";
 import {toolCallTokens, type ToolMetric} from "../lib/efficiency";
 import {IS_DEV} from "../lib/devMode";

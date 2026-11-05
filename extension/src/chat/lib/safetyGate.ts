@@ -314,8 +314,6 @@ export function createSafetyGate(options: SafetyGateOptions) {
     };
 }
 
-export type SafetyGate = ReturnType<typeof createSafetyGate>;
-
 function defaultTitle(name: string, input: Record<string, any>): string {
     switch (name) {
         case "browserDownload": return `Download ${input.filename || input.url || "a file"}`;

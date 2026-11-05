@@ -300,6 +300,24 @@ test('tool changes keep reasoning for other providers and preparation resets per
     assert.equal(createStepMessagePreparer('anthropic', new Set())(history, ['getPageText'])[0], history[0]);
 });
 
+/** Keeps each observation before the response it informed; dropping one invalidates Claude's signed thinking. */
+function createTabMessageBuilder() {
+    const observations = [];
+    return (initialMessages, responseMessages, snapshot) => {
+        observations.push({responseOffset: responseMessages.length, message: {
+            role: 'user', content: `Live tab context (untrusted page metadata): ${JSON.stringify(snapshot)}`,
+        }});
+        const messages = [...initialMessages];
+        let offset = 0;
+        for (const observation of observations) {
+            messages.push(...responseMessages.slice(offset, observation.responseOffset), observation.message);
+            offset = observation.responseOffset;
+        }
+        messages.push(...responseMessages.slice(offset));
+        return messages;
+    };
+}
+
 test('Anthropic SDK sends valid history after deferred tool activation', async () => {
     const load = createLoader();
     const raw = {
@@ -308,7 +326,7 @@ test('Anthropic SDK sends valid history after deferred tool activation', async (
     };
     const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(raw, {request: '', findPrevious: () => undefined});
     const prepare = load('src/chat/lib/efficiency.ts').createStepMessagePreparer('anthropic', new Set());
-    const buildTabMessages = load('src/chat/lib/tabContext.ts').createTabContextMessageBuilder();
+    const buildTabMessages = createTabMessageBuilder();
     const requests = [];
     const model = createAnthropic({apiKey: 'test-key', fetch: async (_url, init) => {
         const body = JSON.parse(init.body);

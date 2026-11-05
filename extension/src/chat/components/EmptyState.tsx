@@ -6,9 +6,6 @@ export function EmptyState() {
             <div className="font-heading text-3xl leading-[1.1] tracking-[-0.02em] text-nowrap">
                 What should the sloth <em>do?</em>
             </div>
-            {/*<div className="font-mono text-[11px] uppercase tracking-[.12em] text-muted-foreground">*/}
-            {/*    Pick an element &nbsp;·&nbsp; attach a file &nbsp;·&nbsp; describe it*/}
-            {/*</div>*/}
         </div>
     );
 }

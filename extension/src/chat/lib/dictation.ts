@@ -8,30 +8,12 @@ export const DEFAULT_DICTATION_SETTINGS: DictationSettings = {deviceId: "", lang
 
 const SETTINGS_KEY = "ts_dictation_settings";
 
-/** Languages offered in the options menu; names come from Intl so they read in the user's own language. */
-export const DICTATION_LANGUAGES = [
-    "en-US", "en-GB", "en-AU", "en-IN", "en-NG", "es-ES", "es-MX", "fr-FR", "de-DE", "it-IT", "pt-BR", "pt-PT",
-    "nl-NL", "pl-PL", "sv-SE", "tr-TR", "ru-RU", "uk-UA", "ar-SA", "hi-IN", "id-ID", "ja-JP", "ko-KR", "zh-CN", "zh-TW",
-];
-
 export async function loadDictationSettings(): Promise<DictationSettings> {
     try {
         const stored = (await chrome.storage.local.get(SETTINGS_KEY))[SETTINGS_KEY] as Partial<DictationSettings> | undefined;
         return {...DEFAULT_DICTATION_SETTINGS, ...stored};
     } catch {
         return DEFAULT_DICTATION_SETTINGS;
-    }
-}
-
-export async function saveDictationSettings(settings: DictationSettings) {
-    await chrome.storage.local.set({[SETTINGS_KEY]: settings});
-}
-
-export function languageName(lang: string, displayIn = "en") {
-    try {
-        return new Intl.DisplayNames([displayIn], {type: "language"}).of(lang) ?? lang;
-    } catch {
-        return lang;
     }
 }
 

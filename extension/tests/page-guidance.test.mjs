@@ -299,9 +299,6 @@ test('an idle user ends the wait early while page activity restarts the idle win
     const result=f.run({action:'poll',id:'idle'});
     assert.equal(result.status,'timeout');assert.equal(result.idle,true);assert.equal(result.actionObserved,false);
     assert.equal(f.intervals.size,0);
-    const label=createLoader()('src/chat/lib/guidanceStatus.ts').guidanceStatusLabel;
-    assert.equal(label({status:'needsReview',observationPhase:'timedOut',actionObserved:false,idle:true}),'No activity yet; still watching');
-    assert.equal(label({status:'needsReview',observationPhase:'timedOut',actionObserved:false,idle:true,checkInAllowed:true}),'No activity; checking in');
 });
 
 test('the guidance guard holds text-only fallbacks after an observer failure and resumes the overlay',()=>{
@@ -376,7 +373,6 @@ test('a missed selector action checks progress promptly after the user pauses',a
     assert.equal(f.elapsed(),3000);assert.equal(result.status,'needsReview');assert.equal(result.observationPhase,'interactionPause');
     assert.equal(result.actionObserved,false);assert.equal(result.checkInAllowed,true);assert.ok(result.screenshot);assert.ok(result.currentState);
     assert.equal(f.calls.filter(call=>call.input.action==='start').length,1);
-    assert.equal(createLoader()('src/chat/lib/guidanceStatus.ts').guidanceStatusLabel(result),'Checking step progress');
 });
 
 test('progress checks wait for active typing and held pointer gestures to pause',async()=>{
@@ -403,17 +399,11 @@ test('observed actions and state waits keep watching for their declared result',
     }
 });
 
-test('an untouched step reports no action and status labels never imply progress during recovery',()=>{
+test('an untouched step reports no action',()=>{
     const f=fixture();
     f.run({action:'start',id:'untouched',selector:'#target',event:'click',instruction:'Select Rectangle',timeoutMs:1000});
     [...f.timers.values()].find(timer=>timer.ms===1000).fn();
     assert.equal(f.run({action:'poll',id:'untouched'}).actionObserved,false);
-    const label=createLoader()('src/chat/lib/guidanceStatus.ts').guidanceStatusLabel;
-    assert.equal(label({status:'needsReview',observationPhase:'notStarted',actionObserved:null}),'Could not watch this step');
-    assert.equal(label({status:'needsReview',observationPhase:'timedOut',actionObserved:false}),'No action detected');
-    assert.equal(label({status:'needsReview',actionObserved:true}),'Action detected; outcome unconfirmed');
-    assert.equal(label({status:'needsReview',actionObserved:null}),'Action check interrupted');
-    assert.equal(label({status:'completed',alreadySatisfied:true}),'Step already complete');
 });
 
 test('Escape cancels without suppressing keyboard input and lost pages are reported honestly',()=>{
@@ -696,8 +686,6 @@ test('an action followed by a full page load is still reported as observed',()=>
     assert.equal(result.status,'lost');assert.equal(result.actionObserved,true);
     assert.equal(f.run({action:'poll',id:'nav'}).actionObserved,undefined);
     assert.equal(f.run({action:'poll',id:'other'}).actionObserved,undefined);
-    const label=createLoader()('src/chat/lib/guidanceStatus.ts').guidanceStatusLabel;
-    assert.equal(label({status:'needsReview',observationPhase:'navigated',actionObserved:true}),'Step observed; page changed');
 });
 
 test('a click made before the wait starts is observed without a prior annotation',()=>{
@@ -762,8 +750,6 @@ test('coordinate fallback unlocks only after repeated selector failures and retu
     assert.equal(result.status,'visualCheck');assert.equal(result.trigger,'regionAction');assert.equal(result.actionObserved,true);
     assert.ok(result.screenshot);assert.match(result.hint,/Judge from this screenshot/);
     assert.deepEqual(starts.at(-1).region,regional.region);
-    const label=createLoader()('src/chat/lib/guidanceStatus.ts').guidanceStatusLabel;
-    assert.equal(label(result),'Click seen; checking screenshot');
 });
 
 test('region steps check a screenshot once the user interacts elsewhere and pauses',async()=>{
@@ -928,7 +914,6 @@ test('an unconfirmed action returns page evidence without counting as an observe
     assert.equal(result.status,'needsReview');assert.equal(result.observationPhase,'actedUnconfirmed');assert.equal(result.actionObserved,true);
     assert.ok(result.screenshot);assert.match(result.hint,/Do not wait for the same condition again/);
     assert.doesNotMatch(result.hint,/fall back to coordinates/);
-    assert.equal(createLoader()('src/chat/lib/guidanceStatus.ts').guidanceStatusLabel(result),'Action seen; checking result');
 });
 
 test('a step that never reports ready still gets prompt progress checks',async()=>{

@@ -1,4 +1,4 @@
-import type {BackgroundScript, ImportedUserscript, ScriptExecutionLog} from "@/src/chat/lib/types.ts";
+import type {BackgroundScript, ImportedUserscript} from "@/src/chat/lib/types.ts";
 import {handleBrowserMessage, cdp} from './browserService';
 import {captureAnnotatedViewport, captureRegion, captureViewportScreenshot} from './screenshotCapture';
 import {installPanelLifecycle, cleanupBrowserGuidance} from './panelLifecycle';
@@ -136,15 +136,6 @@ async function authenticateScript(message: any): Promise<BackgroundScript | null
     return (await scriptTokens(scripts))[script.id] === message.token ? script : null;
 }
 
-// ── Execution Logs ───────────────────────────────────────────
-const executionLogs: ScriptExecutionLog[] = [];
-const MAX_LOGS = 100;
-
-function logExecution(log: ScriptExecutionLog) {
-    executionLogs.unshift(log);
-    if (executionLogs.length > MAX_LOGS) executionLogs.length = MAX_LOGS;
-}
-
 // ── Code Wrapping ────────────────────────────────────────────
 
 function buildStorageHelpers(scriptId: string, token: string): string {
@@ -240,11 +231,7 @@ function buildWrappedCode(
 
 // ── On-Demand Execution (temp scripts from AI tools) ─────────
 
-async function executeOnTab(
-    tabId: number,
-    code: string,
-    options?: { scriptId?: string }
-): Promise<any> {
+async function executeOnTab(tabId: number, code: string): Promise<any> {
     const fnMatch = code.match(/function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/);
     if (!fnMatch) {
         throw new Error('code must be a named function definition, e.g. function myFn() { ... }');
@@ -259,7 +246,7 @@ async function executeOnTab(
 
     // So a script can be tried with the same image calls it will have once saved.
     const imageHelpers = usesImageHelpers(code) ? temporaryImageHelpers(await temporaryImageToken()) : '';
-    const wrappedCode = buildWrappedCode(code, fnName, options?.scriptId, '', imageHelpers);
+    const wrappedCode = buildWrappedCode(code, fnName, undefined, '', imageHelpers);
 
     const results = await chrome.userScripts.execute({
         target: {tabId},
@@ -402,14 +389,6 @@ async function answerUserScript(message: any, sender: chrome.runtime.MessageSend
             await valueChains.get(script.id)?.catch(() => {});
             return {values: await listScriptValues(script.id)};
         case 'SCRIPT_EXECUTION_REPORT':
-            logExecution({
-                scriptId: script.id,
-                scriptName: script.name,
-                url: message.url ?? '',
-                timestamp: Date.now(),
-                success: message.success,
-                error: message.error,
-            });
             return {ok: true};
         default:
             return (await handleGmRequest(message, sender, script)) ?? {error: `Unknown request ${message.type}`};
@@ -524,51 +503,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({error: e.message});
             }
         })();
-        return true;
-    }
-
-    // Per-script storage
-    if (message.type === 'SCRIPT_GET_VALUE') {
-        getScriptValue(message.scriptId, message.key).then((value: any) => sendResponse({value}));
-        return true;
-    }
-    if (message.type === 'SCRIPT_SET_VALUE') {
-        setScriptValue(message.scriptId, message.key, message.value).then(() => sendResponse({ok: true}));
-        return true;
-    }
-    if (message.type === 'SCRIPT_DELETE_VALUE') {
-        deleteScriptValue(message.scriptId, message.key).then(() => sendResponse({ok: true}));
-        return true;
-    }
-    if (message.type === 'SCRIPT_LIST_VALUES') {
-        listScriptValues(message.scriptId).then((values: any) => sendResponse({values}));
-        return true;
-    }
-
-    // Script execution reports (from registered userscripts)
-    if (message.type === 'SCRIPT_EXECUTION_REPORT') {
-        (async () => {
-            const scripts = await getScripts();
-            const script = scripts.find(s => s.id === message.scriptId);
-            logExecution({
-                scriptId: message.scriptId,
-                scriptName: script?.name ?? 'Unknown',
-                url: message.url ?? '',
-                timestamp: Date.now(),
-                success: message.success,
-                error: message.error,
-            });
-            sendResponse({ok: true});
-        })();
-        return true;
-    }
-
-    // Execution logs retrieval
-    if (message.type === 'GET_EXECUTION_LOGS') {
-        const logs = message.scriptId
-            ? executionLogs.filter(l => l.scriptId === message.scriptId)
-            : executionLogs;
-        sendResponse({logs});
         return true;
     }
 

@@ -1,5 +1,5 @@
 import {memo, useId, useState} from "react";
-import type {ContentBlock} from "@/src/chat/hooks";
+import type {ContentBlock} from "@/src/chat/hooks/useAgent";
 import {formatElapsedTime, type ToolMetric} from "../lib/efficiency";
 import {thinkingDuration} from "../lib/reasoning";
 import {summarizeSteps} from "../lib/stepSummary";
