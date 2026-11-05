@@ -4,6 +4,9 @@
  * Most of one tool result, measured as encoded JSON. Results past RESULT_CHARS
  * are archived behind a preview, which would turn every view into two calls.
  */
+/** Lines one view shows when it names no range. */
+export const DEFAULT_VIEW_LINES = 120;
+
 export const VIEW_BUDGET = 5000;
 
 const encodedLength = (text: string) => JSON.stringify(text).length;
