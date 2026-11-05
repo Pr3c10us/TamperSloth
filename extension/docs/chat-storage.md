@@ -41,7 +41,7 @@ Autosaves serialize database writes and retain only the latest queued snapshot
 for each chat if disk writes fall behind the stream. Save errors appear in the
 chat panel.
 
-Open chats are held in a module-level store in `useAgent.ts`, not in the chat
+Open chats are held in a module-level store in `src/agent/conversation/sessions.ts`, not in the chat
 page, so a run keeps streaming and saving while the user starts a new chat,
 opens another from history, or visits the gallery or settings. Several chats can
 run at once; each has its own abort controller and pending `askUser` question.

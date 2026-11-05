@@ -10,7 +10,7 @@
  * one grows out of it. Pure and seedable so it can be tested.
  */
 
-export interface DotView {
+interface DotView {
     /** Stable index, so a renderer can keep one element per dot. */
     id: number;
     /** Normalized position; roughly -1.5..1.5 on both axes after perspective. */
@@ -37,7 +37,7 @@ export const BURST_MS = 280;
 type Random = () => number;
 type Vec = {x: number; y: number; z: number};
 /** Position of dot `i` at `t` seconds into a choreography. */
-export type Choreography = {name: string; dots: 3 | 4; period: number; at: (t: number, i: number) => Vec};
+type Choreography = {name: string; dots: 3 | 4; period: number; at: (t: number, i: number) => Vec};
 
 const TAU = Math.PI * 2;
 const smoothstep = (t: number) => t * t * (3 - 2 * t);

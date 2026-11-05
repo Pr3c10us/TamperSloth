@@ -1,5 +1,5 @@
 import {useId, type CSSProperties, type ReactElement} from "react";
-import {cn} from "./utils";
+import {cn} from "@/ui/utils";
 import {modelMaker, type ModelMaker, type ProviderId} from "@/agent/models/provider";
 
 // Marks from @lobehub/icons (MIT). Monochrome marks use currentColor so they

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { runPickerOverlay } from "@/injected/pickerOverlay";
 import type {PickedElement} from "@/agent/conversation/types";
 
-export interface UseElementPickerArgs {
+interface UseElementPickerArgs {
     tabId: number;
     /** The chat whose draft receives picks; its marks are kept apart from other chats'. */
     group: string;

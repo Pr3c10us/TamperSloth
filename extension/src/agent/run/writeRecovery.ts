@@ -44,7 +44,7 @@ export function partialStringField(json: string, key: string): {value: string; c
     }
 }
 
-export type WriteReport = {id: string; name: string; path?: string; args: Record<string, unknown>} & (
+type WriteReport = {id: string; name: string; path?: string; args: Record<string, unknown>} & (
     /** `complete` is false when only the whole lines of a cut-off call were kept. */
     | {kind: "saved"; savedLines: number; totalLines: number; complete: boolean; tail: string}
     /** A create for a file that already exists; nothing was overwritten. */
@@ -53,7 +53,7 @@ export type WriteReport = {id: string; name: string; path?: string; args: Record
     | {kind: "not-run"}
 );
 
-export interface WriteFiles {
+interface WriteFiles {
     read: (path: string) => Promise<string | null>;
     write: (path: string, content: string) => Promise<void>;
 }

@@ -2,7 +2,7 @@ import {z} from 'zod';
 const tabId = z.number().int().positive().optional();
 const sessionId = z.string().max(200).optional();
 const point = z.object({x: z.number().finite(), y: z.number().finite()});
-export const elementTarget = z.union([
+const elementTarget = z.union([
     z.object({ref: z.string().min(1).max(20)}),
     z.object({selector: z.string().min(1).max(1000), index: z.number().int().nonnegative().optional()}),
     z.object({role: z.string().min(1).max(100), name: z.string().min(1).max(300), exact: z.boolean().default(true), index: z.number().int().nonnegative().optional()}),
@@ -21,8 +21,8 @@ const toolTarget = z.object({ref: z.string().optional(), selector: z.string().op
 const toolScope = {tabId: z.number().int().optional(), sessionId: z.string().optional(), frameId: z.string().optional(),
     contextId: z.number().int().optional(), feedbackMs: z.number().int().optional(), postScreenshot: z.boolean().optional()};
 /** Large enough for a whole sketch, including tool-switch key presses, in one call. */
-export const MAX_GESTURE_STEPS = 60;
-export const gestureStep = z.object({
+const MAX_GESTURE_STEPS = 60;
+const gestureStep = z.object({
     action: z.enum(['click', 'hover', 'drag', 'scroll', 'type', 'press', 'pinch', 'rotate', 'selectRange']),
     target: toolTarget.optional(), from: toolTarget.optional(), to: toolTarget.optional(), text: z.string().optional(), chord: z.string().optional(),
     button: z.enum(['left', 'right', 'middle']).optional(), clickCount: z.number().int().optional(),
@@ -36,7 +36,7 @@ export const toolSchemas = {
 };
 
 /** A control named the way a person would see it: a ref from listControls, role and name, or visible text. */
-export const guideTarget = z.object({ref:z.string().min(1).max(20).optional(), role:z.string().min(1).max(60).optional(),
+const guideTarget = z.object({ref:z.string().min(1).max(20).optional(), role:z.string().min(1).max(60).optional(),
     name:z.string().min(1).max(300).optional(), text:z.string().min(1).max(300).optional(),
     exact:z.boolean().optional(), index:z.number().int().nonnegative().optional()})
     .refine(target=>!!(target.ref || target.name || target.text),'Target needs ref, role+name, or text');

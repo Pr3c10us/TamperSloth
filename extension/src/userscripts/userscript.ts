@@ -79,7 +79,7 @@ export function normalizeMatchPattern(raw: string): string | null {
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** `[source, flags]` for a RegExp; kept as strings so it can be embedded in injected code. */
-export type RegExpParts = [string, string];
+type RegExpParts = [string, string];
 
 /** An @include/@exclude value: a `/regex/flags` literal or a Tampermonkey glob. */
 export function includeToRegExp(value: string): RegExpParts {
@@ -140,7 +140,7 @@ export function registrationMatches(us: {matches: string[]; includes: string[]})
 const GM_USE_RE = /\bGM(?:_[A-Za-z]+|\.[A-Za-z]+)\b/g;
 
 /** GM APIs and unsafeWindow the code mentions, for scripts without @grant lines. */
-export function detectGrants(code: string): string[] {
+function detectGrants(code: string): string[] {
     const found = new Set(code.match(GM_USE_RE) ?? []);
     found.delete("GM_info");
     found.delete("GM.info");

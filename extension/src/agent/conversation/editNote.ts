@@ -1,6 +1,6 @@
 import {isReadOnlyTool} from "@/agent/safety/actionScreen";
 
-export interface EditedTurn {
+interface EditedTurn {
     role: "user" | "assistant";
     content: string;
     toolCalls?: { name: string; args?: { reason?: string }; status: "calling" | "done" | "error" }[];

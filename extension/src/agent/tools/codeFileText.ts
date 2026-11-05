@@ -7,7 +7,7 @@
 /** Lines one view shows when it names no range. */
 export const DEFAULT_VIEW_LINES = 120;
 
-export const VIEW_BUDGET = 5000;
+const VIEW_BUDGET = 5000;
 
 const encodedLength = (text: string) => JSON.stringify(text).length;
 const numbered = (line: number, text: string) => `${String(line).padStart(5)}\t${text}`;
@@ -109,7 +109,7 @@ export function appendChunk(existing: string | null, text: string): string {
 
 export const lineCount = (text: string) => text.split("\n").length;
 
-export type LineEdit =
+type LineEdit =
     | {error: string}
     | {content: string; removed: number; added: number; totalLines: number};
 

@@ -33,10 +33,10 @@ MousePointerClick,
     Hourglass,
 } from 'lucide-react';
 
-export type ToolCategory = 'data' | 'compute' | 'web' | 'utility' | 'communication' | 'media';
+type ToolCategory = 'data' | 'compute' | 'web' | 'utility' | 'communication' | 'media';
 
 /** Identifies a tool in the UI. Call titles come from the model's per-call reason. */
-export interface ToolMeta {
+interface ToolMeta {
     displayName: string;
     icon: LucideIcon;
     category: ToolCategory;

@@ -1,4 +1,4 @@
-export const CHROME_MATCH_PATTERN_RE =
+const CHROME_MATCH_PATTERN_RE =
     /^(\*|https?|file|ftp):\/\/(\*|\*\.[^/*]+|[^/*]+)\/(.*)?$/;
 
 /** A tab showing nothing of the user's yet: the new tab page or a blank tab. */

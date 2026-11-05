@@ -3,7 +3,7 @@
  * text stays available as `details` for anyone who wants to dig in.
  */
 
-export interface ErrorSummary {
+interface ErrorSummary {
     summary: string;
     /** The full original message, present only when it differs from the summary. */
     details?: string;

@@ -21,9 +21,9 @@ export interface LibraryImage {
     createdAt: number;
     updatedAt: number;
 }
-export interface StoredImage extends LibraryImage {blob: Blob}
+interface StoredImage extends LibraryImage {blob: Blob}
 /** What a script receives: bytes as base64, since extension messages are JSON. */
-export interface ImageForScript extends LibraryImage {base64: string}
+interface ImageForScript extends LibraryImage {base64: string}
 
 /** Names are what scripts type, so they stay readable: `My Cursor` is `my-cursor`. */
 export function normalizeImageName(raw: string): string {
@@ -80,7 +80,7 @@ export function svgDimensions(text: string): {width?: number; height?: number} {
         height: pixels('height') ?? (box ? Math.round(Number(box[2])) || undefined : undefined)};
 }
 
-export interface ImageOptions {
+interface ImageOptions {
     /** Longest side in pixels; smaller images are left as they are. */
     maxSize?: number;
     format?: 'png' | 'jpeg' | 'webp';
@@ -128,7 +128,7 @@ export async function blobToBase64(blob: Blob): Promise<string> {
     return btoa(binary);
 }
 
-export function base64ToBlob(base64: string, mimeType: string): Blob {
+function base64ToBlob(base64: string, mimeType: string): Blob {
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -217,7 +217,7 @@ export async function imageForScript(name: unknown): Promise<ImageForScript | nu
     return record ? {...withoutBytes(record), base64: await blobToBase64(record.blob)} : null;
 }
 
-export interface NewImage {
+interface NewImage {
     name: string;
     blob: Blob;
     mimeType: string;
@@ -294,7 +294,7 @@ export function referencedImageNames(code: string): string[] {
     return [...names];
 }
 
-export interface ExportedImage extends LibraryImage {dataUrl: string}
+interface ExportedImage extends LibraryImage {dataUrl: string}
 
 export async function exportImages(names?: string[]): Promise<ExportedImage[]> {
     const wanted = names ?? (await listImages()).map(image => image.name);

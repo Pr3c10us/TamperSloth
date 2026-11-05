@@ -13,11 +13,11 @@ import {type LanguageModel, wrapLanguageModel} from "ai";
 /** Retries after the first rate-limited attempt. */
 export const RATE_LIMIT_RETRIES = 3;
 /** A per-minute window always clears within this; used when the provider gives no retry hint. */
-export const RATE_LIMIT_WAIT_MS = 60_000;
+const RATE_LIMIT_WAIT_MS = 60_000;
 /** Shortest wait, even when the provider's hint says less. */
-export const RATE_LIMIT_MIN_WAIT_MS = 1000;
+const RATE_LIMIT_MIN_WAIT_MS = 1000;
 /** A provider asking for longer means a daily or billing quota, which waiting won't fix. */
-export const MAX_RATE_LIMIT_WAIT_MS = 5 * 60_000;
+const MAX_RATE_LIMIT_WAIT_MS = 5 * 60_000;
 
 export interface RateLimitWait {
     modelName: string;
@@ -64,7 +64,7 @@ function errorText(error: any): string {
     return parts.filter(s => typeof s === "string").join("\n");
 }
 
-export function isRateLimitError(error: unknown): boolean {
+function isRateLimitError(error: unknown): boolean {
     const e = error as any;
     if (!e || typeof e !== "object") return false;
     const status = e.statusCode ?? e.status;
@@ -137,7 +137,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     });
 }
 
-export interface RateLimitOptions {
+interface RateLimitOptions {
     conversationId: string;
     modelName: string;
     /** Injected by tests. */

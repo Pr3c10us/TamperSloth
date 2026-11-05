@@ -20,12 +20,12 @@ export const SITE_URL: string = typeof __TAMPERSLOTH_SITE_URL__ === "string"
     : "https://tampersloth.com";
 
 /** Where "Upgrade" sends a user for more Sloth credit. */
-export const UPGRADE_URL = `${SITE_URL}/pricing`;
+const UPGRADE_URL = `${SITE_URL}/pricing`;
 
 const SESSION_KEY = "ts_account_session";
 const ACCOUNT_KEY = "ts_account_cache";
 
-export interface AccountSession {
+interface AccountSession {
     token: string;
     refreshToken: string;
 }
@@ -163,7 +163,7 @@ function expiresAt(token: string): number {
 }
 
 /** Thrown when the session is gone and the user has to sign in again. */
-export class SignedOutError extends Error {
+class SignedOutError extends Error {
     constructor() {
         super("Your TamperSloth session has expired. Sign in again in Settings.");
         this.name = "SignedOutError";

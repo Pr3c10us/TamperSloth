@@ -10,7 +10,7 @@ import {loadUserscriptPrefs} from "@/userscripts/prefs";
 
 export const CHECK_USERSCRIPT_UPDATE = "CHECK_USERSCRIPT_UPDATE";
 
-export type UpdateResult =
+type UpdateResult =
     | {status: "current"}
     | {status: "unavailable"}
     | {status: "updated"; version: string}

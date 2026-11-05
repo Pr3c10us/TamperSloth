@@ -8,7 +8,7 @@ export const REASON_MAX = 80;
  * never rejects a call for it: a missing or overlong reason is a cosmetic gap,
  * not worth a failed tool step.
  */
-export const reasonField = z.preprocess(
+const reasonField = z.preprocess(
     value => typeof value === "string" ? value.trim().slice(0, REASON_MAX) : "",
     z.string().max(REASON_MAX),
 ).describe("What this call does and why, in 3-8 words; shown to the user as the step's one-line summary.");

@@ -8,15 +8,15 @@
 interface TaskTab {owned: boolean; purpose?: string; notes: string[]; retain?: boolean; /** The blank tab the chat started on: grouped with the task, kept at finish. */ origin?: boolean}
 import {loadAgentSettings} from '@/agent/agentSettings';
 
-export type TaskStatus = 'working' | 'waiting';
+type TaskStatus = 'working' | 'waiting';
 interface Workspace {originTabId?: number; groupId?: number; title?: string; status?: TaskStatus; tabs: Record<string, TaskTab>}
 
 /** Every TamperSloth group carries this prefix and color, so users can tell them from their own groups. */
-export const GROUP_PREFIX = '🦥';
-export const GROUP_COLOR = 'green' as const;
+const GROUP_PREFIX = '🦥';
+const GROUP_COLOR = 'green' as const;
 const PAUSED = '⏸';
 /** The bare task name, without our prefix or status marks a model or user may have typed. */
-export const bareTitle = (title: string) => title.replace(/^(?:\s*(?:🦥|⏸️?|TS\s*\|))+\s*/u, '').trim();
+const bareTitle = (title: string) => title.replace(/^(?:\s*(?:🦥|⏸️?|TS\s*\|))+\s*/u, '').trim();
 const groupTitle = (ws: Workspace) => `${GROUP_PREFIX} ${ws.status === 'waiting' ? PAUSED + ' ' : ''}${ws.title}`;
 const isOurs = (title: string | undefined) => !!title?.startsWith(GROUP_PREFIX);
 
@@ -53,7 +53,7 @@ async function joinGroup(ws: Workspace, tabIds: TabIds) {
     await chrome.tabGroups.update(ws.groupId, {title: groupTitle(ws), color: GROUP_COLOR});
 }
 
-export interface OpenOptions {urls: string[]; group?: string; purpose?: string; background: boolean; openerTabId?: number; originBlank?: boolean}
+interface OpenOptions {urls: string[]; group?: string; purpose?: string; background: boolean; openerTabId?: number; originBlank?: boolean}
 
 /** Opens (or reuses) task tabs concurrently and groups them before returning. */
 export function openTaskTabs(conversationId: string, originTabId: number | undefined, options: OpenOptions) {
@@ -258,7 +258,7 @@ async function offerLeftoverCleanup() {
 }
 
 /** Closes the offered groups' tabs, skipping any group the user renamed or a task has taken over since. */
-export async function closeLeftoverGroups() {
+async function closeLeftoverGroups() {
     const offered = new Set((await chrome.storage.session.get(LEFTOVER_KEY))[LEFTOVER_KEY] as number[] | undefined);
     const groups = (await leftoverGroups()).filter(group => offered.has(group.id)).map(group => group.id);
     const origins = await rememberedOrigins();

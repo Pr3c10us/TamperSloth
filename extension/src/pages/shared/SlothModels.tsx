@@ -1,7 +1,7 @@
 import {useState} from "react";
 import {Check, Loader2, Lock, LogIn} from "lucide-react";
 import {Button} from "@/ui/shadcn/button";
-import {cn} from "./utils";
+import {cn} from "@/ui/utils";
 import {ProviderLogo} from "./ProviderLogo";
 import {signIn, type Account, type SlothModelInfo} from "@/account/account";
 import {reconcileSelectedModel} from "@/agent/models/modelFallback";

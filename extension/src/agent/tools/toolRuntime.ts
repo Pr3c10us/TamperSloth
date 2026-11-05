@@ -31,7 +31,7 @@ function needsPageBarrier(name: string, input: any) {
         || name === 'deepDOM' && input.action === 'evaluate' || name === 'networkCapture' && input.action === 'replay';
 }
 
-export interface ArchivedResult {name: string; input: unknown; output: unknown}
+interface ArchivedResult {name: string; input: unknown; output: unknown}
 
 // Structural check: tool schemas may come from a different zod module instance.
 function isZodObject(schema: unknown): schema is z.ZodObject {

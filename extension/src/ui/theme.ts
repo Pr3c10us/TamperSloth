@@ -1,10 +1,10 @@
 import {useSyncExternalStore} from "react";
 
 export type ThemePreference = "dark" | "light" | "system";
-export type ResolvedTheme = "dark" | "light";
+type ResolvedTheme = "dark" | "light";
 
 const KEY = "ts_theme";
-export const DEFAULT_THEME: ThemePreference = "system";
+const DEFAULT_THEME: ThemePreference = "system";
 // Page backgrounds per theme, kept in sync with --background in index.css.
 const THEME_COLORS: Record<ResolvedTheme, string> = {dark: "#141513", light: "#f3f4f2"};
 
@@ -43,7 +43,7 @@ function apply(pref: ThemePreference) {
     listeners.forEach(listener => listener());
 }
 
-export async function loadThemePreference(): Promise<ThemePreference> {
+async function loadThemePreference(): Promise<ThemePreference> {
     try {
         if (hasChromeStorage()) return normalize((await chrome.storage.local.get(KEY))[KEY]);
     } catch { /* fall through to the cache */ }

@@ -7,7 +7,7 @@ import {buildModelMessages} from "./historyMessages";
 import {patchSession} from "./sessions";
 import type {ChatMessage, PickedElement, StoredAttachment} from "./types";
 
-export function summarizeSelectedElement(html: string): string {
+function summarizeSelectedElement(html: string): string {
     const element = new DOMParser().parseFromString(html, "text/html").body.firstElementChild;
     if (!element) return clip(html, 1500);
     return serialize({tag: element.tagName.toLowerCase(),

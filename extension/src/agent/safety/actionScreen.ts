@@ -20,7 +20,7 @@
 
 export type ApprovalMode = "auto" | "ask";
 
-export type Risk = "none" | "low" | "medium" | "high";
+type Risk = "none" | "low" | "medium" | "high";
 
 export type RiskCategory =
     | "download" | "sensitive-input" | "payment" | "destructive" | "account"
@@ -41,7 +41,7 @@ export interface TargetInfo {
     formAction?: string;
 }
 
-export interface ActionAssessment {
+interface ActionAssessment {
     risk: Risk;
     category?: RiskCategory;
     /** Ask the user in every approval mode. */
@@ -113,14 +113,14 @@ export function looksLikeCardNumber(text: string): boolean {
 }
 
 /** Why a typed value is sensitive, if it is. */
-export function sensitiveValue(text: string): string | undefined {
+function sensitiveValue(text: string): string | undefined {
     if (looksLikeCardNumber(text)) return "a payment card number";
     for (const [pattern, what] of SECRET_VALUE) if (pattern.test(text)) return what;
     return undefined;
 }
 
 /** Why a field is sensitive, if it is. */
-export function sensitiveField(target?: TargetInfo): string | undefined {
+function sensitiveField(target?: TargetInfo): string | undefined {
     if (!target) return undefined;
     if (target.type === "password") return "a password field";
     if (target.autocomplete && SENSITIVE_AUTOCOMPLETE.test(target.autocomplete.trim())) {
@@ -347,7 +347,7 @@ export function assessAction(name: string, input: Record<string, any>, targets: 
 const RANK: Record<Risk, number> = {none: 0, low: 1, medium: 2, high: 3};
 
 /** The riskiest step decides; reasons and payloads accumulate. */
-export function combine(assessments: ActionAssessment[]): ActionAssessment {
+function combine(assessments: ActionAssessment[]): ActionAssessment {
     if (!assessments.length) return LOW;
     const worst = assessments.reduce((a, b) => RANK[b.risk] > RANK[a.risk] || (b.block && !a.block) ? b : a);
     return {
@@ -400,7 +400,7 @@ export function isGrantable(assessment: ActionAssessment): boolean {
     return !!assessment.category && !ALWAYS_ASK.has(assessment.category);
 }
 
-export type Decision =
+type Decision =
     | { kind: "allow" }
     | { kind: "confirm"; reasons: string[]; injection: boolean }
     | { kind: "screen"; reasons: string[] }

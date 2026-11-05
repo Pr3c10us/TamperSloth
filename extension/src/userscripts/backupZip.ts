@@ -1,6 +1,6 @@
 // Reads .zip files with what the browser already has, for userscript manager backups.
 
-export interface ZipEntry {
+interface ZipEntry {
     name: string;
     bytes: Uint8Array;
 }
@@ -58,7 +58,7 @@ export async function readZip(zip: Uint8Array): Promise<ZipEntry[]> {
 }
 
 /** A script from a backup, with the saved data and on/off state Tampermonkey exported beside it. */
-export interface BackupScript {
+interface BackupScript {
     fileName: string;
     source: string;
     values: Record<string, unknown>;

@@ -11,7 +11,7 @@ import {
     type ProviderId,
 } from "@/agent/models/provider";
 import {loadSelectedModel, saveSelectedModel} from "@/storage/selectedModel";
-import {ModelLogo, ProviderLogo} from "@/ui/ProviderLogo";
+import {ModelLogo, ProviderLogo} from "@/pages/shared/ProviderLogo";
 import {ThinkingLevelPage, useDefaultThinkingLevel} from "./ThinkingSelector";
 import {THINKING_LEVELS, type ThinkingLevel} from "@/agent/models/thinkingLevel";
 import {resolveThinkingLevel, thinkingLevelsFor} from "@/agent/models/providerCompatibility";
@@ -23,13 +23,7 @@ import {cn} from "@/ui/utils";
 import {getApiKeys, subscribeApiKeys} from "@/storage/apiKeys";
 import {refreshAccount} from "@/account/account";
 import {useAccount} from "@/account/useAccount";
-import {
-    PlanBadge,
-    SlothModelRow,
-    SlothSignInCard,
-    SlothUsageMeter,
-    slothModelInfo,
-} from "@/ui/SlothModels";
+import {PlanBadge, SlothModelRow, SlothSignInCard, SlothUsageMeter, slothModelInfo} from "@/pages/shared/SlothModels";
 
 export interface SelectedModelEntry {
     providerId: ProviderId;

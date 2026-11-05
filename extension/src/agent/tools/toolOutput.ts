@@ -1,4 +1,4 @@
-export const RESULT_CHARS = 6000;
+const RESULT_CHARS = 6000;
 
 export function serialize(value: unknown): string {
     if (typeof value === "string") return value;

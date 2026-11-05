@@ -4,7 +4,7 @@ import {isTrustedPricingTab, trustPricingTab} from '@/account/pricingTabs';
 /** The relay's request to this worker; page-side names are in landing-page/src/lib/extension.ts. */
 export const BILLING_TOKEN_REQUEST = 'PRICING_BILLING_TOKEN';
 
-export type BillingTokenReply =
+type BillingTokenReply =
     | {ok: true; token: string}
     | {ok: false; reason: 'signed-out'; panelOpened: boolean}
     | {ok: false; reason: 'needs-click'}

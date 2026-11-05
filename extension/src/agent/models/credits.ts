@@ -12,9 +12,9 @@ import {useSyncExternalStore} from "react";
  * it does clear by waiting, but the user's own key works meanwhile.
  */
 
-export type PlanLimit = "credits" | "creditsLow" | "pastDue" | "runBudget" | "runTooLong" | "userBudget" | "unavailable";
+type PlanLimit = "credits" | "creditsLow" | "pastDue" | "runBudget" | "runTooLong" | "userBudget" | "unavailable";
 
-export interface CreditsExhausted {
+interface CreditsExhausted {
     limit: PlanLimit;
     /** The server's own wording, for when the account hasn't loaded. */
     message: string;

@@ -15,7 +15,7 @@ export interface ToolSafety {
 }
 
 /** How to find an element in the live page. */
-export interface TargetSpec {
+interface TargetSpec {
     /** A listControls ref, kept by the page overlay in this same isolated world. */
     ref?: string;
     selector?: string;
@@ -174,7 +174,7 @@ export interface SafetyGateOptions {
 }
 
 /** What the model receives instead of a result when an action does not run. */
-export type HeldOutput = { error: string; blocked?: true; declined?: true; hint: string };
+type HeldOutput = { error: string; blocked?: true; declined?: true; hint: string };
 
 /**
  * One run's safety state: which results were flagged as possible prompt

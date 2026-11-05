@@ -57,7 +57,7 @@ export function requestTitle(request: string): string {
     return text.length > TITLE_MAX ? text.slice(0, TITLE_MAX - 1).trimEnd() + "…" : text;
 }
 
-export interface TitleRequest {
+interface TitleRequest {
     text: string;
     attachmentNames?: string[];
     pickedElements?: number;

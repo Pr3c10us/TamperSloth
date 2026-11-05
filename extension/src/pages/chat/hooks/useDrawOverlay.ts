@@ -1,7 +1,7 @@
 import { useCallback, useEffect } from "react";
 import { runDrawOverlay } from "@/injected/drawOverlay";
 
-export interface UseDrawOverlayArgs {
+interface UseDrawOverlayArgs {
     tabId: number;
     isDrawing: boolean;
     setIsDrawing: (v: boolean) => void;

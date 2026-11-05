@@ -6,16 +6,16 @@ import type {ModelMessage, UserContent} from "ai";
  * whatever budget remains and the rest become a one-line note, so long chats
  * don't resend every image on every turn.
  */
-export const MAX_HISTORY_ATTACHMENTS = 6;
+const MAX_HISTORY_ATTACHMENTS = 6;
 
-export interface HistoryAttachment {
+interface HistoryAttachment {
     id?: string;
     kind: "image" | "file";
     name: string;
     mediaType?: string;
 }
 
-export interface HistoryMessage {
+interface HistoryMessage {
     role: "user" | "assistant";
     content: string;
     pickedElements?: string[];
@@ -68,20 +68,20 @@ export function beforeMessage<T extends {id: string}>(messages: T[], id: string 
     return index < 0 ? messages : messages.slice(0, index);
 }
 
-export interface HistoryOptions {
+interface HistoryOptions {
     /** Resolves a stored attachment to a data URL, or null if its bytes are gone. */
     loadAttachment: (attachment: HistoryAttachment) => Promise<string | null>;
     summarizeElement: (html: string) => string;
     maxAttachments?: number;
 }
 
-export function withElementContext(text: string, elements: string[] | undefined, summarize: (html: string) => string) {
+function withElementContext(text: string, elements: string[] | undefined, summarize: (html: string) => string) {
     if (!elements?.length) return text;
     return `${text}\n\n${elements.map((html, i) => `[Selected element ${i + 1}]: ${summarize(html)}`).join("\n\n")}`;
 }
 
 /** Puts the page text the user quoted ahead of what they asked about it. */
-export function withQuotes(text: string, quotes: HistoryMessage["quotes"]) {
+function withQuotes(text: string, quotes: HistoryMessage["quotes"]) {
     if (!quotes?.length) return text;
     const blocks = quotes.map(quote => {
         const source = [quote.title && `"${quote.title}"`, quote.url && `(${quote.url})`].filter(Boolean).join(" ");

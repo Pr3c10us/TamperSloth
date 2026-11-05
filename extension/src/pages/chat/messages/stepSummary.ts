@@ -5,7 +5,7 @@ import {formatElapsedTime} from "@/agent/run/runMetrics";
  * "Thought for 12s, read the page, clicked, used 4 tools".
  */
 
-export type SummaryStep =
+type SummaryStep =
     | {kind: "thinking"; durationMs?: number}
     | {kind: "tool"; name: string; args?: Record<string, unknown>; failed?: boolean};
 

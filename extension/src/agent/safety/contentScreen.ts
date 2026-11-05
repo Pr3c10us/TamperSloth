@@ -8,7 +8,7 @@
  * Ordinary pages ("never share your password") stay below the threshold.
  */
 
-export interface InjectionSignal {
+interface InjectionSignal {
     label: string;
     /** The matching text with a little context, whitespace collapsed. */
     snippet: string;
@@ -24,7 +24,7 @@ export interface InjectionScan {
 }
 
 /** Score at which a result is flagged. */
-export const FLAG_SCORE = 3;
+const FLAG_SCORE = 3;
 /** Most text read from one result; later text is rarely what the model reads first. */
 const MAX_SCAN_CHARS = 400_000;
 const SNIPPET_CONTEXT = 70;
@@ -115,7 +115,7 @@ function snippetAt(text: string, index: number, length: number): string {
 const SKIPPED_KEYS = new Set(["screenshot", "image", "dataUrl", "metadata", "postAction", "bbox", "center", "metrics"]);
 
 /** Every string in a tool result, depth-first, with image data left out. */
-export function collectText(value: unknown, limit = MAX_SCAN_CHARS): string {
+function collectText(value: unknown, limit = MAX_SCAN_CHARS): string {
     const parts: string[] = [];
     let total = 0;
     const seen = new Set<unknown>();

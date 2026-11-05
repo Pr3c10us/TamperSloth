@@ -106,7 +106,7 @@ const MODEL_RATES: Record<string, Record<string, Rates>> = {
     grok: GROK_RATES,
 };
 
-export interface EstimatedCost {
+interface EstimatedCost {
     input?: number;
     output?: number;
 }

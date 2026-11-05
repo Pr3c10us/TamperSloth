@@ -20,7 +20,7 @@ export type NormalizedEvent =
     | {type: "text-delta"; text: string};
 
 /** The subset of AI SDK full-stream parts the normalizer understands. */
-export type StreamPartLike = {type: string; text?: string; delta?: string; providerMetadata?: unknown};
+type StreamPartLike = {type: string; text?: string; delta?: string; providerMetadata?: unknown};
 
 const TAG_NAMES = ["think", "thinking", "reasoning"];
 const OPEN_TAG = new RegExp(`^<(${TAG_NAMES.join("|")})>`, "i");

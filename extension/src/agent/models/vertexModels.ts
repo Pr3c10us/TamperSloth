@@ -1,6 +1,6 @@
 import type {ModelMaker} from "./provider";
 
-export type VertexApi = "anthropic" | "openapi" | "mistral";
+type VertexApi = "anthropic" | "openapi" | "mistral";
 
 export interface VertexPartnerModel {
     api: VertexApi;

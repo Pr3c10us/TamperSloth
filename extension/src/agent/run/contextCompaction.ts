@@ -2,7 +2,7 @@ import type {ModelMessage} from "ai";
 import {vertexProtocol} from "@/agent/models/vertexModels";
 import {resultReceipt, serialize} from "@/agent/tools/toolOutput";
 
-export const CONTEXT_CHARS = 48000;
+const CONTEXT_CHARS = 48000;
 
 /** Deterministic, sticky compaction: never edits tool inputs, reasoning/signatures,
  * user messages, or call/result IDs. Recent observations and approvals stay exact.

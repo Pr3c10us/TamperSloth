@@ -4,7 +4,7 @@ export type SkillId =
     | "injection_timing" | "persistent_storage" | "image_library" | "scope_confirmation"
     | "script_management" | "element_picker" | "quality_assurance" | "debugging_workflow";
 
-export interface Skill {description: string; content: string}
+interface Skill {description: string; content: string}
 
 export const skills: Record<SkillId, Skill> = {
     verify_before_acting: {

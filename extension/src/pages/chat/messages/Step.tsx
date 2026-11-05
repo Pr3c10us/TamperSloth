@@ -52,7 +52,7 @@ export function useSmoothText(text: string, active: boolean) {
 }
 
 /** Circular status node that sits on the trace rail. */
-export function StepNode({icon: Icon, state}: { icon: LucideIcon; state: StepState }) {
+function StepNode({icon: Icon, state}: { icon: LucideIcon; state: StepState }) {
     return (
         <span
             aria-hidden

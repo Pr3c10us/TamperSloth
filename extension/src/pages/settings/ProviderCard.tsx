@@ -2,7 +2,7 @@ import {ArrowUpRight, Plus} from "lucide-react";
 import {Button} from "@/ui/shadcn/button";
 import {Input} from "@/ui/shadcn/input";
 import {cn} from "@/ui/utils";
-import {ProviderLogo} from "@/ui/ProviderLogo";
+import {ProviderLogo} from "@/pages/shared/ProviderLogo";
 import type {Provider} from "./providers";
 
 type Props = {

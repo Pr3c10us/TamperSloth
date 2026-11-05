@@ -94,7 +94,7 @@ const gestureModelOutput = (output: any, postAction?: any) => output.screenshot
     : {type: 'text' as const, value: JSON.stringify(output)};
 
 /** Identifies the chat's task so the browser service can group, guard and clean up the tabs it opens. */
-export interface TaskContext {conversationId: string; originTabId?: number; /** Whether the chat started on a new tab page, which then belongs to the task. */ originBlank?: Promise<boolean>;
+interface TaskContext {conversationId: string; originTabId?: number; /** Whether the chat started on a new tab page, which then belongs to the task. */ originBlank?: Promise<boolean>;
     /** The bytes of an image the user sent in this chat, by file name. */ findAttachment?: (name: string) => Promise<Blob | null>}
 
 export function createBrowserTools(getTabId: () => number, selectTab: (id: number) => void, abortSignal?: AbortSignal, task?: TaskContext) {

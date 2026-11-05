@@ -2,7 +2,7 @@ import {z} from "zod";
 import {TOOL_GROUPS, type Group} from "@/agent/tools/toolRuntime";
 
 /** Written by us and shipped in the extension; see playbooks/README.md for the format. */
-export const REQUIRED_SECTIONS = ["Start here", "Avoid", "Fallback", "Done check"];
+const REQUIRED_SECTIONS = ["Start here", "Avoid", "Fallback", "Done check"];
 const MAX_DESCRIPTION_CHARS = 300;
 
 const configSchema = z.strictObject({
