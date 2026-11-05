@@ -16,7 +16,7 @@ A name is up to 80 letters, numbers, dots, dashes or underscores; `My Cursor` be
 | `list` | Metadata of everything saved. |
 | `view` | Shows one image to the model (up to 1024 px), or an SVG's markup. |
 | `rename`, `delete` | Manage names, and report which saved scripts ask for the old one. |
-| `upload` | Hands an image to a page's file field, or drops it on an element, as a named file. |
+| `upload` | Hands an image to a page as a named file. `method` picks how: `file` (a file field), `paste` (into a message box), `drop` (onto an element), or `auto`, which tries a file field, then paste, then drop. |
 | `copy` | Puts an image on the clipboard as a PNG. |
 
 The extension reads the bytes itself and the model gets back a name and a small preview, so an image never travels through the model as text. The tool's schema has no way to pass bytes in; `dataUrl` exists only between the panel and the background.
@@ -84,6 +84,12 @@ Importing never overwrites: an image whose name is already taken stays as it is.
 ## Not included
 
 Scripts can read the library but not write to it. Only the agent's tool and the library page add images, so a script can't replace an image that other scripts rely on. A script that needs to save its own output can use `GM_setValue` or `MH_setValue` for small values.
+
+## Attaching to pages
+
+With `auto` and no selector, `upload` uses the first file field, or else the message box being typed in, or else the first visible one. A selector narrows that to one element and what's inside it.
+
+Paste and drop are events the extension dispatches, with `isTrusted` false. Nothing is put on the real clipboard, so whatever the user copied stays. A page that takes the file usually cancels the event, which the result reports as `pageResponded`; `false` means no sign of it, not proof it failed. A page that accepts only real user input will ignore these, and `upload` doesn't send a trusted paste.
 
 ## Validation
 

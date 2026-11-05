@@ -114,6 +114,7 @@ export const browserSchemas = {
         frameId: z.string().max(200).optional(),
         maxNodes: z.number().int().min(1).max(1000).default(250)}),
     images: z.object({tabId, action: z.enum(['save', 'list', 'view', 'delete', 'rename', 'upload', 'copy']),
+        method: z.enum(['auto', 'file', 'paste', 'drop']).default('auto').describe('upload: how to hand it over. auto uses a file field, then pastes into a message box, then drops.'),
         name: z.string().min(1).max(100).optional(), newName: z.string().min(1).max(100).optional(),
         url: z.string().min(1).max(20000).optional(), selector: z.string().min(1).max(1000).optional(), index: z.number().int().nonnegative().default(0),
         screenshot: z.boolean().optional(), description: z.string().max(500).optional(), replace: z.boolean().optional(),

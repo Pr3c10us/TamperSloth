@@ -269,6 +269,115 @@ test('upload hands the page a named file, and surfaces what the page reports', a
     await assert.rejects(none.run({action: 'upload', name: 'avatar', tabId: 3}), /no file field/);
 });
 
+/** Runs the injected upload code on a small fake page, and returns what it reported and which events each element got. */
+async function attach({page, method = 'auto', selector, index = 0}) {
+    const f = fixture({page: () => ({how: 'file field'})});
+    await stored(f.library, 'avatar');
+    await f.run({action: 'upload', name: 'avatar', tabId: 3, method, selector});
+    const {func, args: [args]} = f.injected[0];
+    class Element {
+        constructor({id, editable = false, visible = true, takes = [], children = []} = {}) { Object.assign(this, {id, editable, visible, takes, children, events: [], focused: false}); }
+        matches() { return this.editable; }
+        get isContentEditable() { return this.editable; }
+        getClientRects() { return this.visible ? [{}] : []; }
+        focus() { this.focused = true; }
+        querySelector(query) { return this.children.find(child => query.includes('file') ? child instanceof HTMLInputElement : child.editable) ?? null; }
+        dispatchEvent(event) { this.events.push(event); return !this.takes.includes(event.type); }
+    }
+    class HTMLInputElement extends Element { type = 'file'; accept = 'image/*'; files = null; }
+    class HTMLLabelElement extends Element {}
+    class Event { constructor(type, init = {}) { Object.assign(this, init, {type}); } }
+    class DataTransfer { files = []; items = {add: file => this.files.push(file)}; }
+    class File { constructor(parts, name, options) { Object.assign(this, {name, type: options.type}); } }
+    const elements = page({Element, HTMLInputElement, HTMLLabelElement});
+    const all = [...elements, ...elements.flatMap(element => element.children)];
+    const document = {
+        activeElement: all.find(element => element.active) ?? null,
+        querySelectorAll: query => query === '*' ? [] : query === 'input[type=file]' ? all.filter(element => element instanceof HTMLInputElement)
+            : query.startsWith('#') ? all.filter(element => element.id === query.slice(1)) : all.filter(element => element.editable),
+    };
+    const context = vm.createContext({document, atob, Uint8Array, HTMLInputElement, HTMLLabelElement, Event, ClipboardEvent: Event, DragEvent: Event, DataTransfer, File});
+    const result = vm.runInContext(`(${func.toString()})`, context)({...args, index});
+    return {result, types: element => element.events.map(event => event.type), file: element => element.events[0]?.clipboardData?.files[0] ?? element.files?.[0]};
+}
+
+test('auto prefers a file field, leaving the rest of the page alone', async () => {
+    let field, box;
+    const {result, file, types} = await attach({page: ({Element, HTMLInputElement}) => [field = new HTMLInputElement(), box = new Element({editable: true})]});
+    assert.equal(result.how, 'file field');
+    assert.equal(file({files: field.files, events: []}).name, 'avatar.png');
+    assert.deepEqual(types(field), ['input', 'change']);
+    assert.deepEqual(types(box), []);
+});
+
+test('with no file field, auto pastes a named file into the box being typed in', async () => {
+    let other, inUse;
+    const {result, types, file} = await attach({page: ({Element}) => {
+        other = new Element({editable: true});
+        inUse = new Element({editable: true, takes: ['paste']});
+        inUse.active = true;
+        return [other, inUse];
+    }});
+    assert.deepEqual({...result}, {how: 'paste', pageResponded: true});
+    assert.equal(inUse.focused, true);
+    assert.deepEqual(types(inUse), ['paste']);
+    assert.equal(file(inUse).name, 'avatar.png');
+    assert.deepEqual(types(other), []);
+});
+
+test('with nothing in use, it finds the first visible box, and refuses when there is none', async () => {
+    let hidden, shown;
+    const {types} = await attach({page: ({Element}) => [hidden = new Element({editable: true, visible: false}), shown = new Element({editable: true, takes: ['paste']})]});
+    assert.deepEqual(types(hidden), []);
+    assert.deepEqual(types(shown), ['paste']);
+    const empty = await attach({page: () => []});
+    assert.match(empty.result.error, /no file field or message box/);
+});
+
+test('a box that ignores paste gets a drop, and neither answering is reported rather than called success', async () => {
+    let box;
+    const fallback = await attach({selector: '#box', page: ({Element}) => [box = new Element({id: 'box', editable: true, takes: ['drop']})]});
+    assert.deepEqual({...fallback.result}, {how: 'drop', pageResponded: true, alsoTried: 'paste'});
+    assert.deepEqual(fallback.types(box), ['paste', 'dragenter', 'dragover', 'drop']);
+    const ignored = await attach({selector: '#box', page: ({Element}) => [new Element({id: 'box', editable: true})]});
+    assert.equal(ignored.result.pageResponded, false);
+});
+
+test('a wrapper counts for what is inside it, and a plain drop area just gets a drop', async () => {
+    let inner;
+    const wrapped = await attach({selector: '#composer', page: ({Element}) => [new Element({id: 'composer', children: [inner = new Element({editable: true, takes: ['paste']})]})]});
+    assert.equal(wrapped.result.how, 'paste');
+    assert.deepEqual(wrapped.types(inner), ['paste']);
+    let area;
+    const dropped = await attach({selector: '#area', page: ({Element}) => [area = new Element({id: 'area', takes: ['drop']})]});
+    assert.deepEqual({...dropped.result}, {how: 'drop', pageResponded: true});
+    assert.ok(!dropped.types(area).includes('paste'));
+});
+
+test('a method is taken at its word, even with a file field on the page', async () => {
+    let field, box;
+    const pasted = await attach({method: 'paste', page: ({Element, HTMLInputElement}) => [field = new HTMLInputElement(), box = new Element({editable: true})]});
+    assert.equal(pasted.result.how, 'paste');
+    assert.equal(pasted.result.pageResponded, false, 'No fallback once a method is named');
+    assert.deepEqual(pasted.types(field), []);
+    assert.deepEqual(pasted.types(box), ['paste']);
+    const noField = await attach({method: 'file', page: ({Element}) => [new Element({editable: true})]});
+    assert.match(noField.result.error, /no file field/);
+    const noArea = await attach({method: 'drop', page: () => []});
+    assert.match(noArea.result.error, /needs the selector/);
+    const wrongTarget = await attach({method: 'file', selector: '#box', page: ({Element}) => [new Element({id: 'box', editable: true})]});
+    assert.match(wrongTarget.result.error, /has no file field/);
+});
+
+test('the result tells the agent when the page gave no sign of taking the file', async () => {
+    const ignored = fixture({page: () => ({how: 'paste', pageResponded: false})});
+    await stored(ignored.library, 'avatar');
+    assert.match((await ignored.run({action: 'upload', name: 'avatar', tabId: 3})).hint, /no sign of taking/);
+    const taken = fixture({page: () => ({how: 'paste', pageResponded: true})});
+    await stored(taken.library, 'avatar');
+    assert.match((await taken.run({action: 'upload', name: 'avatar', tabId: 3})).hint, /confirm it took/);
+});
+
 test('copy sends a PNG to the clipboard document, and an SVG or a failure says so', async () => {
     const {library, run, clipboardCalls} = fixture();
     await stored(library, 'pic');

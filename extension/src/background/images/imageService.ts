@@ -104,16 +104,41 @@ function measureElementInPage(selector: string, index: number) {
 }
 
 /** Serialized into the page's isolated world: hands an image to the page as if the user had picked the file. */
-function putImageInPage(args: {selector?: string; index: number; base64: string; mimeType: string; filename: string}) {
+function putImageInPage(args: {selector?: string; index: number; method: 'auto' | 'file' | 'paste' | 'drop'; base64: string; mimeType: string; filename: string}) {
     const queryAll = (root: Document | ShadowRoot, selector: string): Element[] => {
         const found = [...root.querySelectorAll(selector)];
         for (const element of root.querySelectorAll('*')) if (element.shadowRoot) found.push(...queryAll(element.shadowRoot, selector));
         return found;
     };
+    const EDITABLE = 'textarea,input[type=text],input[type=search],input:not([type]),[contenteditable=""],[contenteditable=true],[contenteditable=plaintext-only]';
+    const isEditable = (element: Element | null | undefined): element is HTMLElement => !!element && (element.matches(EDITABLE) || (element as HTMLElement).isContentEditable);
+    const isVisible = (element: Element) => element.getClientRects().length > 0;
+    const focused = () => {
+        let active = document.activeElement;
+        while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+        return active;
+    };
+    const fileFieldIn = (element: Element) => element instanceof HTMLInputElement && element.type === 'file' ? element
+        : element instanceof HTMLLabelElement && element.control instanceof HTMLInputElement && element.control.type === 'file' ? element.control
+        : element.querySelector<HTMLInputElement>('input[type=file]');
+    /** What the user is typing in, or else the page's first visible message box. */
+    const messageBox = () => {
+        const active = focused();
+        return isEditable(active) ? active : queryAll(document, EDITABLE).find(isVisible);
+    };
+
     let target: Element | undefined;
-    try { target = queryAll(document, args.selector ?? 'input[type=file]')[args.index]; }
-    catch { return {error: `"${args.selector}" isn't a valid selector.`}; }
-    if (!target) return {error: args.selector ? `Nothing on the page matches "${args.selector}".` : 'This page has no file field. Pass the selector of its drop area.'};
+    if (args.selector) {
+        try { target = queryAll(document, args.selector)[args.index]; }
+        catch { return {error: `"${args.selector}" isn't a valid selector.`}; }
+        if (!target) return {error: `Nothing on the page matches "${args.selector}".`};
+    } else if (args.method === 'drop') {
+        return {error: 'Dropping needs the selector of the drop area.'};
+    } else {
+        if (args.method !== 'paste') target = queryAll(document, 'input[type=file]')[args.index];
+        if (args.method !== 'file') target ??= messageBox();
+        if (!target) return {error: args.method === 'file' ? 'This page has no file field.' : 'This page has no file field or message box. Pass the selector of its drop area.'};
+    }
 
     const binary = atob(args.base64);
     const bytes = new Uint8Array(binary.length);
@@ -121,19 +146,33 @@ function putImageInPage(args: {selector?: string; index: number; base64: string;
     const transfer = new DataTransfer();
     transfer.items.add(new File([bytes], args.filename, {type: args.mimeType}));
 
-    const input = target instanceof HTMLInputElement && target.type === 'file' ? target
-        : target instanceof HTMLLabelElement && target.control instanceof HTMLInputElement && target.control.type === 'file' ? target.control
-        : target.querySelector<HTMLInputElement>('input[type=file]');
+    const input = args.method === 'auto' || args.method === 'file' ? fileFieldIn(target) : null;
     if (input) {
         input.files = transfer.files;
         input.dispatchEvent(new Event('input', {bubbles: true, composed: true}));
         input.dispatchEvent(new Event('change', {bubbles: true}));
         return {how: 'file field', accept: input.accept || undefined};
     }
-    for (const type of ['dragenter', 'dragover', 'drop']) {
-        target.dispatchEvent(new DragEvent(type, {bubbles: true, cancelable: true, composed: true, dataTransfer: transfer}));
-    }
-    return {how: 'drop'};
+    if (args.method === 'file') return {error: `"${args.selector}" has no file field.`};
+
+    // A page that takes the file cancels the event's default, so that's the one sign of it these give.
+    const paste = (element: HTMLElement) => {
+        element.focus();
+        return !element.dispatchEvent(new ClipboardEvent('paste', {bubbles: true, cancelable: true, composed: true, clipboardData: transfer}));
+    };
+    const drop = (element: Element) => {
+        let taken = false;
+        for (const type of ['dragenter', 'dragover', 'drop']) {
+            taken = !element.dispatchEvent(new DragEvent(type, {bubbles: true, cancelable: true, composed: true, dataTransfer: transfer}));
+        }
+        return taken;
+    };
+    if (args.method === 'drop') return {how: 'drop', pageResponded: drop(target)};
+    const box = isEditable(target) ? target : target.querySelector<HTMLElement>(EDITABLE);
+    if (args.method === 'paste') return {how: 'paste', pageResponded: paste(box ?? target as HTMLElement)};
+    // Auto: a message box is pasted into, and drop is the try left if it ignores that; anything else is a drop area.
+    if (box && paste(box)) return {how: 'paste', pageResponded: true};
+    return {how: 'drop', pageResponded: drop(target), ...(box ? {alsoTried: 'paste'} : {})};
 }
 
 const execute = async <T,>(tabId: number, func: (...args: any[]) => T, args: unknown[]): Promise<Awaited<T>> => {
@@ -272,9 +311,12 @@ export async function runImageAction(a: any, clipboard: Clipboard): Promise<unkn
             if (a.tabId === undefined) throw new Error('This needs a page to put the image on.');
             const {blob, ...image} = await requireImage(requireName());
             const filename = imageFileName(image);
-            const placed = await execute(a.tabId, putImageInPage, [{selector: a.selector, index: a.index, base64: await blobToBase64(blob), mimeType: image.mimeType, filename}]);
+            const placed = await execute(a.tabId, putImageInPage, [{selector: a.selector, index: a.index, method: a.method, base64: await blobToBase64(blob), mimeType: image.mimeType, filename}]);
             if ('error' in placed && placed.error) throw new Error(placed.error);
-            return {ok: true, name: image.name, filename, ...placed, hint: 'Check the page to confirm it took the file.'};
+            const ignored = 'pageResponded' in placed && placed.pageResponded === false;
+            return {ok: true, name: image.name, filename, ...placed, hint: ignored
+                ? "The page gave no sign of taking the file, though some don't. Check the page; if it isn't there, try another method or the page's own file field."
+                : 'Check the page to confirm it took the file.'};
         }
         case 'copy': {
             const {blob, name} = await requireImage(requireName());
