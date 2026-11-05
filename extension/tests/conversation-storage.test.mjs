@@ -22,7 +22,10 @@ function fixture({legacy = [], bytes = 0} = {}) {
         set: async value => { writes.push(value); Object.assign(saved, structuredClone(value)); },
         remove: async keys => { for (const key of Array.isArray(keys) ? keys : [keys]) delete saved[key]; },
     }}};
-    const reload = () => createLoader({globals: {chrome, indexedDB}})('src/storage/storage.ts');
+    const reload = () => {
+        const load = createLoader({globals: {chrome, indexedDB}});
+        return {...load('src/storage/conversations.ts'), ...load('src/storage/codeFiles.ts')};
+    };
     return {storage: reload(), reload, saved, reads, writes};
 }
 

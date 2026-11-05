@@ -17,7 +17,7 @@ function setup(scripts, files = {}) {
         },
         TextEncoder, TextDecoder, btoa,
     }});
-    return {store, fetched, ...load('src/userscripts/editScript.ts'), storage: load('src/storage/storage.ts')};
+    return {store, fetched, ...load('src/userscripts/editScript.ts'), storage: load('src/storage/codeFiles.ts')};
 }
 
 const plainScript = (changes = {}) => ({

@@ -31,7 +31,8 @@ import {
     AlertDialogTitle,
 } from "@/ui/shadcn/alert-dialog";
 import {PageHeader, PageHeaderAction, PageHeaderTitle} from "@/ui/PageHeader";
-import {deleteScript, exportScript, importScriptsFromJson, loadScripts, subscribeToScripts, updateScriptStatus,} from "@/storage/storage";
+import {deleteScript, loadScripts, subscribeToScripts, updateScriptStatus} from "@/storage/scripts";
+import {exportScript, importScriptsFromJson} from "@/storage/scriptExport";
 import type {BackgroundScript} from "@/userscripts/types";
 import {ScriptCode} from "@/ui/ScriptCode";
 import {openScriptViewer, reloadedNote, reloadTabsForScript, reloadTabsForScripts} from "@/userscripts/scriptActions";

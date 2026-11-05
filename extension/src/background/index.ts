@@ -15,13 +15,8 @@ import {installUserscriptLinks} from '@/background/userscripts/userscriptLinks';
 import {CHECK_USERSCRIPT_UPDATE, installUserscriptUpdates} from '@/background/userscripts/userscriptUpdates';
 import {savedScriptImageHelpers, temporaryImageHelpers, temporaryImageToken, usesImageHelpers} from '@/background/images/imageScriptApi';
 import {imageForScript, listImages} from '@/storage/imageLibrary';
-import {
-    deleteScriptValue,
-    getScriptValue,
-    listScriptValues,
-    loadScripts,
-    setScriptValue
-} from "@/storage/storage";
+import {deleteScriptValue, getScriptValue, listScriptValues, setScriptValue} from "@/storage/scriptValues";
+import {loadScripts} from "@/storage/scripts";
 
 chrome.sidePanel.setOptions({enabled: false});
 if(chrome.runtime.onConnect) installPanelLifecycle(cdp);

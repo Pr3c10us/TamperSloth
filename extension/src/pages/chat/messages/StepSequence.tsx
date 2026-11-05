@@ -1,6 +1,6 @@
 import {memo, useId, useState} from "react";
 import type {ContentBlock} from "@/pages/chat/hooks/useAgent";
-import {formatElapsedTime, type ToolMetric} from "@/agent/run/contextCompaction";
+import {formatElapsedTime, type ToolMetric} from "@/agent/run/runMetrics";
 import {thinkingDuration} from "@/agent/models/reasoning";
 import {summarizeSteps} from "./stepSummary";
 import {toolReason} from "@/agent/tools/toolReason";

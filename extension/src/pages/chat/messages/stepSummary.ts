@@ -1,4 +1,4 @@
-import {formatElapsedTime} from "@/agent/run/contextCompaction";
+import {formatElapsedTime} from "@/agent/run/runMetrics";
 
 /**
  * One-line label for a run of thinking and tool steps, e.g.

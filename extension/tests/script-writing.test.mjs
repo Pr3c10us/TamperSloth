@@ -28,7 +28,7 @@ function fixture({files = new Map(), scripts = []} = {}) {
         listFiles: async () => [...files.keys()],
         deleteFile: async (_, path) => { files.delete(path); },
     };
-    const loader = createLoader({mocks: {'src/storage/storage.ts': storage}});
+    const loader = createLoader({mocks: {'src/storage/scripts.ts': storage, 'src/storage/codeFiles.ts': storage}});
     return {files, scripts, loader, tools: loader('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'test'})};
 }
 

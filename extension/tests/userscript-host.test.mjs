@@ -169,7 +169,7 @@ function promptFixture(stored = {}) {
         }},
         windows,
     };
-    const mocks = {'src/storage/storage.ts': {
+    const mocks = {'src/storage/scripts.ts': {
         loadScripts: async () => [structuredClone(stored)],
         saveScript: async s => { saved.push(s); },
     }};
@@ -258,7 +258,7 @@ function updateFixture(installed, responses) {
         const body = new TextEncoder().encode(responses[url]);
         return {ok: true, status: 200, statusText: 'OK', headers: {get: () => ''}, arrayBuffer: async () => body.buffer};
     };
-    const mocks = {'src/storage/storage.ts': {
+    const mocks = {'src/storage/scripts.ts': {
         loadScripts: async () => scripts,
         saveScript: async s => { saved.push(s); },
     }};

@@ -1,4 +1,15 @@
-import type {StoredConversation} from './storage';
+import type {ThinkingLevel} from "@/agent/models/thinkingLevel";
+
+export interface StoredConversation {
+    id: string;
+    title: string;
+    messages: unknown[];
+    /** Absent on chats saved before thinking levels; they follow the default. */
+    thinkingLevel?: ThinkingLevel;
+    createdAt: number;
+    updatedAt: number;
+}
+
 
 export type ConversationSummary = Omit<StoredConversation, 'messages'>;
 let database: Promise<IDBDatabase> | undefined;

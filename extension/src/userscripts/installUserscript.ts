@@ -1,4 +1,4 @@
-import {loadScripts, saveScript} from "@/storage/storage";
+import {loadScripts, saveScript} from "@/storage/scripts";
 import type {BackgroundScript, ImportedUserscript} from "./types";
 import {parseUserscript, readIntegrity, type ParsedUserscript} from "./userscript";
 

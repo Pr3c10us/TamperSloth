@@ -4,7 +4,7 @@ import {cn} from "@/ui/utils";
 import {MarkdownContent} from "./Markdown";
 import {Step, useNow, useSmoothText} from "./Step";
 import {thinkingDuration, type ThinkingContent} from "@/agent/models/reasoning";
-import {formatElapsedTime} from "@/agent/run/contextCompaction";
+import {formatElapsedTime} from "@/agent/run/runMetrics";
 
 // Only the tail is shown while streaming, so re-parsing stays cheap per frame.
 const PREVIEW_CHARS = 700;

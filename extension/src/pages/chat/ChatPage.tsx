@@ -12,7 +12,7 @@ import {
     type SelectedModelEntry,
 } from "@/pages/chat/composer/ModelSelector";
 import { getApiKeys as loadApiKeys } from "@/storage/apiKeys";
-import { subscribeSelectedModel } from "@/storage/storage";
+import {subscribeSelectedModel} from "@/storage/selectedModel";
 import { getAccessToken } from "@/account/account";
 import { MAX_ATTACHMENTS, type PendingAttachment } from "@/pages/chat/composer/AttachmentChip";
 import { showPickedMarkers } from "@/pages/chat/hooks/useElementPicker";

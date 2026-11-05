@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GalleryVerticalEnd, MoreHorizontal, PanelLeftClose, Plus, Search, Settings, Trash2 } from "lucide-react";
-import {
-    deleteConversation,
-    loadConversationHistory,
-    type ConversationSummary,
-} from "@/storage/storage";
+import {deleteConversation, loadConversationHistory, type ConversationSummary} from "@/storage/conversations";
 import { discardConversation, useRunningChats } from "@/pages/chat/hooks/useAgent";
 import { Button } from "@/ui/shadcn/button";
 import {

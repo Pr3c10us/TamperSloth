@@ -1,4 +1,4 @@
-import type {StoredConversation} from '@/storage/storage';
+import type {StoredConversation} from '@/storage/conversations';
 
 /** A slow disk must not retain every streamed snapshot in a promise chain. */
 export function createConversationSaver(write: (conversation: StoredConversation) => Promise<void>, onError: (error: unknown, conversation: StoredConversation) => void) {

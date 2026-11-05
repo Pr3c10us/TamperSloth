@@ -13,7 +13,7 @@ function fixture({logs = [], text = 'content', files = new Map(), scripts = []} 
         readFile: async (_, path) => files.get(path) ?? null,
         writeFile: async (_, path, content) => files.set(path, content),
     };
-    const load = createLoader({mocks: {'src/storage/storage.ts': storage}, globals: {
+    const load = createLoader({mocks: {'src/storage/scripts.ts': storage, 'src/storage/codeFiles.ts': storage}, globals: {
         document: {title: 'Fixture', body: root, querySelector: () => root},
         location: {href: 'https://example.com/article'},
         chrome: {runtime: {sendMessage: async () => ({logs, ok: true})},
@@ -129,7 +129,7 @@ test('output projection caps large data while preserving errors and UI payloads'
 
 test('per-call token estimates fall back to characters for older records', async () => {
     const {load} = fixture();
-    const {toolCallTokens, estimateImageTokens} = load('src/agent/run/contextCompaction.ts');
+    const {toolCallTokens, estimateImageTokens} = load('src/agent/run/runMetrics.ts');
     const current = toolCallTokens({name: 'getPageText', inputChars: 40, outputChars: 0, modelOutputChars: 0, inputTokens: 10, modelOutputTokens: 700});
     assert.equal(current.input, 10);
     assert.equal(current.output, 700);
@@ -378,14 +378,14 @@ test('settings validate budgets and usage does not double-count cached/reasoning
     const load = createLoader();
     const {normalizeAgentSettings} = load('src/agent/agentSettings.ts');
     assert.deepEqual(plain(normalizeAgentSettings({maxSteps: 9999, tokenBudget: -10})), {maxSteps: 200, tokenBudget: 0, thinkingLevel: 'high', showRunTokens: false, showToolTokens: false, actionApproval: 'auto', maxTaskTabs: 6});
-    const {usageRecord} = load('src/agent/run/contextCompaction.ts');
+    const {usageRecord} = load('src/agent/run/runMetrics.ts');
     assert.deepEqual(plain(usageRecord({inputTokens: 100, outputTokens: 40, inputTokenDetails: {cacheReadTokens: 80, cacheWriteTokens: 10}, outputTokenDetails: {reasoningTokens: 30}})),
         {input: 100, output: 40, cacheRead: 80, cacheWrite: 10, reasoning: 30});
 });
 
 test('stopped runs total completed steps and token display toggles persist', () => {
     const load = createLoader();
-    const {sumUsage} = load('src/agent/run/contextCompaction.ts');
+    const {sumUsage} = load('src/agent/run/runMetrics.ts');
     assert.equal(sumUsage([]), undefined);
     assert.deepEqual(plain(sumUsage([{input: 100, output: 20, cacheRead: 50}, {input: 200, output: 30}])),
         {input: 300, output: 50, cacheRead: 50});
@@ -396,7 +396,7 @@ test('stopped runs total completed steps and token display toggles persist', () 
 });
 
 test('output budgets include JSON escaping and oversized structured errors', () => {
-    const {compactToolOutput} = createLoader()('src/agent/run/contextCompaction.ts');
+    const {compactToolOutput} = createLoader()('src/agent/tools/toolOutput.ts');
     const payload = Object.fromEntries(['error', 'url', 'finalUrl', 'newUrl', 'title', 'scriptId', 'path', 'sourcePath', 'status', 'urlMatchPattern', 'runAt']
         .map(key => [key, '\\"\n\t'.repeat(5000)]));
     payload.error = {stack: '\\"\n'.repeat(10000)};
@@ -423,7 +423,7 @@ test('virtual file listings return paths that readFile can consume', async () =>
         getKeys: async () => ['ts_file:chat/scripts/a.js', 'ts_file:other/scripts/b.js', 'ts_conversations'],
         get: async () => { throw new Error('Listings must not load stored payloads'); },
     }}}}});
-    const {listFiles} = load('src/storage/storage.ts');
+    const {listFiles} = load('src/storage/codeFiles.ts');
     assert.deepEqual(plain(await listFiles('chat', 'scripts/')), ['scripts/a.js']);
 });
 
@@ -455,7 +455,7 @@ test('aborted calls never execute browser actions', async () => {
 test('SDK stops at a measured run budget without launching another step', async () => {
     const load = createLoader();
     const {runStopReason, DEFAULT_AGENT_SETTINGS} = load('src/agent/agentSettings.ts');
-    const {usageRecord} = load('src/agent/run/contextCompaction.ts');
+    const {usageRecord} = load('src/agent/run/runMetrics.ts');
     const settings = {...DEFAULT_AGENT_SETTINGS, tokenBudget: 200};
     const steps = [];
     let reason = '', calls = 0;

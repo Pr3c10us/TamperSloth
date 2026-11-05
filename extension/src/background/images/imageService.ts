@@ -13,7 +13,7 @@ import {
     renameImage,
     writeImage,
 } from '@/storage/imageLibrary';
-import {loadScripts} from '@/storage/storage';
+import {loadScripts} from '@/storage/scripts';
 import {capturePng} from '@/background/browser/screenshotCapture';
 
 // The image library's actions. The extension fetches and holds the bytes itself:

@@ -17,15 +17,9 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/ui/shadcn/alert-dialog";
-import {
-    deleteScript,
-    downloadScriptSource,
-    loadConversationHistory,
-    loadScripts,
-    saveScript,
-    subscribeToScripts,
-    updateScriptStatus,
-} from "@/storage/storage";
+import {deleteScript, loadScripts, saveScript, subscribeToScripts, updateScriptStatus} from "@/storage/scripts";
+import {downloadScriptSource} from "@/storage/scriptExport";
+import {loadConversationHistory} from "@/storage/conversations";
 import type {BackgroundScript} from "@/userscripts/types";
 import {saveEditedScript, scriptCodeProblem} from "@/userscripts/editScript";
 import {ScriptCode} from "@/ui/ScriptCode";

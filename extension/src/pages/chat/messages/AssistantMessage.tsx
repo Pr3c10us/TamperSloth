@@ -9,7 +9,7 @@ import {useNow} from "./Step";
 import {Button} from "@/ui/shadcn/button";
 import {cn} from "@/ui/utils";
 import {Tooltip, TooltipContent, TooltipTrigger} from "@/ui/shadcn/tooltip";
-import {formatElapsedTime} from "@/agent/run/contextCompaction";
+import {formatElapsedTime} from "@/agent/run/runMetrics";
 import {estimateRunCost, formatCost, isCreditBilled} from "@/agent/models/pricing";
 import {formatModelName} from "@/agent/models/provider";
 

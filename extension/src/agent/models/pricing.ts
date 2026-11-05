@@ -1,4 +1,4 @@
-import type {RunMetrics, UsageRecord} from "@/agent/run/contextCompaction";
+import type {RunMetrics, UsageRecord} from "@/agent/run/runMetrics";
 
 interface Rates {
     input: number;

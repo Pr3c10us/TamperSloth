@@ -1,5 +1,5 @@
 import type {BackgroundScript} from "@/userscripts/types";
-import {loadScripts, saveScript} from "@/storage/storage";
+import {loadScripts, saveScript} from "@/storage/scripts";
 import {compareVersions, permissionsGrew, readMetaBlock} from "@/userscripts/userscript";
 import {fetchUserscriptSource, installUserscript, openInstallPage, prepareUserscript} from "@/userscripts/installUserscript";
 import {loadUserscriptPrefs} from "@/userscripts/prefs";

@@ -10,7 +10,7 @@ import {
     type ProviderConfig,
     type ProviderId,
 } from "@/agent/models/provider";
-import {loadSelectedModel, saveSelectedModel} from "@/storage/storage";
+import {loadSelectedModel, saveSelectedModel} from "@/storage/selectedModel";
 import {ModelLogo, ProviderLogo} from "@/ui/ProviderLogo";
 import {ThinkingLevelPage, useDefaultThinkingLevel} from "./ThinkingSelector";
 import {THINKING_LEVELS, type ThinkingLevel} from "@/agent/models/thinkingLevel";

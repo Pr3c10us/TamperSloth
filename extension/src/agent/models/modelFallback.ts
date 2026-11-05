@@ -1,5 +1,5 @@
 import {MODELPROVIDERS, type ProviderId} from "./provider";
-import {clearSelectedModel, loadSelectedModel, saveSelectedModel, type SelectedModel} from "@/storage/storage";
+import {clearSelectedModel, loadSelectedModel, saveSelectedModel, type SelectedModel} from "@/storage/selectedModel";
 import {getApiKeys} from "@/storage/apiKeys";
 import {getAccount, isSignedIn} from "@/account/account";
 

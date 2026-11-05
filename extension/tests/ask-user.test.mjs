@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import {createLoader, plain} from './load-ts.mjs';
 
 function setup() {
-    const load = createLoader({mocks: {'src/storage/storage.ts': {}}});
+    const load = createLoader({mocks: {'src/storage/scripts.ts': {}, 'src/storage/codeFiles.ts': {}}});
     const bus = load('src/agent/tools/askUserBus.ts');
     const {askUser} = load('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'test'});
     return {bus, askUser};

@@ -4,7 +4,7 @@ import {AlertTriangle, Check, Link2, Loader2, Upload} from "lucide-react";
 import {cn} from "@/ui/utils";
 import {Button} from "@/ui/shadcn/button";
 import {Input} from "@/ui/shadcn/input";
-import {mergeScriptValues} from "@/storage/storage";
+import {mergeScriptValues} from "@/storage/scriptValues";
 import type {BackgroundScript} from "@/userscripts/types";
 import {ScriptCode} from "@/ui/ScriptCode";
 import {SitesDialog} from "@/ui/SitesDialog";

@@ -1,4 +1,4 @@
-import type {UsageRecord} from "@/agent/run/contextCompaction";
+import type {UsageRecord} from "@/agent/run/runMetrics";
 import type {ApprovalMode} from "@/agent/safety/actionScreen";
 import {DEFAULT_THINKING_LEVEL, isThinkingLevel, type ThinkingLevel} from "@/agent/models/thinkingLevel";
 

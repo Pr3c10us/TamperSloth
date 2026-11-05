@@ -147,7 +147,7 @@ test('partial tool JSON yields the reason as soon as it is being written', () =>
 });
 
 test('every runtime tool requires a leading reason that never reaches the implementation', async () => {
-    const browserLoad = createLoader({mocks: {'src/storage/storage.ts': {}}});
+    const browserLoad = createLoader({mocks: {'src/storage/scripts.ts': {}, 'src/storage/codeFiles.ts': {}}});
     const raw = browserLoad('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'reason'});
     const runtime = browserLoad('src/agent/tools/toolRuntime.ts').createToolRuntime(raw, {request: '', findPrevious: () => undefined});
     for (const [name, definition] of Object.entries(runtime.tools)) {

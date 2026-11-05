@@ -1,4 +1,5 @@
-import {readFile, saveScript, writeFile} from "@/storage/storage";
+import {readFile, writeFile} from "@/storage/codeFiles";
+import {saveScript} from "@/storage/scripts";
 import type {BackgroundScript} from "./types";
 import {prepareUserscript, userscriptFields} from "./installUserscript";
 import {parseUserscript} from "./userscript";

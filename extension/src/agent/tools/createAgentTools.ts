@@ -2,18 +2,8 @@ import {tool} from "ai";
 import {createBrowserTools, browserImageOutput, browserCall, setTaskStatus} from './browserTools';
 import {z} from "zod";
 import type {BackgroundScript} from "@/userscripts/types";
-import {
-    deleteFile,
-    deleteScript,
-    fileExists,
-    listFiles,
-    loadScripts,
-    loadScriptsByConversation,
-    readFile,
-    saveScript,
-    updateScriptStatus,
-    writeFile,
-} from "@/storage/storage";
+import {deleteFile, fileExists, listFiles, readFile, writeFile} from "@/storage/codeFiles";
+import {deleteScript, loadScripts, loadScriptsByConversation, saveScript, updateScriptStatus} from "@/storage/scripts";
 import {appendChunk, findLines, lineCount, numberedWindow, outlineCode, replaceLineRange, scriptFilePath} from "./codeFileText";
 import {isNewTabPage, isValidMatchPattern} from "@/shared/url";
 import {type AskUserAnswer, rejectPendingAsk, setPendingAsk,} from "./askUserBus";

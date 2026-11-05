@@ -1,4 +1,4 @@
-import {loadAttachment} from "@/storage/storage";
+import {loadAttachment} from "@/storage/conversations";
 
 // Object URLs only live as long as the panel document, so transcripts store an
 // attachment id and the URL is minted from IndexedDB each time the panel loads.

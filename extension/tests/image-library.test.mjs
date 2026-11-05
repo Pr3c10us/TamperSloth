@@ -431,7 +431,7 @@ test('importing a script brings its images, and exporting one packs them', async
     }
     const load = createLoader({globals: {chrome, indexedDB: new IDBFactory(), Blob, atob, btoa, TextDecoder, OffscreenCanvas: class {}, URL: CapturingURL,
         document: {createElement: () => ({click() {}})}, createImageBitmap: async () => ({width: 4, height: 4, close() {}})}});
-    const storage = load('src/storage/storage.ts');
+    const storage = {...load('src/storage/scripts.ts'), ...load('src/storage/scriptExport.ts')};
     const library = load('src/storage/imageLibrary.ts');
     const script = {id: 'old', name: 'S', description: '', code: "MH_getImage('logo')", urlMatchPattern: '<all_urls>', status: 'active', runAt: 'document_idle', conversationId: ''};
     const count = await storage.importScriptsFromJson(JSON.stringify({...script, images: [{name: 'logo', dataUrl: pngDataUrl()}]}));

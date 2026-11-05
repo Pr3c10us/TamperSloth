@@ -14,14 +14,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/shadcn/alert-dialog";
-import {
-  deleteFile,
-  deleteAllFilesForConversation,
-  listAllCodeFiles,
-  loadConversationHistory,
-  type CodeFileEntry,
-  type ConversationSummary,
-} from "@/storage/storage";
+import {deleteFile, deleteAllFilesForConversation, listAllCodeFiles, type CodeFileEntry} from "@/storage/codeFiles";
+import {loadConversationHistory, type ConversationSummary} from "@/storage/conversations";
 import { openConversation } from "@/pages/chat/hooks/useAgent";
 import { SettingsGroup, SettingsSection, TabIntro } from "./Section";
 

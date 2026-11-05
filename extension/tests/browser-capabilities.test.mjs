@@ -96,11 +96,12 @@ function fixture(seed = {}) {
         async convertToBlob() { return new Blob(['png']); }
     }
     const load = createLoader({globals: {chrome, OffscreenCanvas: Canvas, createImageBitmap: async () => ({width: 800, height: 600, close() {}}),
-        fetch: async () => ({blob: async () => new Blob(['png'])}), btoa: s => Buffer.from(s, 'binary').toString('base64')}, mocks: {'src/storage/storage.ts': {
+        fetch: async () => ({blob: async () => new Blob(['png'])}), btoa: s => Buffer.from(s, 'binary').toString('base64')}, mocks: {'src/storage/scripts.ts': {
         loadScripts: async () => [
             {id: 'saved-1', name: 'Test', code: 'function main() { return 1; }', status: 'active', urlMatchPattern: 'https://example.com/*'},
             {id: 'paused-1', name: 'Paused', code: 'function main() {}', status: 'paused', urlMatchPattern: 'https://example.com/*'},
         ],
+    }, 'src/storage/scriptValues.ts': {
         getScriptValue: async () => null, setScriptValue: async () => {}, deleteScriptValue: async () => {}, listScriptValues: async () => ({}),
     }}});
     const service = load('src/background/browser/browserService.ts');

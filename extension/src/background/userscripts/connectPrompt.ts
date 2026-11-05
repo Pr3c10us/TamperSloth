@@ -1,5 +1,5 @@
 import type {BackgroundScript} from "@/userscripts/types";
-import {loadScripts, saveScript} from "@/storage/storage";
+import {loadScripts, saveScript} from "@/storage/scripts";
 
 // When a userscript asks to contact a site its @connect doesn't list, the user
 // decides in a small window, as with Tampermonkey. "For now" lasts until the
