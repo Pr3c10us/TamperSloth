@@ -3,19 +3,7 @@ import { cn } from "@/ui/utils";
 import { Button } from "@/ui/shadcn/button";
 import { Badge } from "@/ui/shadcn/badge";
 import { ZoomableImage } from "@/pages/chat/messages/ImageLightbox";
-
-/** Most files one message can carry. */
-export const MAX_ATTACHMENTS = 10;
-
-export interface PendingAttachment {
-    kind: "image" | "file";
-    name: string;
-    size: string;
-    ext?: string;
-    url?: string | null;
-    mediaType?: string;
-    file?: File;
-}
+import type { PendingAttachment } from "@/agent/conversation/attachments";
 
 interface AttachmentChipProps {
     att: PendingAttachment;
@@ -93,22 +81,4 @@ export function AttachmentChip({ att, onRemove, large }: AttachmentChipProps) {
             {onRemove && <RemoveBtn onClick={onRemove} />}
         </div>
     );
-}
-
-export function formatSize(bytes: number): string {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-    return (bytes / 1024 / 1024).toFixed(1) + " MB";
-}
-
-export function makeAttachmentFromFile(f: File): PendingAttachment {
-    return {
-        kind: f.type.startsWith("image/") ? "image" : "file",
-        name: f.name,
-        size: formatSize(f.size),
-        ext: (f.name.split(".").pop() || "").toUpperCase().slice(0, 4),
-        url: f.type.startsWith("image/") ? URL.createObjectURL(f) : null,
-        mediaType: f.type || "application/octet-stream",
-        file: f,
-    };
 }

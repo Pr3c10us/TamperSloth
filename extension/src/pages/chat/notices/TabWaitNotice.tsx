@@ -1,6 +1,7 @@
 import { Hourglass, Square } from "lucide-react";
 import { Button } from "@/ui/shadcn/button";
-import { openConversation, stopConversation, useChatTitle } from "@/pages/chat/hooks/useAgent";
+import {openConversation, stopConversation} from "@/agent/conversation/sessions";
+import {useChatTitle} from "@/pages/chat/hooks/useAgent";
 import { useTabWait } from "@/agent/tools/tabLease";
 import { Eyebrow, CARD_DUR, CARD_EASE } from "@/pages/chat/cardParts";
 

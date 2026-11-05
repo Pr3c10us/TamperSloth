@@ -82,3 +82,31 @@ export function toolCallTokens(metric: ToolMetric): {input: number; output: numb
     return {input: metric.inputTokens ?? Math.ceil(metric.inputChars / CHARS_PER_TOKEN),
         output: metric.modelOutputTokens ?? Math.ceil(metric.modelOutputChars / CHARS_PER_TOKEN)};
 }
+
+/** A run's numbers, and the part of its reply being written now: a mid-run message splits the reply into parts. */
+export function createRunMeter(base: {providerId: string; modelId: string; startedAt: number}) {
+    const metrics: RunMetrics = {...base, steps: [], tools: [], compactedResults: 0, elapsedMs: 0};
+    // The part of the reply now being written: its first step and when it began.
+    let segment = {step: 0, startedAt: base.startedAt};
+    // Each part of a reply split by mid-run messages shows the steps, tokens and time it covered.
+    const metricsFor = (from: number, to: number | undefined, since: number, until = Date.now()): RunMetrics => {
+        if (from === 0 && to === undefined) return {...metrics, steps: [...metrics.steps], tools: [...metrics.tools]};
+        const steps = metrics.steps.slice(from, to);
+        return {...metrics, startedAt: since, steps, tools: [...metrics.tools],
+            total: steps.length ? sumUsage(steps) : undefined, elapsedMs: until - since};
+    };
+    return {
+        metrics,
+        get segment() { return segment; },
+        current: () => metricsFor(segment.step, undefined, segment.startedAt),
+        /** Ends the current part. Steps can finish before the stream shows the split, so both parts are measured from the boundary. */
+        endSegment(step: number, endedAt: number): RunMetrics {
+            const boundary = Math.max(segment.step, step);
+            const ended = metricsFor(segment.step, boundary, segment.startedAt, endedAt);
+            segment = {step: boundary, startedAt: endedAt};
+            return ended;
+        },
+    };
+}
+
+export type RunMeter = ReturnType<typeof createRunMeter>;

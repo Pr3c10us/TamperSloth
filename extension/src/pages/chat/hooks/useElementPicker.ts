@@ -1,16 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { runPickerOverlay } from "@/injected/pickerOverlay";
-import type { PickedElement } from "@/pages/chat/composer/PickedElementChip";
-
-/** Removes one chat's picked-element marks (and the overlay, if none are left) from the tab. */
-export function clearPickedMarkers(tabId: number, group: string) {
-    void runPickerOverlay(tabId, { action: "clear", group });
-}
-
-/** Shows one chat's marks on the page and hides every other chat's. */
-export function showPickedMarkers(tabId: number, group: string) {
-    void runPickerOverlay(tabId, { action: "show", group });
-}
+import type {PickedElement} from "@/agent/conversation/types";
 
 export interface UseElementPickerArgs {
     tabId: number;

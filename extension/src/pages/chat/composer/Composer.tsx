@@ -17,7 +17,8 @@ import {
     TooltipTrigger,
 } from "@/ui/shadcn/tooltip";
 import { cn } from "@/ui/utils";
-import { clearPickedMarkers, useElementPicker } from "@/pages/chat/hooks/useElementPicker";
+import {clearPickedMarkers} from "@/injected/pickerOverlay";
+import {useElementPicker} from "@/pages/chat/hooks/useElementPicker";
 import { useDrawOverlay } from "@/pages/chat/hooks/useDrawOverlay";
 import { usePanelRequests } from "@/pages/chat/hooks/usePanelRequests";
 import { useDictation } from "@/pages/chat/hooks/useDictation";
@@ -34,12 +35,10 @@ import { ModelSelector, type SelectedModelEntry } from "./ModelSelector";
 import { PermissionModeSelector } from "./PermissionModeSelector";
 import { useAccount } from "@/account/useAccount";
 import type { ThinkingLevel } from "@/agent/models/thinkingLevel";
-import { PickedElementChip, type PickedElement } from "./PickedElementChip";
-import {
-    AttachmentChip,
-    MAX_ATTACHMENTS,
-    type PendingAttachment,
-} from "./AttachmentChip";
+import {PickedElementChip} from "./PickedElementChip";
+import type {PickedElement} from "@/agent/conversation/types";
+import {AttachmentChip} from "./AttachmentChip";
+import {MAX_ATTACHMENTS, type PendingAttachment} from "@/agent/conversation/attachments";
 import { AskUserOverlay } from "@/pages/chat/prompts/AskUserOverlay";
 import { ActionConfirmOverlay } from "@/pages/chat/prompts/ActionConfirmOverlay";
 import { UserWaitNotice } from "@/pages/chat/notices/UserWaitNotice";
@@ -48,7 +47,8 @@ import { RateLimitNotice } from "@/pages/chat/notices/RateLimitNotice";
 import { CreditsNotice } from "@/pages/chat/notices/CreditsNotice";
 import { TaskTabsCard } from "@/pages/chat/notices/TaskTabsCard";
 import { QueuedMessages } from "./QueuedMessages";
-import { openConversation, type QueuedMessage } from "@/pages/chat/hooks/useAgent";
+import {openConversation} from "@/agent/conversation/sessions";
+import type {QueuedMessage} from "@/agent/conversation/types";
 
 interface ComposerProps {
     draft: string;
@@ -729,4 +729,3 @@ function dataUrlToFile(dataUrl: string, name: string) {
     return new File([bytes], name, { type });
 }
 
-export { makeAttachmentFromFile } from "./AttachmentChip";

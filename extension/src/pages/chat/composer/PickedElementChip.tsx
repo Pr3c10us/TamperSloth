@@ -4,13 +4,6 @@ import { cn } from "@/ui/utils";
 import { Hint } from "@/ui/Hint";
 import { ZoomableImage } from "@/pages/chat/messages/ImageLightbox";
 
-/** A picked element in the composer: the HTML goes to the model, the screenshot is only shown here. */
-export interface PickedElement {
-    html: string;
-    /** Data URL of the element's visible area, when the capture succeeded. */
-    screenshot?: string | null;
-}
-
 /** Removes what the element picker itself added: its outline and data-tampersloth-* markers. */
 function withoutPickerMarks(html: string) {
     const openTag = html.match(/^<[^>]*>/)?.[0];

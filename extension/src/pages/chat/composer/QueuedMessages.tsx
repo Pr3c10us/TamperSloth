@@ -1,6 +1,6 @@
 import { Clock, Paperclip, Pencil, X } from "lucide-react";
 import { Button } from "@/ui/shadcn/button";
-import type { QueuedMessage } from "@/pages/chat/hooks/useAgent";
+import type {QueuedMessage} from "@/agent/conversation/types";
 import { Eyebrow, CARD_DUR, CARD_EASE } from "@/pages/chat/cardParts";
 
 /** What a queued message carries besides its text, as a short label. */

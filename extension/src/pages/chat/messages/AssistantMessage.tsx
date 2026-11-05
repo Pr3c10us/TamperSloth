@@ -1,6 +1,6 @@
 import {memo, useCallback, useState} from "react";
 import {ArrowDown, ArrowUp, Check, Coins, Copy, DatabaseZap, Hash, Sigma, Timer, type LucideIcon} from "lucide-react";
-import type {ChatMessage} from "@/pages/chat/hooks/useAgent";
+import type {ChatMessage} from "@/agent/conversation/types";
 import {MarkdownContent} from "./Markdown";
 import {CARD_TOOLS, ToolCallInline} from "./ToolCallInline";
 import {isTrivialThinking} from "./ThinkingBlock";

@@ -352,3 +352,13 @@ export async function runPickerOverlay(tabId: number, args: Parameters<typeof pi
     if (typeof chrome === 'undefined' || !chrome?.scripting) return;
     await chrome.scripting.executeScript({target: {tabId}, func: pickerOverlay, args: [args]}).catch(() => {});
 }
+
+/** Removes one chat's picked-element marks (and the overlay, if none are left) from the tab. */
+export function clearPickedMarkers(tabId: number, group: string) {
+    void runPickerOverlay(tabId, { action: "clear", group });
+}
+
+/** Shows one chat's marks on the page and hides every other chat's. */
+export function showPickedMarkers(tabId: number, group: string) {
+    void runPickerOverlay(tabId, { action: "show", group });
+}

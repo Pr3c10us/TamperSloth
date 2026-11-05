@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAgent } from "@/pages/chat/hooks/useAgent";
+import {useAgent} from "@/pages/chat/hooks/useAgent";
 import { ChatHeader } from "@/pages/chat/header/ChatHeader";
 import { MessageList } from "@/pages/chat/messages/MessageList";
-import { Composer, makeAttachmentFromFile } from "@/pages/chat/composer/Composer";
+import { Composer } from "@/pages/chat/composer/Composer";
 import { HistoryDrawer } from "@/pages/chat/header/HistoryDrawer";
 import { UserScriptsBanner } from "@/pages/chat/notices/UserScriptsBanner";
 import { ImageLightbox } from "@/pages/chat/messages/ImageLightbox";
@@ -14,10 +14,10 @@ import {
 import { getApiKeys as loadApiKeys } from "@/storage/apiKeys";
 import {subscribeSelectedModel} from "@/storage/selectedModel";
 import { getAccessToken } from "@/account/account";
-import { MAX_ATTACHMENTS, type PendingAttachment } from "@/pages/chat/composer/AttachmentChip";
-import { showPickedMarkers } from "@/pages/chat/hooks/useElementPicker";
-import type { PickedElement } from "@/pages/chat/composer/PickedElementChip";
-import { clearDraft, updateDraft, useDraft } from "@/agent/conversation/drafts";
+import {makeAttachmentFromFile, MAX_ATTACHMENTS, type PendingAttachment} from "@/agent/conversation/attachments";
+import {showPickedMarkers} from "@/injected/pickerOverlay";
+import type {PickedElement} from "@/agent/conversation/types";
+import {clearDraft, updateDraft, useDraft} from "@/agent/conversation/drafts";
 import type { Quote } from "@/shared/panelRequests";
 
 const tabId = Number(new URLSearchParams(window.location.search).get("tabId")) || 0;

@@ -1,17 +1,6 @@
 import {useSyncExternalStore} from "react";
-import type {PickedElement} from "@/pages/chat/composer/PickedElementChip";
-import type {PendingAttachment} from "@/pages/chat/composer/AttachmentChip";
-import type {Quote} from "@/shared/panelRequests";
-import {clearPickedMarkers} from "@/pages/chat/hooks/useElementPicker";
-
-/** What the composer holds for one chat before it is sent. */
-export interface Draft {
-    text: string;
-    pickedElements: PickedElement[];
-    files: PendingAttachment[];
-    /** Page text the user chose to ask about, shown above the input. */
-    quotes: Quote[];
-}
+import type {Draft} from "./types";
+import {clearPickedMarkers} from "@/injected/pickerOverlay";
 
 const EMPTY: Draft = {text: "", pickedElements: [], files: [], quotes: []};
 

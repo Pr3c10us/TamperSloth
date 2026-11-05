@@ -1,7 +1,7 @@
 import {forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState} from "react";
 import { ArrowDown } from "lucide-react";
 import { cn } from "@/ui/utils";
-import type { ChatMessage } from "@/pages/chat/hooks/useAgent";
+import type {ChatMessage} from "@/agent/conversation/types";
 import { UserMessage } from "./UserMessage";
 import { AssistantMessage } from "./AssistantMessage";
 import { EmptyState } from "./EmptyState";

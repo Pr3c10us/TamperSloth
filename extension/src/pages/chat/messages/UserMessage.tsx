@@ -3,11 +3,11 @@ import { Pencil } from "lucide-react";
 import { Button } from "@/ui/shadcn/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/shadcn/tooltip";
 import { cn } from "@/ui/utils";
-import type { ChatMessage, StoredAttachment } from "@/pages/chat/hooks/useAgent";
+import type {ChatMessage, StoredAttachment} from "@/agent/conversation/types";
 import { attachmentUrl } from "@/agent/conversation/attachmentUrls";
 import { MarkdownContent } from "./Markdown";
-import { PickedElementChip } from "@/pages/chat/composer/PickedElementChip";
-import { AttachmentChip } from "@/pages/chat/composer/AttachmentChip";
+import {PickedElementChip} from "@/pages/chat/composer/PickedElementChip";
+import {AttachmentChip} from "@/pages/chat/composer/AttachmentChip";
 import { QuoteChip } from "@/pages/chat/composer/QuoteChip";
 import { CopyMessageButton } from "./AssistantMessage";
 

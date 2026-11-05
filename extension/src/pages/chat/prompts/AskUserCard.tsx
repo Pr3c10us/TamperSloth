@@ -1,6 +1,6 @@
 import { HelpCircle } from "lucide-react";
 import { cn } from "@/ui/utils";
-import type { ToolCall } from "@/pages/chat/hooks/useAgent";
+import type {ToolCall} from "@/agent/conversation/types";
 import type { AskUserAnswer, AskUserOption } from "@/agent/tools/askUserBus";
 import { Eyebrow, CARD_DUR, CARD_EASE } from "@/pages/chat/cardParts";
 import { ErrorNotice } from "@/pages/chat/notices/ErrorNotice";
