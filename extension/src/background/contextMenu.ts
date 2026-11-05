@@ -1,7 +1,10 @@
 import {queuePanelRequest} from '../chat/lib/panelRequests';
 
+/** "Send to Sloth", where userscript commands are added while the current tab has some. */
+export const SEND_TO_SLOTH_MENU = 'tampersloth-show';
+
 const MENU = {
-    show: 'tampersloth-show',
+    show: SEND_TO_SLOTH_MENU,
     open: 'tampersloth-open',
     openSeparator: 'tampersloth-open-separator',
     pick: 'tampersloth-pick',
@@ -15,7 +18,8 @@ const MAX_QUOTE = 20000;
 
 // "Show Sloth" is left out of the selection context so Chrome never folds it and
 // "Ask Sloth" together under a TamperSloth parent: each stays one click away.
-const SHOW_CONTEXTS: chrome.contextMenus.CreateProperties['contexts'] = ['page', 'frame', 'link', 'image', 'video', 'audio'];
+export const SEND_TO_SLOTH_CONTEXTS: chrome.contextMenus.CreateProperties['contexts'] = ['page', 'frame', 'link', 'image', 'video', 'audio'];
+const SHOW_CONTEXTS = SEND_TO_SLOTH_CONTEXTS;
 
 function createMenus() {
     chrome.contextMenus.removeAll(() => {
@@ -54,6 +58,8 @@ export function installContextMenu(openPanel: (tab: chrome.tabs.Tab) => Promise<
 
     chrome.contextMenus.onClicked.addListener((info, tab) => {
         if (!tab?.id || tab.id < 0) return;
+        // Userscript commands; the userscript host answers those, and they don't open the panel.
+        if (String(info.menuItemId).startsWith('ts-us-')) return;
         const tabId = tab.id;
         // The click is the user gesture sidePanel.open needs, so the panel opens before anything is awaited.
         // "Open Sloth" needs nothing more.

@@ -28,7 +28,7 @@ export interface TargetSpec {
 }
 
 /** Results whose text the model never reads as page content. */
-const UNSCANNED = new Set(["getSkill", "enableTools", "askUser", "listScripts", "browserNotify"]);
+const UNSCANNED = new Set(["getSkill", "loadPlaybook", "enableTools", "askUser", "listScripts", "browserNotify"]);
 const PAGE_LOOKUP_MS = 1500;
 
 /** Runs in the page: describes the elements an action is about to touch. */

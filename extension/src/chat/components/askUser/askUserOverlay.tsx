@@ -56,7 +56,8 @@ export function AskUserOverlay({ conversationId }: { conversationId: string }) {
             aria-modal="false"
             aria-label="Question from Sloth"
         >
-            <div className="flex flex-col gap-2.5 px-3 py-3">
+            {/* The composer is pinned to the bottom, so a tall question scrolls instead of leaving the screen. */}
+            <div className="flex max-h-[65vh] flex-col gap-2.5 overflow-y-auto px-3 py-3 [scrollbar-width:thin]">
                 <header className="flex items-center gap-2">
                     <HelpCircle
                         className="size-3.5 text-muted-foreground"
@@ -76,7 +77,7 @@ export function AskUserOverlay({ conversationId }: { conversationId: string }) {
                                 type="button"
                                 onClick={() => submitOption(opt.label, opt.emoji)}
                                 className={cn(
-                                    "group flex w-full items-center gap-2.5 rounded-md border border-border bg-background px-3 py-2 text-left text-sm leading-snug text-foreground transition-colors",
+                                    "group flex w-full items-baseline gap-2.5 rounded-md border border-border bg-background px-3 py-2 text-left text-sm leading-snug text-foreground transition-colors",
                                     "hover:border-foreground hover:bg-muted/40",
                                     "focus-visible:border-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40",
                                 )}
@@ -94,12 +95,19 @@ export function AskUserOverlay({ conversationId }: { conversationId: string }) {
                                 ) : (
                                     <span
                                         aria-hidden
-                                        className="font-mono text-[10px] uppercase tracking-[.14em] text-muted-foreground"
+                                        className="shrink-0 font-mono text-[10px] uppercase tracking-[.14em] text-muted-foreground"
                                     >
                                         {String.fromCharCode(65 + i)}
                                     </span>
                                 )}
-                                <span className="flex-1 truncate">{opt.label}</span>
+                                <span className="min-w-0 flex-1 break-words">
+                                    <span className="block">{opt.label}</span>
+                                    {opt.description && (
+                                        <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+                                            {opt.description}
+                                        </span>
+                                    )}
+                                </span>
                             </button>
                         </li>
                     ))}

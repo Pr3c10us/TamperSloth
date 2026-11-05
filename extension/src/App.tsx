@@ -5,6 +5,7 @@ import {
     ArrowUpRight,
     ChevronDown,
     Download,
+    FileCode,
     Pause,
     Play,
     Search,
@@ -33,6 +34,8 @@ import {deleteScript, exportScript, importScriptsFromJson, loadScripts, subscrib
 import type {BackgroundScript} from "./chat/lib/types";
 import {ScriptCode} from "./scripts/ScriptCode";
 import {openScriptViewer, reloadedNote, reloadTabsForScript, reloadTabsForScripts} from "./scripts/lib";
+import {hasUserscriptHeader, scriptSitesLabel} from "./scripts/userscript";
+import {openInstallPage, PENDING_USERSCRIPT_KEY, toBase64} from "./scripts/installUserscript";
 
 const PREVIEW_LINES = 8;
 
@@ -56,7 +59,23 @@ function App() {
         if (!file) return;
         e.target.value = "";
         try {
+            if (file.name.toLowerCase().endsWith(".zip")) {
+                // Session storage holds about 10 MB, and base64 grows a file by a third.
+                if (file.size > 7 * 1024 * 1024) {
+                    toast.error("That backup is large. Open the install page and choose it there.");
+                    return;
+                }
+                await chrome.storage.session.set({[PENDING_USERSCRIPT_KEY]: {zip: toBase64(new Uint8Array(await file.arrayBuffer()))}});
+                openInstallPage();
+                return;
+            }
             const text = await file.text();
+            // A .user.js gets the install tab's review, which has room to show what it does.
+            if (hasUserscriptHeader(text)) {
+                await chrome.storage.session.set({[PENDING_USERSCRIPT_KEY]: {source: text}});
+                openInstallPage();
+                return;
+            }
             const before = new Set((await loadScripts()).map((s) => s.id));
             const count = await importScriptsFromJson(text);
             const updated = await loadScripts();
@@ -66,7 +85,7 @@ function App() {
                 description: reloadedNote(reloaded),
             });
         } catch {
-            toast.error("Invalid script file. Make sure it's a TamperSloth JSON export.");
+            toast.error("Invalid script file. Choose a TamperSloth JSON export, a .user.js userscript or a Tampermonkey backup .zip.");
         }
     };
 
@@ -117,7 +136,7 @@ function App() {
             <input
                 ref={fileInputRef}
                 type="file"
-                accept=".json,application/json"
+                accept=".json,application/json,.js,text/javascript,.zip,application/zip"
                 className="hidden"
                 onChange={handleFileChange}
             />
@@ -133,9 +152,14 @@ function App() {
                 <PageHeaderTitle className="flex-1">Gallery</PageHeaderTitle>
                 <div className="flex shrink-0 items-center gap-0.5">
                     {scripts.length > 0 && (
-                        <PageHeaderAction label="Import scripts" onClick={handleImport}>
-                            <Upload/>
-                        </PageHeaderAction>
+                        <>
+                            <PageHeaderAction label="Install a userscript" onClick={() => openInstallPage()}>
+                                <FileCode/>
+                            </PageHeaderAction>
+                            <PageHeaderAction label="Import scripts" onClick={handleImport}>
+                                <Upload/>
+                            </PageHeaderAction>
+                        </>
                     )}
                     <PageHeaderAction label="Settings" onClick={() => navigate("/settings")}>
                         <Settings/>
@@ -195,6 +219,14 @@ function App() {
                                 <Upload strokeWidth={1.5} className="size-3.5"/>
                                 Import a script
                             </Button>
+                            <Button
+                                variant="outline"
+                                onClick={() => openInstallPage()}
+                                className="w-full gap-2"
+                            >
+                                <FileCode strokeWidth={1.5} className="size-3.5"/>
+                                Install a userscript
+                            </Button>
                         </div>
                     </div>
                 ) : filtered.length === 0 ? (
@@ -247,9 +279,7 @@ function App() {
                                         </span>
                                         <span
                                             className="truncate font-mono text-[10.5px] tracking-[.04em] text-muted-foreground">
-                                            {script.urlMatchPattern
-                                                .replace("*://", "")
-                                                .replace("/*", "")}
+                                            {scriptSitesLabel(script)}
                                         </span>
                                         <ChevronDown
                                             strokeWidth={1.5}
@@ -265,6 +295,12 @@ function App() {
                                     {/* Expanded body */}
                                     {isExpanded && (
                                         <div className="px-3.5 pb-3.5 pl-[34px]">
+                                            {script.userscript && (
+                                                <p className="eyebrow mb-1.5 text-muted-foreground">
+                                                    Userscript{script.userscript.version && ` · v${script.userscript.version}`}
+                                                    {script.userscript.author && ` · ${script.userscript.author}`}
+                                                </p>
+                                            )}
                                             {script.description && (
                                                 <p className="mb-3 text-[13px] leading-relaxed text-muted-foreground">
                                                     {script.description}

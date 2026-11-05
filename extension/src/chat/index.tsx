@@ -172,6 +172,7 @@ function Chat() {
                 activeId={conversationId}
                 onSelect={loadConversation}
                 onNewChat={handleNewChat}
+                onOpenGallery={() => navigate("/gallery")}
                 onOpenSettings={() => navigate("/settings")}
             />
         </div>

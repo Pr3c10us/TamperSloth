@@ -48,7 +48,7 @@ import { RateLimitNotice } from "./RateLimitNotice";
 import { CreditsNotice } from "./CreditsNotice";
 import { TaskTabsCard } from "./TaskTabsCard";
 import { QueuedMessages } from "./QueuedMessages";
-import type { QueuedMessage } from "../hooks/useAgent";
+import { openConversation, type QueuedMessage } from "../hooks/useAgent";
 
 interface ComposerProps {
     draft: string;
@@ -198,7 +198,7 @@ export function Composer({
         if (!await startDrawing()) setPageNotice("Can't draw on this page");
     };
 
-    // Requests from the page: opening the panel (focus the input), "Ask Sloth" quotes, context-menu picks and drawings, and finished drawings.
+    // Requests from the page: opening the panel (focus the input), opening a chat, "Ask Sloth" quotes, context-menu picks and drawings, and finished drawings.
     usePanelRequests((request) => {
         if (request.kind === "focus") {
             // The panel window may take focus a frame later, so focus again then.
@@ -210,6 +210,9 @@ export function Composer({
             };
             focus();
             requestAnimationFrame(focus);
+        } else if (request.kind === "chat") {
+            // The script viewer's "Made in" link.
+            openConversation(request.conversationId).catch(() => setPageNotice("That chat is no longer available"));
         } else if (request.kind === "quote") {
             const { text, url, title } = request;
             setQuotes((prev) => (prev.some((q) => q.text === text) ? prev : [...prev, { text, url, title }]));
@@ -566,12 +569,10 @@ export function Composer({
                                 onClick={onCancel}
                                 aria-label="Stop"
                                 title="Stop"
-                                className="group flex size-7 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                                className="group flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                             >
                                 {/* Same footprint as Send, so the input doesn't shift when a run starts. */}
-                                <span className="flex size-6 items-center justify-center rounded-full bg-foreground text-background transition-opacity group-hover:opacity-80">
-                                    <span aria-hidden className="size-2 rounded-[2px] bg-current" />
-                                </span>
+                                <span aria-hidden className="size-2.5 rounded-[2px] bg-foreground transition-opacity group-hover:opacity-80" />
                             </button>
                         ) : hasText && (
                             <Button

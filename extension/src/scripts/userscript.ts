@@ -20,7 +20,10 @@ export interface ParsedUserscript {
     /** @exclude values: globs or /regex/ literals. */
     excludes: string[];
     runAt: BackgroundScript["runAt"];
+    /** `@run-at context-menu`: runs only when picked from the right-click menu. */
+    contextMenu: boolean;
     allFrames: boolean;
+    /** MAIN with GM grants means page access plus GM functions, through a relay (see needsGmRelay). */
     world: "USER_SCRIPT" | "MAIN";
     /** As written, or detected from the code when the script has no @grant lines. */
     grants: string[];
@@ -73,7 +76,7 @@ export function normalizeMatchPattern(raw: string): string | null {
     return `${scheme}://${host}${path}`;
 }
 
-const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** `[source, flags]` for a RegExp; kept as strings so it can be embedded in injected code. */
 export type RegExpParts = [string, string];
@@ -121,6 +124,13 @@ export function runtimeUrlFilter(us: {matches: string[]; includes: string[]; exc
     };
 }
 
+/** Whether the script's URL rules cover a page, for what Chrome doesn't check itself (right-click scripts). */
+export function urlCovered(us: {matches: string[]; includes: string[]; excludeMatches: string[]; excludes: string[]}, url: string): boolean {
+    const test = ([source, flags]: RegExpParts) => new RegExp(source, flags).test(url);
+    return [...us.matches.map(matchPatternToRegExp), ...us.includes.map(includeToRegExp)].some(test)
+        && ![...us.excludeMatches.map(matchPatternToRegExp), ...us.excludes.map(includeToRegExp)].some(test);
+}
+
 /** The match patterns the script is registered with; empty means it runs nowhere. */
 export function registrationMatches(us: {matches: string[]; includes: string[]}): string[] {
     if (us.includes.length) return ["*://*/*"];
@@ -143,15 +153,12 @@ export const grantKey = (grant: string) => grant.replace(/^GM[_.]/, "").toLowerC
 
 const isGmGrant = (grant: string) => /^GM[_.]/.test(grant) && grantKey(grant) !== "info";
 
+/** A page-world script with GM grants can't message the extension itself; a relay in its own world does. */
+export const needsGmRelay = (us: {world: string; grants: string[]}) => us.world === "MAIN" && us.grants.some(isGmGrant);
+
 const UNSUPPORTED_GRANTS: Record<string, string> = {
-    registermenucommand: "Menu commands aren't shown in TamperSloth yet; the script runs, but its menu items won't appear.",
-    cookie: "GM_cookie isn't supported; calls to it will fail.",
-    webrequest: "GM_webRequest isn't supported; calls to it will fail.",
-    addvaluechangelistener: "Value change listeners only hear changes made in the same tab.",
-    gettab: "Per-tab storage isn't kept between page loads.",
-    gettabs: "Per-tab storage isn't kept between page loads.",
-    savetab: "Per-tab storage isn't kept between page loads.",
-    audio: "GM_audio isn't supported; calls to it will fail.",
+    // Manifest V3 extensions can't block or redirect requests from a listener.
+    webrequest: "GM_webRequest can't work in Manifest V3 extensions; calls to it will fail.",
 };
 
 const RUN_AT: Record<string, BackgroundScript["runAt"]> = {
@@ -192,11 +199,8 @@ export function parseUserscript(source: string): ParsedUserscript {
     if (!matches.length && !includes.length) warnings.push("It has no @match or @include, so it won't run on any page.");
 
     const runAtRaw = first("run-at").toLowerCase();
-    let runAt = RUN_AT[runAtRaw] ?? "document_idle";
-    if (runAtRaw === "context-menu") {
-        runAt = "document_idle";
-        warnings.push("It's meant to run from the right-click menu, which isn't supported yet; it runs when matching pages load instead.");
-    }
+    const runAt = RUN_AT[runAtRaw] ?? "document_idle";
+    const contextMenu = runAtRaw === "context-menu";
 
     const written = all("grant");
     const grantsDetected = written.length === 0;
@@ -208,12 +212,15 @@ export function parseUserscript(source: string): ParsedUserscript {
     const needsGm = grants.some(isGmGrant);
     const injectInto = first("inject-into").toLowerCase();
     const sandbox = first("sandbox").toLowerCase();
-    const world: ParsedUserscript["world"] = needsGm || injectInto === "content" || sandbox === "dom" ? "USER_SCRIPT" : "MAIN";
-    if (needsGm && (grants.includes("unsafeWindow") || /\bunsafeWindow\b/.test(source))) {
-        warnings.push("It uses unsafeWindow alongside GM functions. For now that's the script's own window, so the page's JavaScript variables aren't reachable.");
+    const isolated = injectInto === "content" || sandbox === "dom";
+    const usesPage = grants.includes("unsafeWindow") || /\bunsafeWindow\b/.test(source)
+        || injectInto === "page" || sandbox === "raw" || sandbox === "javascript";
+    const world: ParsedUserscript["world"] = isolated || (needsGm && !usesPage) ? "USER_SCRIPT" : "MAIN";
+    if (needsGm && world === "MAIN") {
+        warnings.push("It runs inside the page so it can reach the page's own JavaScript. That also means a hostile page on these sites could try to use its GM functions.");
     }
-    if (needsGm && injectInto === "page") {
-        warnings.push("It asks to run in the page, but it also needs GM functions, so it runs in an isolated world instead.");
+    if (isolated && usesPage) {
+        warnings.push("It asks to stay isolated but uses unsafeWindow, which here is its own window rather than the page's.");
     }
 
     const unsupported = new Set(grants.map((g) => UNSUPPORTED_GRANTS[grantKey(g)]).filter(Boolean));
@@ -221,7 +228,7 @@ export function parseUserscript(source: string): ParsedUserscript {
 
     const connects = all("connect");
     if (grants.some((g) => grantKey(g) === "xmlhttprequest") && !connects.length) {
-        warnings.push("It makes network requests but lists no @connect sites, so requests are limited to the page's own site.");
+        warnings.push("It makes network requests but lists no @connect sites, so you'll be asked the first time it contacts another site.");
     }
 
     const resources = all("resource").flatMap((value) => {
@@ -242,6 +249,7 @@ export function parseUserscript(source: string): ParsedUserscript {
         excludeMatches: [...new Set(excludeMatches)],
         excludes: [...new Set(excludes)],
         runAt,
+        contextMenu,
         allFrames: !entries.some(([k]) => k === "noframes"),
         world,
         grants,
@@ -281,6 +289,19 @@ export function readIntegrity(url: string): {algorithm: string; value: string}[]
         const m = part.trim().match(/^(md5|sha1|sha256|sha384|sha512)[=-](.+)$/i);
         return m ? [{algorithm: m[1].toLowerCase(), value: m[2]}] : [];
     });
+}
+
+/** Whether a new version asks for something the installed one didn't have, so updating needs the user's say. */
+export function permissionsGrew(
+    installed: {grants: string[]; connects: string[]; matches: string[]; includes: string[]; world: string},
+    next: {grants: string[]; connects: string[]; matches: string[]; includes: string[]; world: string},
+): boolean {
+    const grew = (before: string[], after: string[]) => after.some((v) => !before.includes(v));
+    return grew(installed.grants.map(grantKey), next.grants.map(grantKey))
+        || grew(installed.connects, next.connects)
+        || grew(installed.matches, next.matches)
+        || grew(installed.includes, next.includes)
+        || (installed.world !== "MAIN" && next.world === "MAIN");
 }
 
 /** -1, 0 or 1, comparing dotted versions the way userscript managers do (numeric parts first). */

@@ -96,7 +96,7 @@ export type ModelRequest = {
     estimatedInputTokens: number
 }
 
-export function parseModelRequest(body: unknown, namespace: string, maxOutputTokens: number): ModelRequest {
+export function parseModelRequest(body: unknown, namespace: string): ModelRequest {
     if (!isRecord(body) || !isRecord(body.options)) throw new BadRequestError("options are required")
     const raw = body.options
     const requestedEffort = raw.providerOptions?.tampersloth?.effort
@@ -104,10 +104,8 @@ export function parseModelRequest(body: unknown, namespace: string, maxOutputTok
 
     const options: ModelRequest["options"] = {
         prompt: sanitizePrompt(raw.prompt, namespace),
-        maxOutputTokens: Math.min(
-            Number.isInteger(raw.maxOutputTokens) && raw.maxOutputTokens > 0 ? raw.maxOutputTokens : maxOutputTokens,
-            maxOutputTokens,
-        ),
+        // Left unset, the provider SDK asks for the model's own maximum.
+        maxOutputTokens: Number.isInteger(raw.maxOutputTokens) && raw.maxOutputTokens > 0 ? raw.maxOutputTokens : undefined,
         tools: sanitizeTools(raw.tools, namespace),
         includeRawChunks: false,
     }

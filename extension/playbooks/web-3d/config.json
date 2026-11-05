@@ -1,0 +1,8 @@
+{
+  "id": "web-3d",
+  "name": "3D on web pages",
+  "description": "Use when a request might add 3D to a page: 3D objects, product viewers, spinning logos, WebGL or shader backgrounds, or a 3D model from an image or description. It decides whether 3D fits, then builds it in code. Not for charts, forms or dashboards.",
+  "enabled": true,
+  "tools": ["browsing", "scripting", "visual", "browser"],
+  "lastVerified": "2026-11-04"
+}

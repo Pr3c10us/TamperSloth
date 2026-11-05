@@ -70,6 +70,11 @@ const toolMeta: Record<string, ToolMeta> = {
         icon: BookOpen,
         category: 'utility',
     },
+    loadPlaybook: {
+        displayName: 'Load playbook',
+        icon: BookOpen,
+        category: 'utility',
+    },
 
     // ── Virtual Files ──
     viewCodeFiles: {
@@ -82,10 +87,25 @@ const toolMeta: Record<string, ToolMeta> = {
         icon: FilePlus,
         category: 'utility',
     },
+    appendToFile: {
+        displayName: 'Add to File',
+        icon: FilePlus,
+        category: 'utility',
+    },
     strReplaceTool: {
         displayName: 'Edit File',
         icon: FilePen,
         category: 'utility',
+    },
+    replaceLines: {
+        displayName: 'Edit File',
+        icon: FilePen,
+        category: 'utility',
+    },
+    openScript: {
+        displayName: 'Open Saved Change',
+        icon: FileSearch,
+        category: 'data',
     },
     deleteFileTool: {
         displayName: 'Delete File',

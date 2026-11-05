@@ -7,10 +7,11 @@ export interface Quote {
 
 /**
  * Work handed from outside the panel (the page's context menu, the drawing
- * overlay) to the chat open for a tab.
+ * overlay, the script viewer) to the chat open for a tab.
  */
 export type PanelRequest =
     | { kind: "focus" }
+    | { kind: "chat"; conversationId: string }
     | { kind: "pick" }
     | { kind: "draw" }
     | { kind: "dictate" }

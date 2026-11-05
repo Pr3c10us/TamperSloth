@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MoreHorizontal, PanelLeftClose, Plus, Search, Settings, Trash2 } from "lucide-react";
+import { GalleryVerticalEnd, MoreHorizontal, PanelLeftClose, Plus, Search, Settings, Trash2 } from "lucide-react";
 import {
     deleteConversation,
     loadConversationHistory,
@@ -56,6 +56,7 @@ interface HistoryDrawerProps {
     /** Shows the chat; rejects if it can no longer be loaded. */
     onSelect: (id: string) => Promise<void>;
     onNewChat: () => void;
+    onOpenGallery: () => void;
     onOpenSettings: () => void;
 }
 
@@ -65,6 +66,7 @@ export function HistoryDrawer({
     activeId,
     onSelect,
     onNewChat,
+    onOpenGallery,
     onOpenSettings,
 }: HistoryDrawerProps) {
     const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -151,6 +153,19 @@ export function HistoryDrawer({
                             <Plus className="size-3.5" strokeWidth={1.75} />
                         </span>
                         New chat
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            onOpenChange(false);
+                            onOpenGallery();
+                        }}
+                        className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                    >
+                        <span className="flex size-5 items-center justify-center rounded-full bg-muted">
+                            <GalleryVerticalEnd className="size-3.5" strokeWidth={1.75} />
+                        </span>
+                        Gallery
                     </button>
                 </nav>
 

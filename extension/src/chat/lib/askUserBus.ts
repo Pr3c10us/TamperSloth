@@ -2,6 +2,7 @@ import {showPanelTab} from "./attention";
 
 export interface AskUserOption {
     label: string;
+    description?: string;
     emoji?: string;
 }
 

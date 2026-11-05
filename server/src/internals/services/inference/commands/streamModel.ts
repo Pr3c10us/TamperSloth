@@ -52,7 +52,7 @@ export default class StreamModel {
         const provider = this.providers.get(model.target.provider)
         if (!provider?.configured) throw new ServiceUnavailableError(`${model.name} is not available right now`)
 
-        const request = parseModelRequest(body, provider.optionsNamespace, model.maxOutputTokens)
+        const request = parseModelRequest(body, provider.optionsNamespace)
 
         // Paddle starts the new period before the renewal is paid; its credit waits for the payment.
         if (user.planStatus === "past_due") {
@@ -77,7 +77,7 @@ export default class StreamModel {
         // side by side can't each pass the check above and together spend past the credit.
         const mostItCosts = costMicros(model.rates, {
             input: request.estimatedInputTokens,
-            output: request.options.maxOutputTokens ?? model.maxOutputTokens,
+            output: request.options.maxOutputTokens ?? model.providerMaxOutputTokens,
             cacheRead: 0,
             cacheWrite: 0,
         })

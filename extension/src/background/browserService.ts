@@ -36,7 +36,7 @@ function storageTransaction<T>(fn: () => Promise<T>) {
     return task;
 }
 let offscreenPending: Promise<void> | undefined;
-async function clipboard(action: string, text?: string) {
+export async function clipboard(action: string, text?: string) {
     if (!offscreenPending) offscreenPending = (async () => {
         if (!(await chrome.offscreen.hasDocument())) await chrome.offscreen.createDocument({
             url: 'clipboard.html', reasons: [chrome.offscreen.Reason.CLIPBOARD], justification: 'Read and write clipboard text for user requested browser tasks',

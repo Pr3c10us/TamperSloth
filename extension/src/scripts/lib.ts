@@ -1,4 +1,6 @@
 import type {BackgroundScript} from "@/src/chat/lib/types";
+import {queuePanelRequest} from "@/src/chat/lib/panelRequests";
+import {scriptReloadPatterns} from "./userscript";
 
 export const RUN_AT_LABELS: Record<BackgroundScript["runAt"], string> = {
     document_start: "Before the page loads",
@@ -12,12 +14,24 @@ export function openScriptViewer(id: string): void {
 }
 
 /**
+ * Opens this tab's side panel on the chat a script was made in, beside its code.
+ * Call it straight from the click: sidePanel.open needs the user gesture, so
+ * nothing is awaited before it, as with the toolbar button.
+ */
+export function openChatInPanel(tab: chrome.tabs.Tab, conversationId: string): void {
+    if (tab.id === undefined) return;
+    void chrome.sidePanel.setOptions({tabId: tab.id, path: `index.html?tabId=${tab.id}`, enabled: true});
+    void chrome.sidePanel.open({tabId: tab.id, windowId: tab.windowId});
+    void queuePanelRequest(tab.id, {kind: "chat", conversationId});
+}
+
+/**
  * Reloads every open tab covered by any of the scripts' URL patterns, so a
  * pause, delete or import takes effect wherever it applies. The background
  * re-registers scripts before reloading. Resolves to how many tabs reloaded.
  */
 export async function reloadTabsForScripts(scripts: BackgroundScript[]): Promise<number> {
-    const patterns = [...new Set(scripts.map((s) => s.urlMatchPattern).filter(Boolean))];
+    const patterns = [...new Set(scripts.flatMap(scriptReloadPatterns))];
     if (patterns.length === 0) return 0;
     try {
         const res = await chrome.runtime.sendMessage({type: "RELOAD_SCRIPT_TABS", patterns});

@@ -37,6 +37,7 @@
   },
   "permissions": [
     "scripting",
+    "declarativeNetRequestWithHostAccess",
     "tabs",
     "tabGroups",
     "activeTab",

@@ -8,12 +8,14 @@ import {getAccount, refreshAccount} from "../../settings/lib/account";
 import {RUN_HEADER} from "../lib/slothModel";
 import {createAgentTools} from "../lib/tools.ts";
 import {browserCall, setTaskStatus} from "../lib/browserTools";
-import {deleteAttachments, loadAttachment, loadStoredConversation, readFile, saveAttachments, saveConversation, type StoredConversation} from "../lib/storage.ts";
+import {deleteAttachments, listFiles, loadAttachment, loadScriptsByConversation, loadStoredConversation, readFile, saveAttachments, saveConversation, writeFile, type StoredConversation} from "../lib/storage.ts";
 import {seedAttachmentUrl} from "../lib/attachmentUrls";
 import {buildEditNote} from "../lib/editNote";
 import {asMidRun, beforeMessage, buildModelMessages, withInjected, type InjectedMessages} from "../lib/historyMessages";
 import {createConversationSaver} from '../lib/conversationSaver';
 import SYSTEM_PROMPT from "../lib/prompt.ts";
+import {playbooks} from "../lib/playbookCatalog";
+import {loadedPlaybookIds, renderPlaybookIndex} from "../lib/playbooks";
 import {makeAttachmentFromFile, MAX_ATTACHMENTS, type PendingAttachment} from "../components/AttachmentChip.tsx";
 import type {PickedElement} from "../components/PickedElementChip.tsx";
 import type {Quote} from "../lib/panelRequests";
@@ -31,6 +33,8 @@ import type {ToolSafety} from "../lib/safetyGate";
 import {clearDraft, getDraft, updateDraft, type Draft} from "../lib/drafts";
 import {answerPendingAsk, getPendingAsk} from "../lib/askUserBus";
 import {holdsTab, othersHoldTabs, releaseTabs, tabHolder} from "../lib/tabLease";
+import {codeContextNote, lineCount} from "../lib/codeFiles";
+import {createWriteTracker, cutOffNote, interruptedNote, lastStepAppended, MAX_CUTOFF_RESUMES, MAX_FRUITLESS_CUTOFFS, reportResult, withoutCutOffStep} from "../lib/writeRecovery";
 
 export interface StoredAttachment {
     /** Key of the attachment's bytes in IndexedDB; absent on chats saved before attachments were stored. */
@@ -88,6 +92,8 @@ export interface ChatMessage {
     stopped?: boolean;
     /** Not shown: tells the model this message replaced an edited one, and what the dropped turns did. */
     editNote?: string;
+    /** Not shown: what this reply left part-written, so the next message resumes it. */
+    resumeNote?: string;
 }
 
 /** A message sent while the chat's run was working; the run reads it before its next step. */
@@ -531,19 +537,33 @@ function toModelMessages(messages: ChatMessage[], files: Map<string, Blob>) {
     });
 }
 
+/** This chat's working files and saved scripts, so an edit needs no lookup and its tools are ready. */
+async function loadCodeContext(conversationId: string): Promise<{note: string; hasCode: boolean}> {
+    const [paths, scripts] = await Promise.all([
+        listFiles(conversationId).catch((): string[] => []),
+        loadScriptsByConversation(conversationId).catch(() => []),
+    ]);
+    const files = await Promise.all(paths.slice(0, 20).map(async path => ({path, lines: lineCount(await readFile(conversationId, path).catch(() => null) ?? "")})));
+    return {
+        note: codeContextNote(files, scripts.map(s => ({id: s.id, name: s.name, lines: lineCount(s.code), path: s.sourcePath}))),
+        hasCode: scripts.length > 0 || paths.some(path => path.startsWith("scripts/")),
+    };
+}
+
 /**
  * What the run starts knowing about the working tab: its URL and title, this chat's task tabs and,
  * for page work, the controls on screen with refs, so the first step can act instead of reading.
  */
-async function loadTabContext(conversationId: string, request: string): Promise<{tabContext: string; task?: unknown}> {
+async function loadTabContext(conversationId: string, request: string): Promise<{tabContext: string; task?: unknown; hasCode: boolean}> {
     const tabId = Number(new URLSearchParams(window.location.search).get("tabId"));
     const groups = initialToolGroups(request);
     const pageWork = groups.includes("browsing") || groups.includes("guidance");
-    const [tab, task, listed] = await Promise.all([
+    const [tab, task, listed, code] = await Promise.all([
         tabId > 0 ? chrome.tabs.get(tabId).catch(() => undefined) : undefined,
         // A task paused for the user's answer resumes with the tabs, group and notes it already had.
         browserCall('task', {conversationId}).then(r => r.task, () => undefined),
         pageWork && tabId > 0 ? browserCall('guidance', {tabId, action: 'controls', limit: 40}).catch(() => undefined) : undefined,
+        loadCodeContext(conversationId),
     ]);
     let tabContext = tab
         ? serialize({tabId, url: tab.url, title: tab.title}) + "\nThis is the working tab: make the user's requested result here (navigate it if the work belongs on another site), and keep other tabs for references."
@@ -554,7 +574,7 @@ async function loadTabContext(conversationId: string, request: string): Promise<
 On-screen controls at the start (refs work as targets for clickElement, typeText, fillForm, selectOption, submitForm and clickTarget; call listControls once the page changes): ${serialize(controls)}`;
     if (task) tabContext += `
 This task's tabs (open from earlier in this chat; reuse them, and finish when done): ${serialize(task)}`;
-    return {tabContext, task};
+    return {tabContext: tabContext + code.note, task, hasCode: code.hasCode};
 }
 
 async function sendMessage(
@@ -642,6 +662,28 @@ async function sendMessage(
     let stopWatchingApproval = () => {};
     // The part of the reply now being written: its first step and when it began.
     let segment = {step: 0, startedAt};
+    // What the reply is streaming, so whatever a cut-off or a stop leaves part-written can be kept.
+    const writes = createWriteTracker({
+        read: (path) => readFile(conversationId, path),
+        write: (path, content) => writeFile(conversationId, path, content),
+    });
+    const settleWrites = async (cutOff: boolean) => {
+        const reports = await writes.settle({cutOff}).catch((error) => {
+            console.warn("[Tampersloth] Could not keep a part-written file:", error);
+            return [];
+        });
+        for (const report of reports) {
+            const result = reportResult(report);
+            const settled = (tc: ToolCall): ToolCall => tc.id !== report.id ? tc
+                : {...tc, args: report.args, result, status: isFailed(result) ? "error" : "done", endedAt: Date.now()};
+            updateAssistant((m) => ({
+                ...m,
+                toolCalls: m.toolCalls.map(settled),
+                blocks: m.blocks.map((b) => b.type === "tool_call" ? {type: "tool_call" as const, toolCall: settled(b.toolCall)} : b),
+            }));
+        }
+        return reports;
+    };
 
     try {
         const model = withRateLimits(getModel(providerId, apiKey, resolvedModelId, undefined, modelOptions),
@@ -687,8 +729,12 @@ async function sendMessage(
         // The screener judges actions against what the user asked for, including a request's earlier turns.
         let userRequest = [...updatedMessages.filter(m => m.role === "user").slice(-3, -1).map(m => `Earlier: ${clip(m.content, 600)}`),
             ...(quotes ?? []).map(q => `Quoted from the page: ${clip(q.text, 400)}`), text].filter(Boolean).join("\n");
+        const {tabContext, task, hasCode} = await tabContextReady;
         const runtime = createToolRuntime(createAgentTools({conversationId, abortSignal: abortController.signal}), {
             request: text,
+            playbooks,
+            // A follow-up here is likely about that code, and enabling these mid-run costs a step and the prompt cache.
+            extraGroups: hasCode ? ["scripting"] : [],
             safety: {
                 conversationId,
                 request: () => userRequest,
@@ -708,17 +754,18 @@ async function sendMessage(
             },
             onResult: () => updateAssistant(m => ({...m, taskState: clip(serialize(runtime.taskState()), 9000)})),
         });
-        const {tabContext, task} = await tabContextReady;
         if (task) void setTaskStatus(conversationId, 'working');
 
         const providerOptions = agentProviderOptions(providerId,
             sessions.get(conversationId)?.thinkingLevel ?? settings.thinkingLevel, resolvedModelId);
+        // Carrying on with a file needs no new reasoning, and reasoning spends the same output limit.
+        const carryOnOptions = agentProviderOptions(providerId, "low", resolvedModelId);
 
         // Instructions accept a system message with providerOptions, so
         // Anthropic can cache tools and the trusted system prompt together.
         const systemMessage: ModelMessage = {
             role: "system",
-            content: SYSTEM_PROMPT + (runtime.initialGuidance ? "\n" + runtime.initialGuidance : ""),
+            content: [SYSTEM_PROMPT, runtime.initialGuidance, renderPlaybookIndex(playbooks, loadedPlaybookIds(updatedMessages))].filter(Boolean).join("\n"),
             providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
         };
 
@@ -782,17 +829,36 @@ async function sendMessage(
             return {...m, blocks, content};
         });
         const passTotals: UsageRecord[] = [];
+        const reportStopped = () => {
+            if (planStopped()) {
+                setCreditsExhausted(conversationId, {limit: "runBudget", message: "This reply reached your plan's limit for one run. Send a message to continue."});
+            } else if (budgetStopped()) {
+                // The user's own budget: a setting they chose, so a note with the way to change it, not an error.
+                setCreditsExhausted(conversationId, {limit: "userBudget", message: stopReason, budget: settings.tokenBudget});
+            } else {
+                patchSession(conversationId, {
+                    error: `${stopReason || `Reached the ${settings.maxSteps}-step limit.`} Work may be incomplete. Send another message to continue.`,
+                });
+            }
+        };
+        let cutOffs = 0;
+        let fruitlessCutOffs = 0;
+        // The next pass's first step picks up after a cut-off.
+        let carryingOn = false;
         // A walkthrough that ends in chat text after an observer hiccup gets
         // sent back to the overlay; text is held until a tool call proves it a preamble.
         while (true) {
             let held = "";
+            let cutOff = false;
             const flushHeld = () => {if (held) {appendText(held); held = "";}};
             const result = streamText({
                 model,
                 instructions: systemMessage,
                 messages: passMessages,
                 tools: runtime.tools,
-                stopWhen: [isStepCount(settings.maxSteps), () => Boolean(stopReason)],
+                // After a cut-off the SDK would otherwise send the half-written call back as an error,
+                // and the model would write it all again. The check after this stream picks it up instead.
+                stopWhen: [isStepCount(settings.maxSteps), () => Boolean(stopReason), ({steps}) => steps.at(-1)?.finishReason === "length"],
                 abortSignal: abortController.signal,
                 headers: runHeaders,
                 prepareStep: async ({initialMessages, responseMessages}) => {
@@ -803,7 +869,8 @@ async function sendMessage(
                     const activeTools = runtime.activeTools();
                     const compacted = prepareMessages(messages, activeTools);
                     stepContext = {activeTools: activeTools.length, contextChars: serialize(compacted).length, recordedAt: Date.now()};
-                    return {...markCachePrefix({messages: compacted}), activeTools};
+                    const carryOn = (carryingOn && responseMessages.length === 0) || lastStepAppended(responseMessages);
+                    return {...markCachePrefix({messages: compacted}), activeTools, ...(carryOn ? {providerOptions: carryOnOptions} : {})};
                 },
                 onStepEnd: ({usage}) => {
                     metrics.steps.push({...usageRecord(usage), ...stepContext});
@@ -830,14 +897,16 @@ async function sendMessage(
                     }
                 }
             };
-            // Streamed argument JSON per call, so the reason can title the call early.
-            const inputText = new Map<string, string>();
             for await (const part of result.stream) {
                 // Every part of the previous step has been shown by the time the next one starts.
-                if (part.type === "start-step") showSent();
+                if (part.type === "start-step") {
+                    showSent();
+                    writes.stepStart();
+                }
                 handleNormalized(reasoning.push(part));
                 if (part.type === "tool-input-start") {
                     flushHeld();
+                    writes.start(part.id, part.toolName);
                     const tc: ToolCall = {
                         id: part.id,
                         name: part.toolName,
@@ -852,9 +921,8 @@ async function sendMessage(
                         blocks: [...m.blocks, {type: "tool_call", toolCall: tc}],
                     }));
                 } else if (part.type === "tool-input-delta") {
-                    const text = (inputText.get(part.id) ?? "") + part.delta;
-                    inputText.set(part.id, text);
-                    const reason = partialReason(text);
+                    // Streamed argument JSON, so the reason can title the call early.
+                    const reason = partialReason(writes.delta(part.id, part.delta));
                     if (reason) updateAssistant((m) => {
                         const current = m.toolCalls.find(tc => tc.id === part.id);
                         if (!current || current.args.reason === reason) return m;
@@ -872,7 +940,7 @@ async function sendMessage(
                     });
                 } else if (part.type === "tool-call") {
                     flushHeld();
-                    inputText.delete(part.toolCallId);
+                    writes.call(part.toolCallId, part.toolName, part.input, (part as {invalid?: boolean}).invalid);
                     updateAssistant((m) => {
                         const input = (part.input ?? {}) as Record<string, unknown>;
                         // Providers that send whole calls skip tool-input-start.
@@ -895,6 +963,7 @@ async function sendMessage(
                         };
                     });
                 } else if (part.type === "tool-result") {
+                    writes.resolved(part.toolCallId);
                     guard.observe(part.toolName, part.output);
                     updateAssistant((m) => {
                         const updatedTc = (tc: ToolCall): ToolCall =>
@@ -954,21 +1023,15 @@ async function sendMessage(
                     }
                     // Anything but "stop" means the run was cut short. Without
                     // this the message just ends mid-task and looks finished.
-                    if (part.finishReason === "tool-calls" && planStopped()) {
-                        setCreditsExhausted(conversationId, {limit: "runBudget", message: "This reply reached your plan's limit for one run. Send a message to continue."});
-                    } else if (part.finishReason === "tool-calls" && budgetStopped()) {
-                        // The user's own budget: a setting they chose, so a note with the way to change it, not an error.
-                        setCreditsExhausted(conversationId, {limit: "userBudget", message: stopReason, budget: settings.tokenBudget});
-                    } else if (part.finishReason === "tool-calls") {
-                        patchSession(conversationId, {
-                            error: `${stopReason || `Reached the ${settings.maxSteps}-step limit.`} Work may be incomplete. Send another message to continue.`,
-                        });
+                    if (part.finishReason === "tool-calls") {
+                        reportStopped();
                     } else if (part.finishReason === "length") {
-                        patchSession(conversationId, {error: "Stopped — the model hit its output token limit mid-response."});
+                        cutOff = true;
                     } else if (part.finishReason === "content-filter") {
                         patchSession(conversationId, {error: "Stopped — the response was blocked by a content filter."});
                     }
                 } else if (part.type === "tool-error") {
+                    writes.failed(part.toolCallId);
                     updateAssistant((m) => {
                         const updatedTc = (tc: ToolCall): ToolCall =>
                             tc.id === part.toolCallId
@@ -987,6 +1050,27 @@ async function sendMessage(
                 }
             }
             handleNormalized(reasoning.flush());
+            if (cutOff && !abortController.signal.aborted) {
+                flushHeld();
+                // Done first, so the note can say exactly what is saved.
+                const reports = await settleWrites(true);
+                const {messages, kept, reasoning: worked} = withoutCutOffStep((await result.response).messages);
+                const progressed = kept || reports.some(report => report.kind === "saved");
+                fruitlessCutOffs = progressed ? 0 : fruitlessCutOffs + 1;
+                cutOffs++;
+                if (!stopReason && cutOffs <= MAX_CUTOFF_RESUMES && fruitlessCutOffs < MAX_FRUITLESS_CUTOFFS) {
+                    passMessages = [...passMessages, ...withInjected(messages, injected),
+                        {role: "user", content: cutOffNote(reports, {kept, reasoning: worked})}];
+                    injected.length = 0;
+                    carryingOn = true;
+                    continue;
+                }
+                const resumeNote = interruptedNote(reports);
+                if (resumeNote) updateAssistant(m => ({...m, resumeNote}));
+                if (stopReason) reportStopped();
+                else patchSession(conversationId, {error: `Stopped — the model kept hitting its output token limit.${resumeNote ? " What it wrote is saved." : ""} Send another message to continue.`});
+                break;
+            }
             if (held && !abortController.signal.aborted && !stopReason && guard.resume()) {
                 passMessages = [...passMessages, ...withInjected((await result.response).messages, injected),
                     {role: "user", content: GUIDANCE_RESUME_NOTE}];
@@ -1007,6 +1091,9 @@ async function sendMessage(
             patchSession(conversationId, {error: err.message ?? "Something went wrong"});
         }
     } finally {
+        // A stop or a dropped connection part way through a write leaves it for the next message to resume.
+        const resumeNote = interruptedNote(await settleWrites(false));
+        if (resumeNote) updateAssistant(m => ({...m, resumeNote}));
         stopWatchingApproval();
         // Read by the model but stopped before their step began.
         showSent();

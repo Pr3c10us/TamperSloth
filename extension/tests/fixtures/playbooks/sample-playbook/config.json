@@ -1,0 +1,7 @@
+{
+  "id": "sample-playbook",
+  "name": "Sample playbook",
+  "description": "Use when testing the playbook system.",
+  "tools": ["scripting"],
+  "lastVerified": "2026-11-02"
+}

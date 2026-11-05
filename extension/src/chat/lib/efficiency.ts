@@ -76,7 +76,7 @@ export function compactMessages(messages: ModelMessage[], archived: Set<string>)
     return messages.map(message => {
         if (message.role !== "tool") return message;
         return {...message, content: message.content.map(part => {
-            if (part.type !== "tool-result" || ["getSkill", "askUser", "enableTools"].includes(part.toolName)) return part;
+            if (part.type !== "tool-result" || ["getSkill", "loadPlaybook", "askUser", "enableTools"].includes(part.toolName)) return part;
             if (!archived.has(part.toolCallId) && (!overBudget || recentIds.has(part.toolCallId) || serialize(part.output).length < 1200)) return part;
             archived.add(part.toolCallId);
             const output = part.output;

@@ -187,6 +187,14 @@ export async function listScriptValues(scriptId: string): Promise<Record<string,
     return (result[storageKey] as Record<string, unknown>) ?? {};
 }
 
+/** Adds several values at once, for a script arriving with data from another manager. */
+export async function mergeScriptValues(scriptId: string, values: Record<string, unknown>): Promise<void> {
+    if (!isChromeExtension) return;
+    const storageKey = `scriptData_${scriptId}`;
+    const result = await chrome.storage.local.get(storageKey);
+    await chrome.storage.local.set({ [storageKey]: {...(result[storageKey] as Record<string, unknown>), ...values} });
+}
+
 export async function clearScriptStorage(scriptId: string): Promise<void> {
     if (!isChromeExtension) return;
     await chrome.storage.local.remove(`scriptData_${scriptId}`);

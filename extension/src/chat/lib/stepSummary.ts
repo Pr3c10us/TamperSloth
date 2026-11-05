@@ -16,8 +16,8 @@ const VERBS: Record<string, string> = {
     selectOption: "picked an option", scrollPage: "scrolled", submitForm: "submitted a form",
     waitForElement: "waited", wait: "waited", showTab: "showed you the tab", takeScreenshot: "took a screenshot", takeMarkedScreenshot: "took a screenshot",
     executeContentScript: "ran a script", evaluateJavaScript: "ran JavaScript", saveScript: "saved a change",
-    listScripts: "listed changes", toggleScript: "toggled a change", removeScript: "removed a change",
-    viewCodeFiles: "viewed files", getSkill: "loaded guidance", enableTools: "enabled tools",
+    openScript: "opened a change", listScripts: "listed changes", toggleScript: "toggled a change", removeScript: "removed a change",
+    viewCodeFiles: "viewed files", getSkill: "loaded guidance", loadPlaybook: "loaded a playbook", enableTools: "enabled tools",
     readToolResult: "reread a result", annotatePage: "drew guidance", waitForUserAction: "guided a step", listControls: "found controls",
     browserTabs: "managed tabs", browserTabGroups: "grouped tabs", accessibilityTree: "read accessibility", persistentStore: "used storage",
     siteRecipes: "used site recipes", clipboard: "used the clipboard", browserDownload: "downloaded a file",
@@ -25,7 +25,7 @@ const VERBS: Record<string, string> = {
     deepDOM: "inspected frames", browserGesture: "performed a gesture", getDebugInfo: "read debug info",
     getLocalStorage: "read storage", getCookies: "read cookies", askUser: "asked you",
 };
-const FILE_VERBS: Record<string, string> = {createFileTool: "created", strReplaceTool: "edited", deleteFileTool: "deleted"};
+const FILE_VERBS: Record<string, string> = {createFileTool: "created", appendToFile: "wrote", strReplaceTool: "edited", replaceLines: "edited", deleteFileTool: "deleted"};
 
 /** Past-tense phrase for one call; file edits name the file. */
 export function toolVerb(name: string, args?: Record<string, unknown>): string {

@@ -5,10 +5,11 @@ import {skills} from "./skills";
 import {browserImageOutput} from './browserTools';
 import {stripReason, withReason} from "./toolReason";
 import {createSafetyGate, type SafetyGateOptions} from "./safetyGate";
+import type {Playbook} from "./playbooks";
 
 export const TOOL_GROUPS = {
     browsing: ["clickElement", "typeText", "fillForm", "selectOption", "scrollPage", "submitForm", "waitForElement", "navigateHistory", "reloadPage"],
-    scripting: ["viewCodeFiles", "createFileTool", "strReplaceTool", "deleteFileTool", "executeContentScript", "saveScript", "listScripts", "toggleScript", "removeScript", "reloadPage"],
+    scripting: ["viewCodeFiles", "createFileTool", "appendToFile", "strReplaceTool", "replaceLines", "deleteFileTool", "executeContentScript", "openScript", "saveScript", "listScripts", "toggleScript", "removeScript", "reloadPage"],
     debugging: ["getDebugInfo", "getLocalStorage", "getCookies"],
     visual: ["takeScreenshot", "takeMarkedScreenshot"],
     browser: ['browserTabs', 'browserTabGroups', 'accessibilityTree', 'persistentStore', 'siteRecipes', 'evaluateJavaScript'],
@@ -17,7 +18,7 @@ export const TOOL_GROUPS = {
     system: ['clipboard', 'browserDownload', 'browserNotify'],
     guidance: ['annotatePage', 'waitForUserAction', 'listControls'],
 } as const;
-type Group = keyof typeof TOOL_GROUPS;
+export type Group = keyof typeof TOOL_GROUPS;
 type ModelOutputOptions = Parameters<NonNullable<ToolSet[string]["toModelOutput"]>>[0];
 const CORE = ["getCurrentTab", "getPageText", "getPageStructure", "getElementDetails", "navigateTo", "askUser", "getSkill", "enableTools", "readToolResult", 'annotatePage', 'waitForUserAction', 'listControls', 'wait', 'showTab'];
 const PAGE_BARRIERS = new Set(['takeScreenshot', 'takeMarkedScreenshot', 'navigateTo', 'navigateHistory', 'reloadPage',
@@ -91,10 +92,13 @@ export function createToolRuntime(rawTools: ToolSet, options: {
     onResult?: (id: string, result: ArchivedResult) => void;
     /** Screens actions before they run and results before the model reads them. */
     safety?: Omit<SafetyGateOptions, "lookupMark">;
+    playbooks?: Playbook[];
+    /** Groups the run needs whatever the request says, such as scripting in a chat that already has code. */
+    extraGroups?: Group[];
 }) {
     let pageChain: Promise<void> = Promise.resolve();
     const enabled = new Set<string>(CORE);
-    const groups = new Set<Group>(initialToolGroups(options.request));
+    const groups = new Set<Group>([...initialToolGroups(options.request), ...(options.extraGroups ?? [])]);
     for (const group of groups) TOOL_GROUPS[group].forEach(name => enabled.add(name));
     const initialGuidance = [...groups].map(groupGuidance).filter(Boolean).join("\n");
     const archive = new Map<string, ArchivedResult>();
@@ -116,18 +120,37 @@ export function createToolRuntime(rawTools: ToolSet, options: {
             return undefined;
         }});
 
+    const enableGroups = (requested: Group[]) => {
+        const added = [...new Set(requested)].filter(group => !groups.has(group));
+        for (const group of added) {
+            groups.add(group);
+            TOOL_GROUPS[group].forEach(name => enabled.add(name));
+        }
+        return {enabled: [...groups], tools: added.flatMap(group => [...TOOL_GROUPS[group]]), guidance: added.map(groupGuidance).filter(Boolean)};
+    };
     tools.enableTools = tool({
         description: "Enable groups: browsing (DOM input), scripting (files/scripts), debugging, visual, browser (tabs/raw JS/AX/store/recipes), input (trusted CDP events/deep DOM/frames), network (CDP capture/WebSocket/replay), system (clipboard/downloads/notifications), guidance (page drawing and waiting for real user actions).",
         inputSchema: z.object({groups: z.array(z.enum(["browsing", "scripting", "debugging", "visual", "browser", "input", "network", "system", "guidance"])).min(1).max(9)}),
-        execute: async ({groups: requested}) => {
-            const added = [...new Set(requested)].filter(group => !groups.has(group));
-            for (const group of added) {
-                groups.add(group);
-                TOOL_GROUPS[group].forEach(name => enabled.add(name));
-            }
-            return {enabled: [...groups], tools: added.flatMap(group => [...TOOL_GROUPS[group]]), guidance: added.map(groupGuidance).filter(Boolean)};
-        },
+        execute: async ({groups: requested}) => enableGroups(requested),
     });
+    const playbooks = options.playbooks ?? [];
+    if (playbooks.length) {
+        const loaded = new Set<string>();
+        enabled.add("loadPlaybook");
+        tools.loadPlaybook = tool({
+            description: "Load a playbook's full process by id, and enable the tools it uses.",
+            inputSchema: z.object({id: z.enum(playbooks.map(playbook => playbook.id) as [string, ...string[]])}),
+            execute: async ({id}) => {
+                const playbook = playbooks.find(candidate => candidate.id === id);
+                if (!playbook) return {ok: false, error: `Unknown playbook: "${id}". Available: ${playbooks.map(candidate => candidate.id).join(", ")}`};
+                if (loaded.has(id)) return {ok: true, alreadyLoaded: id, hint: "The playbook is already in this run's context."};
+                loaded.add(id);
+                return {ok: true, id, name: playbook.name, lastVerified: playbook.lastVerified, ...enableGroups(playbook.tools), content: playbook.content};
+            },
+            // A playbook has to arrive whole; the default projection cuts long results to a preview.
+            toModelOutput: ({output}) => ({type: "text", value: serialize(output)}),
+        });
+    }
     tools.readToolResult = tool({
         description: "Read an archived result by resultId (tool call ID). Text uses character offsets; screenshots return the image. Use includeInput to recover original arguments.",
         inputSchema: z.object({resultId: z.string(), offset: z.number().int().min(0).default(0),
@@ -255,7 +278,7 @@ export function createToolRuntime(rawTools: ToolSet, options: {
         metrics: () => [...metrics.values()],
         repeatedFailure: () => repeatedFailure,
         taskState: () => {
-            const entries = [...archive].filter(([, entry]) => !["getSkill", "enableTools", "readToolResult"].includes(entry.name));
+            const entries = [...archive].filter(([, entry]) => !["getSkill", "loadPlaybook", "enableTools", "readToolResult"].includes(entry.name));
             const selected = new Map([
                 ...entries.filter(([, entry]) => entry.name === "askUser").slice(-4),
                 ...entries.filter(([, entry]) => entry.name === "saveScript").slice(-4),

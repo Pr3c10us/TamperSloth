@@ -13,7 +13,7 @@ export const skills: Record<SkillId, Skill> = {
     },
     virtual_file_system: {
         description: "Virtual file conventions and surgical editing.",
-        content: `Use one self-contained script per scripts/<kebab-case-name>.js file. createFileTool fails if it exists. viewCodeFiles reads numbered lines or lists a path ending in /. strReplaceTool edits a unique exact string; its edits array applies several replacements atomically in order. Line-number prefixes are display-only. Re-read only when contents are unknown or changed. Files persist across turns. Delete working files only after verified handoff, unless iteration continues. Saved scripts are separate; manage them with listScripts/toggleScript/removeScript.`,
+        content: `Use one self-contained script per scripts/<kebab-case-name>.js file. createFileTool fails if it exists; appendToFile adds the next piece of a long file. viewCodeFiles reads numbered lines, finds lines with query, or lists a path ending in /. strReplaceTool edits a unique exact string; its edits array applies several replacements atomically in order. replaceLines replaces a line range without retyping it. Line-number prefixes are display-only. Re-read only when contents are unknown or changed. Files persist across turns, so keep them after saving; they are the fast way back into a script. Saved scripts are separate; openScript brings one back into a working file, and listScripts/toggleScript/removeScript manage them.`,
     },
     research_workflow: {
         description: "Navigate, inspect, interact, report.",
@@ -23,13 +23,13 @@ export const skills: Record<SkillId, Skill> = {
         description: "Inspect, author, test, confirm scope, save, verify.",
         content: `Script workflow:
 1. Inspect the actual target DOM; inspect styles only if adding UI. Reuse valid observations.
-2. Create scripts/<kebab-case-name>.js with one self-contained named function. Return a short status. Use separate files for separate changes.
+2. Create scripts/<kebab-case-name>.js with one self-contained named function. Return a short status. Use separate files for separate changes. Write the code straight into the file: never draft it in your thinking or in chat, since a reply's output is limited and thinking counts toward it. For anything long, send at most about 150 lines per call: createFileTool with the first piece, then appendToFile for each next piece, with no re-planning between pieces. If a reply is cut off, a note says what was saved; carry on from there.
 3. executeContentScript({path}); verify the requested effect using DOM checks, or screenshots for visual work. Enable debugging if needed. Capture console errors while reproducing failures.
-4. Edit with strReplaceTool: old_str must match exactly once. Use edits for multiple related replacements. Re-read only if unsure of contents; never include displayed line-number prefixes.
+4. Edit in place, never by rewriting the file. strReplaceTool: old_str must match exactly once; use edits for multiple related replacements. replaceLines for a large block. Find the code with viewCodeFiles query rather than reading the file; never include displayed line-number prefixes.
 5. Confirm scope with askUser: this page, similar pages (derived pattern), or all pages (explain breadth). Use the confirmed Chrome URL match pattern.
 6. Choose runAt: document_end for hiding/removing; document_idle for UI additions; document_start only when pre-DOM execution is required. At document_start the body may not exist.
 7. saveScript reads the tested file. Reload, then verify the saved behavior. Handle missing elements gracefully. Do not claim success from a save acknowledgement alone.
-8. Delete the working file after verified handoff unless iteration continues. Saved scripts are canonical after handoff.`,
+8. Keep the working file after saving. To change a saved script later: openScript if it has no working file yet, viewCodeFiles query to find the code, strReplaceTool or replaceLines to edit it, test, then saveScript with its scriptId, which updates it in place. Reading all of a large script or writing it again is never needed for an edit.`,
     },
     script_format: {
         description: "Named-function and sandbox requirements.",
@@ -51,7 +51,7 @@ Use ordinary variables for temporary page state.`,
     },
     script_management: {
         description: "Manage saved browser scripts.",
-        content: `listScripts returns IDs, names, status and URL patterns. conversationOnly filters to this chat. toggleScript pauses/resumes by ID; removeScript permanently deletes by ID after confirmation. These act on saved scripts, not virtual working files.`,
+        content: `listScripts returns IDs, names, status, URL patterns and sizes. conversationOnly filters to this chat. openScript puts a saved script's code in a working file to edit, and saveScript with scriptId updates it in place. toggleScript pauses/resumes by ID; removeScript permanently deletes by ID after confirmation.`,
     },
     element_picker: {
         description: "Resolve ambiguous element references.",
@@ -59,7 +59,7 @@ Use ordinary variables for temporary page state.`,
     },
     quality_assurance: {
         description: "Verification before and after saving.",
-        content: `Verify requested behavior and missing-element handling before saving. Inspect console errors when diagnosing failures or risky execution. Use screenshots for visual changes; DOM checks for nonvisual changes. After saving, reload and verify actual injection. Delete the working file after handoff unless still iterating.`,
+        content: `Verify requested behavior and missing-element handling before saving. Inspect console errors when diagnosing failures or risky execution. Use screenshots for visual changes; DOM checks for nonvisual changes. After saving, reload and verify actual injection.`,
     },
     debugging_workflow: {
         description: "Diagnose failures using targeted evidence.",

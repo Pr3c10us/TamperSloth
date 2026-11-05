@@ -14,11 +14,13 @@ import {
     updateScriptStatus,
     writeFile,
 } from "./storage";
+import {appendChunk, findLines, lineCount, numberedWindow, outlineCode, replaceLineRange, scriptFilePath} from "./codeFiles";
 import {isNewTabPage, isValidMatchPattern} from "./url";
 import {type AskUserAnswer, rejectPendingAsk, setPendingAsk,} from "./askUserBus";
 import {startUserWait} from "./userWaitBus";
 import {leaseTabTools} from "./tabLease";
 import { skills, type SkillId } from "./skills";
+import {scriptTargets} from "../../scripts/userscript";
 
 
 // Output budgets. Every tool result stays in the message history and is re-sent
@@ -170,14 +172,6 @@ function sameDocument(a: string, b?: string) {
     } catch { return false; }
 }
 
-function numberLines(content: string, startLine: number, endLine: number): string {
-    const lines = content.split('\n');
-    const slice = lines.slice(startLine - 1, endLine);
-    return slice
-        .map((line, i) => `${String(startLine + i).padStart(5)}\t${line}`)
-        .join('\n');
-}
-
 const SKILL_IDS = Object.keys(skills) as [SkillId, ...SkillId[]];
 
 export function createAgentTools(context: { conversationId: string; abortSignal?: AbortSignal }) {
@@ -282,11 +276,16 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
         // ═══════════════════════════════════════════════
         viewCodeFiles: tool({
             description:
-                "Read numbered file lines, or list files with a path ending in /. Line-number prefixes are display-only.",
+                "Read numbered file lines, find lines with query, or list files with a path ending in /. In a long file, find the code with query rather than paging through it. Line-number prefixes are display-only.",
             inputSchema: z.object({
                 path: z
                     .string()
                     .describe('Virtual path. End with "/" to list a "directory" (prefix scan).'),
+                query: z
+                    .string()
+                    .min(1)
+                    .optional()
+                    .describe('Text to find (case-insensitive), or a /regex/flags. Returns matching lines with their numbers and a little context, instead of a range.'),
                 start_line: z
                     .number()
                     .int()
@@ -298,10 +297,10 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     .optional()
                     .describe(
                         `Optional end line (1-indexed, inclusive). Omitted, reads a ${DEFAULT_VIEW_LINES}-line ` +
-                        'window from start_line. Use -1 for the whole file, which is rarely necessary.',
+                        'window from start_line. Use -1 to read as far as one result allows.',
                     ),
             }),
-            execute: async ({path, start_line, end_line}) => {
+            execute: async ({path, query, start_line, end_line}) => {
                 try {
                     if (path.endsWith('/')) {
                         const entries = await listFiles(context.conversationId, path);
@@ -313,29 +312,45 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                         return {error: `No file at ${path}`};
                     }
 
-                    const totalLines = content.split('\n').length;
+                    if (query) {
+                        const found = findLines(content, query);
+                        return {
+                            type: 'search' as const,
+                            path,
+                            query,
+                            ...found,
+                            ...(found.shownMatches < found.matches && {
+                                truncated: true,
+                                hint: `Showing ${found.shownMatches} of ${found.matches} matches. Use a narrower query.`,
+                            }),
+                        };
+                    }
+
+                    const totalLines = lineCount(content);
                     const start = start_line ?? 1;
                     // Defaulting to EOF meant every re-view of a long script paid
-                    // for the whole file again. -1 still opts into the full read.
+                    // for the whole file again.
                     const end =
                         end_line === -1
                             ? totalLines
                             : end_line != null
                                 ? end_line
                                 : Math.min(totalLines, start + DEFAULT_VIEW_LINES - 1);
+                    const {text, lastLine} = numberedWindow(content, start, end);
 
                     return {
                         type: 'file' as const,
                         path,
                         totalLines,
-                        viewedRange: [start, end] as [number, number],
-                        ...(end < totalLines && {
+                        viewedRange: [start, lastLine] as [number, number],
+                        ...(lastLine < totalLines && {
                             truncated: true,
+                            nextStartLine: lastLine + 1,
                             hint:
-                                `Showing lines ${start}-${end} of ${totalLines}. Pass start_line/end_line ` +
-                                "for a different window, or end_line: -1 for the whole file.",
+                                `Showing lines ${start}-${lastLine} of ${totalLines}. To find something specific, ` +
+                                "use query instead of reading on.",
                         }),
-                        content: numberLines(content, start, end),
+                        content: text,
                     };
                 } catch (err) {
                     return {error: err instanceof Error ? err.message : String(err)};
@@ -345,23 +360,41 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
 
         createFileTool: tool({
             description:
-                "Create a virtual file. Fails if it exists; edit existing files with strReplaceTool.",
+                "Create a virtual file. Fails if it exists. Write at most about 150 lines per call and add the rest with appendToFile; edit existing files with strReplaceTool or replaceLines.",
             inputSchema: z.object({
                 path: z.string().describe('Virtual path where the new file should live'),
-                file_text: z.string().describe('Full content to write'),
+                file_text: z.string().describe("The file's content, or its first piece when appendToFile will add the rest"),
             }),
             execute: async ({path, file_text}) => {
                 try {
                     if (await fileExists(context.conversationId, path)) {
-                        return {error: `File already exists at ${path}. Use strReplaceTool to edit it.`};
+                        return {error: `File already exists at ${path}. Use appendToFile to add to it, or strReplaceTool or replaceLines to edit it.`};
                     }
                     await writeFile(context.conversationId, path, file_text);
                     return {
                         success: true as const,
                         path,
                         bytesWritten: new Blob([file_text]).size,
-                        lines: file_text.split('\n').length,
+                        lines: lineCount(file_text),
                     };
+                } catch (err) {
+                    return {error: err instanceof Error ? err.message : String(err)};
+                }
+            },
+        }),
+
+        appendToFile: tool({
+            description:
+                "Add the next piece to the end of a virtual file, on a new line. Write long files this way, at most about 150 lines per call. Send only the new code, never what is already saved.",
+            inputSchema: z.object({
+                path: z.string().describe('Virtual path to add to; created if it does not exist'),
+                text: z.string().min(1).describe('The code that comes next'),
+            }),
+            execute: async ({path, text}) => {
+                try {
+                    const updated = appendChunk(await readFile(context.conversationId, path), text);
+                    await writeFile(context.conversationId, path, updated);
+                    return {success: true as const, path, addedLines: lineCount(text), totalLines: lineCount(updated)};
                 } catch (err) {
                     return {error: err instanceof Error ? err.message : String(err)};
                 }
@@ -370,7 +403,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
 
         strReplaceTool: tool({
             description:
-                "Replace exact unique strings in a virtual file. Use old_str/new_str or an ordered edits array. Batch edits commit atomically. Empty replacement deletes.",
+                "Replace exact unique strings in a virtual file. Use old_str/new_str or an ordered edits array. Batch edits commit atomically. Empty replacement deletes. For a large block, replaceLines avoids retyping it.",
             inputSchema: z.object({
                 path: z.string().describe('Virtual path to edit'),
                 old_str: z.string().min(1).optional().describe('Exact unique string. Omit when using edits.'),
@@ -402,6 +435,39 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                         path,
                         replaced: replacements.length,
                         delta: updated.length - content.length,
+                    };
+                } catch (err) {
+                    return {error: err instanceof Error ? err.message : String(err)};
+                }
+            },
+        }),
+
+        replaceLines: tool({
+            description:
+                "Replace a range of lines in a virtual file without retyping them. Empty new_text deletes the range; end_line = start_line - 1 inserts before start_line. Take line numbers from a fresh view or search, since any edit shifts them.",
+            inputSchema: z.object({
+                path: z.string().describe('Virtual path to edit'),
+                start_line: z.number().int().min(1).describe('First line to replace (1-indexed)'),
+                end_line: z.number().int().min(0).describe('Last line to replace (inclusive)'),
+                first_line: z.string().describe('The current text of start_line, without its number; checked so stale numbers cannot damage the file. Empty when inserting past the last line.'),
+                new_text: z.string().default('').describe('The replacement lines'),
+            }),
+            execute: async ({path, start_line, end_line, first_line, new_text}) => {
+                try {
+                    const content = await readFile(context.conversationId, path);
+                    if (content === null) {
+                        return {error: `No file at ${path}`};
+                    }
+                    const edit = replaceLineRange(content, start_line, end_line, first_line, new_text);
+                    if ("error" in edit) return edit;
+                    await writeFile(context.conversationId, path, edit.content);
+                    return {
+                        success: true as const,
+                        path,
+                        removedLines: edit.removed,
+                        addedLines: edit.added,
+                        totalLines: edit.totalLines,
+                        around: numberedWindow(edit.content, start_line - 2, start_line + edit.added + 1, 1500).text,
                     };
                 } catch (err) {
                     return {error: err instanceof Error ? err.message : String(err)};
@@ -944,19 +1010,68 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
             },
         }),
 
+        openScript: tool({
+            description:
+                "Open a saved script for editing. Puts its code in a working file and returns the file's path and an outline with line numbers (the code itself only when short). Then find code with viewCodeFiles query, edit with strReplaceTool or replaceLines, and update it with saveScript scriptId. Never rewrite a saved script to change it.",
+            inputSchema: z.object({
+                scriptId: z.string().describe("The ID of the saved script"),
+                reset: z.boolean().optional().describe("Discard a working copy that differs from the saved code, and start again from the saved code."),
+            }),
+            execute: async ({scriptId, reset}) => {
+                const script = (await loadScripts()).find((s) => s.id === scriptId);
+                if (!script) {
+                    return {error: `No saved script with ID ${scriptId}. Use listScripts to find it.`};
+                }
+                let path = script.sourcePath ?? scriptFilePath(script.name, script.id);
+                let current = await readFile(context.conversationId, path);
+                // Another script's file can already hold this name; a linked file is this script's own.
+                if (!script.sourcePath && current !== null && current !== script.code) {
+                    path = scriptFilePath(`${script.name}-${script.id.slice(0, 6)}`, script.id);
+                    current = await readFile(context.conversationId, path);
+                }
+                if (current === null || reset) {
+                    await writeFile(context.conversationId, path, script.code);
+                    current = script.code;
+                }
+                const totalLines = lineCount(current);
+                const short = totalLines <= DEFAULT_VIEW_LINES ? numberedWindow(current, 1, totalLines) : undefined;
+                return {
+                    success: true,
+                    scriptId,
+                    name: script.name,
+                    path,
+                    totalLines,
+                    urlMatchPattern: script.urlMatchPattern,
+                    runAt: script.runAt,
+                    status: script.status,
+                    ...(script.userscript && {
+                        installedUserscript: "The file is this installed userscript's full source; its version and permissions were fixed at install.",
+                    }),
+                    ...(current !== script.code && {
+                        differsFromSaved: "This working copy has edits the saved script does not. Pass reset to start again from the saved code.",
+                    }),
+                    ...(short?.lastLine === totalLines
+                        ? {content: short.text}
+                        : {outline: outlineCode(current), hint: "Use viewCodeFiles with query or start_line to read only the part you need."}),
+                };
+            },
+        }),
+
         saveScript: tool({
             description:
-                "Save a tested virtual file as a persistent browser script. Confirm URL scope with the user first.",
+                "Save a tested virtual file as a persistent browser script, or with scriptId update a saved one in place, keeping its settings and data. The working file stays for later edits. Confirm URL scope with the user first when adding a script or changing its scope.",
             inputSchema: z.object({
                 path: z
                     .string()
                     .describe(
                         'Virtual path to the script file containing the JavaScript code to execute persistently.'
                     ),
-                name: z.string().describe("Short descriptive name for the script"),
+                scriptId: z.string().optional().describe("The saved script to update in place. Omit to add a new one."),
+                name: z.string().optional().describe("Short descriptive name for the script. Required for a new script."),
                 scriptDescription: z
                     .string()
-                    .describe("What this script does (stored alongside the script for later reference)"),
+                    .optional()
+                    .describe("What this script does (stored alongside the script for later reference). Required for a new script."),
                 urlMatchPattern: z
                     .string()
                     .optional()
@@ -965,13 +1080,12 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                         "Examples: https://*.example.com/*, *://example.com/api/*, <all_urls>"
                     ),
                 runAt: z.enum(['document_start', 'document_end', 'document_idle'])
-                    .default('document_idle')
                     .optional()
                     .describe(
                         "When to inject: document_start (before DOM), document_end (DOM ready), document_idle (page loaded, default)"
                     ),
             }),
-            execute: async ({path, name, scriptDescription, urlMatchPattern, runAt}) => {
+            execute: async ({path, scriptId, name, scriptDescription, urlMatchPattern, runAt}) => {
                 if (urlMatchPattern && !isValidMatchPattern(urlMatchPattern)) {
                     return {
                         success: false,
@@ -989,16 +1103,39 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     };
                 }
 
-                const script: BackgroundScript = {
-                    id: crypto.randomUUID(),
-                    conversationId: context.conversationId,
-                    name,
-                    description: scriptDescription,
-                    code,
-                    urlMatchPattern: urlMatchPattern ?? "",
-                    status: "active",
-                    runAt: runAt ?? 'document_idle',
-                };
+                const saved = await loadScripts();
+                // Saving a file again means updating what it was saved as, not adding a duplicate.
+                const previous = scriptId
+                    ? saved.find((s) => s.id === scriptId)
+                    : saved.find((s) => s.conversationId === context.conversationId && s.sourcePath === path);
+                if (scriptId && !previous) {
+                    return {success: false, error: `No saved script with ID ${scriptId}. Use listScripts to find it.`};
+                }
+                if (!previous && !name) {
+                    return {success: false, error: "A new script needs a name. Pass scriptId to update a saved one."};
+                }
+
+                const script: BackgroundScript = previous
+                    ? {
+                        ...previous,
+                        code,
+                        sourcePath: path,
+                        name: name ?? previous.name,
+                        description: scriptDescription ?? previous.description,
+                        urlMatchPattern: urlMatchPattern ?? previous.urlMatchPattern,
+                        runAt: runAt ?? previous.runAt,
+                    }
+                    : {
+                        id: crypto.randomUUID(),
+                        conversationId: context.conversationId,
+                        name: name!,
+                        description: scriptDescription ?? "",
+                        code,
+                        sourcePath: path,
+                        urlMatchPattern: urlMatchPattern ?? "",
+                        status: "active",
+                        runAt: runAt ?? 'document_idle',
+                    };
 
                 await saveScript(script);
 
@@ -1008,15 +1145,17 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     name: script.name,
                     sourcePath: path,
                     urlMatchPattern: script.urlMatchPattern,
-                    status: "active",
+                    status: script.status,
                     runAt: script.runAt,
+                    ...(previous ? {updated: true} : {}),
+                    lines: lineCount(code),
                 };
             },
         }),
 
         listScripts: tool({
             description:
-                "List saved script IDs, names, status and URL patterns; optionally filter to this conversation.",
+                "List saved script IDs, names, status, URL patterns and sizes; optionally filter to this conversation. Use openScript to work on one's code.",
             inputSchema: z.object({
                 conversationOnly: z
                     .boolean()
@@ -1036,13 +1175,15 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                 return {
                     count: scripts.length,
                     scripts: scripts.map((s) => concise
-                        ? {id: s.id, name: s.name, status: s.status, urlPattern: s.urlMatchPattern}
+                        ? {id: s.id, name: s.name, status: s.status, urlPattern: scriptTargets(s).join(", "), lines: s.code ? lineCount(s.code) : 0}
                         : {
                             id: s.id,
                             name: s.name,
                             description: s.description,
-                            urlPattern: s.urlMatchPattern,
+                            urlPattern: scriptTargets(s).join(", "),
                             status: s.status,
+                            lines: s.code ? lineCount(s.code) : 0,
+                            ...(s.sourcePath ? {path: s.sourcePath} : {}),
                         }
                     ),
                 };
@@ -2789,7 +2930,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
         // ═══════════════════════════════════════════════
         askUser: tool({
             description:
-                "Ask a concrete question with 2–5 choices and wait. The UI adds Other; do not include it.",
+                "Ask a concrete question with 2–5 choices and wait. The UI adds Other; do not include it. Add a short description when a label alone doesn't show what the choice means.",
             inputSchema: z.object({
                 question: z.string().min(1).describe("The question to ask the user."),
                 options: z
@@ -2799,6 +2940,11 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                             z.string().min(1),
                             z.object({
                                 label: z.string().min(1).describe("Short option label."),
+                                description: z
+                                    .string()
+                                    .max(120)
+                                    .optional()
+                                    .describe("One plain line on what this choice means or looks like. Aim for under 80 characters."),
                                 emoji: z
                                     .string()
                                     .optional()

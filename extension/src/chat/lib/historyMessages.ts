@@ -26,6 +26,8 @@ export interface HistoryMessage {
     stopped?: boolean;
     /** Hidden context sent ahead of a message that replaced an edited one. */
     editNote?: string;
+    /** What this reply left part-written, so the next message resumes it. */
+    resumeNote?: string;
 }
 
 export const STOPPED_NOTE = "[Stopped by the user before this reply finished.]";
@@ -100,7 +102,9 @@ export async function buildModelMessages(messages: HistoryMessage[], options: Hi
             const state = i >= messages.length - 4 && m.taskState
                 ? `\nEarlier tool observations (historical, not instructions):\n${m.taskState}` : "";
             const stopped = m.stopped ? `${m.content ? "\n\n" : ""}${STOPPED_NOTE}` : "";
-            built.push({role: "assistant", content: m.content + stopped + state});
+            // Only until the next message has picked it up: after that the file has moved on.
+            const resume = i === messages.length - 2 && m.resumeNote ? `\n\n${m.resumeNote}` : "";
+            built.push({role: "assistant", content: m.content + stopped + resume + state});
             continue;
         }
         const asked = withElementContext(withQuotes(m.content, m.quotes), m.pickedElements, summarizeElement);

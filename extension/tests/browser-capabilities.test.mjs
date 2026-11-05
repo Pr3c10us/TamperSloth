@@ -435,13 +435,16 @@ test('saved scripts recover from legacy stopped state and browser messages remai
     Object.assign(f.chrome.runtime, {id: 'extension-id', getURL: path => 'chrome-extension://extension-id/' + path,
         onMessage: eventBus(), onUserScriptMessage: eventBus()});
     f.chrome.storage.onChanged = eventBus();
+    f.chrome.tabs.onUpdated = eventBus();
     f.chrome.sidePanel = {setOptions: async () => {}, open: async () => {}};
     f.chrome.action.onClicked = eventBus();
     f.chrome.alarms = {create: async () => {}, onAlarm: eventBus()};
     Object.assign(f.chrome.userScripts, {getScripts: async () => registrations,
-        register: async scripts => { registrations = scripts; }, unregister: async () => { registrations = []; }});
+        register: async scripts => { registrations = scripts; }, unregister: async () => { registrations = []; },
+        getWorldConfigurations: async () => [], resetWorldConfiguration: async () => {}});
     f.load('src/background/index.ts');
-    await tick();
+    // Registration waits on the scripts' tokens and world configuration first.
+    for (let i = 0; i < 5; i++) await tick();
     assert.equal(registrations.length, 1);
     assert.equal(registrations[0].id, 'tampersloth_saved-1', 'Paused scripts stay paused');
     const listener = [...f.chrome.runtime.onMessage.listeners][0];
@@ -471,8 +474,13 @@ test('saved scripts recover from legacy stopped state and browser messages remai
     assert.equal(registrations.length, 1);
     assert.equal((await send({type: 'BROWSER_CALL', operation: 'tabs', input: {action: 'list'}}, sender)).tabs.length, 1);
     const scriptListener = [...f.chrome.runtime.onUserScriptMessage.listeners][0];
-    const scriptResponse = await new Promise(resolve => scriptListener({type: 'SCRIPT_SET_VALUE', scriptId: 'saved-1', key: 'count', value: 1}, {}, resolve));
-    assert.equal(scriptResponse.ok, true);
+    const fromScript = message => new Promise(resolve => scriptListener(message, {}, resolve));
+    // A script's values answer only to the token baked into its own registered code.
+    const token = f.saved.ts_script_tokens['saved-1'];
+    assert.ok(registrations[0].js[0].code.includes(JSON.stringify(token)));
+    assert.equal((await fromScript({type: 'SCRIPT_SET_VALUE', scriptId: 'saved-1', key: 'count', value: 1})).denied, true);
+    assert.equal((await fromScript({type: 'SCRIPT_SET_VALUE', scriptId: 'saved-1', token: 'guess', key: 'count', value: 1})).denied, true);
+    assert.equal((await fromScript({type: 'SCRIPT_SET_VALUE', scriptId: 'saved-1', token, key: 'count', value: 1})).ok, true);
 });
 
 test('offscreen clipboard accepts the owning service worker without a page URL', async () => {

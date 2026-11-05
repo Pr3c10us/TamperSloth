@@ -24,7 +24,11 @@ export type SlothModel = {
     /** What users are charged, against their plan's monthly credit. */
     rates: Rates
     contextWindow: number
-    maxOutputTokens: number
+    /**
+     * The most the target can write in one request. Nothing here limits a reply to it:
+     * it prices the credit set aside while a request runs.
+     */
+    providerMaxOutputTokens: number
 }
 
 // Rates match the target's first-party API pricing (checked 2026-10-21), with
@@ -40,7 +44,7 @@ export const SLOTH_MODELS: SlothModel[] = [
             longContext: {above: 100_000, input: .5, output: 2.5, cacheRead: .05, cacheWrite: .625},
         },
         contextWindow: 1_000_000,
-        maxOutputTokens: 64_000,
+        providerMaxOutputTokens: 128_000,
     },
     {
         id: "sloth-pro",
@@ -49,7 +53,7 @@ export const SLOTH_MODELS: SlothModel[] = [
         target: {provider: "anthropic", modelId: "claude-sonnet-5-5", label: "Claude Sonnet"},
         rates: {input: 2, output: 10, cacheRead: .2, cacheWrite: 2.5},
         contextWindow: 1_000_000,
-        maxOutputTokens: 64_000,
+        providerMaxOutputTokens: 128_000,
     },
     {
         id: "sloth-max",
@@ -58,7 +62,7 @@ export const SLOTH_MODELS: SlothModel[] = [
         target: {provider: "anthropic", modelId: "claude-opus-5-5", label: "Claude Opus"},
         rates: {input: 4, output: 20, cacheRead: .2, cacheWrite: 5},
         contextWindow: 1_000_000,
-        maxOutputTokens: 64_000,
+        providerMaxOutputTokens: 128_000,
     },
 ]
 

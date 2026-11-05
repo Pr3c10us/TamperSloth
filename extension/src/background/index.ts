@@ -1,11 +1,18 @@
-import type {BackgroundScript, ScriptExecutionLog} from "@/src/chat/lib/types.ts";
+import type {BackgroundScript, ImportedUserscript, ScriptExecutionLog} from "@/src/chat/lib/types.ts";
 import {handleBrowserMessage, cdp} from './browserService';
 import {captureAnnotatedViewport, captureRegion, captureViewportScreenshot} from './screenshotCapture';
 import {installPanelLifecycle, cleanupBrowserGuidance} from './panelLifecycle';
 import {installContextMenu} from './contextMenu';
 import {installLeftoverGroupCheck} from './taskTabs';
 import {BILLING_TOKEN_REQUEST, installPricingBridge} from './pricingBridge';
+import {GREASYFORK_INSTALL, installGreasyForkButton, USERSCRIPT_INSTALLED} from './greasyForkButton';
 import {queuePanelRequest} from '../chat/lib/panelRequests';
+import {userscriptRegistrations, userscriptWorldId} from './userscriptRuntime';
+import {handleGmRequest, installGmTabTracking} from './userscriptBridge';
+import {installUserscriptHost, pushToScript, refreshUserscriptMenus} from './userscriptHost';
+import {CONNECT_DECISION, installConnectPrompt} from './connectPrompt';
+import {installUserscriptLinks} from './userscriptLinks';
+import {CHECK_USERSCRIPT_UPDATE, installUserscriptUpdates} from './userscriptUpdates';
 import {
     deleteScriptValue,
     getScriptValue,
@@ -96,6 +103,37 @@ function invalidateCache() {
     cachedScripts = null;
 }
 
+// ── Script Tokens ────────────────────────────────────────────
+// Registered code carries its script's token, and a message naming a script is
+// trusted only with it, so one script can't read another's values or act as it.
+const TOKENS_KEY = 'ts_script_tokens';
+let tokenCache: Record<string, string> | null = null;
+let tokenChain: Promise<unknown> = Promise.resolve();
+
+function scriptTokens(scripts: BackgroundScript[]): Promise<Record<string, string>> {
+    const task = tokenChain.catch(() => {}).then(async () => {
+        if (!tokenCache) tokenCache = ((await chrome.storage.local.get(TOKENS_KEY))[TOKENS_KEY] as Record<string, string>) ?? {};
+        const current = tokenCache;
+        const next = Object.fromEntries(scripts.map(s => [s.id, current[s.id] ?? crypto.randomUUID()]));
+        const changed = Object.keys(next).length !== Object.keys(current).length || Object.keys(next).some(id => next[id] !== current[id]);
+        if (changed) {
+            tokenCache = next;
+            await chrome.storage.local.set({[TOKENS_KEY]: next});
+        }
+        return tokenCache;
+    });
+    tokenChain = task;
+    return task;
+}
+
+async function authenticateScript(message: any): Promise<BackgroundScript | null> {
+    if (typeof message.scriptId !== 'string' || typeof message.token !== 'string') return null;
+    const scripts = await getScripts();
+    const script = scripts.find(s => s.id === message.scriptId);
+    if (!script) return null;
+    return (await scriptTokens(scripts))[script.id] === message.token ? script : null;
+}
+
 // ── Execution Logs ───────────────────────────────────────────
 const executionLogs: ScriptExecutionLog[] = [];
 const MAX_LOGS = 100;
@@ -107,11 +145,13 @@ function logExecution(log: ScriptExecutionLog) {
 
 // ── Code Wrapping ────────────────────────────────────────────
 
-function buildStorageHelpers(scriptId: string): string {
+function buildStorageHelpers(scriptId: string, token: string): string {
     return `
         var __tampersloth_scriptId = ${JSON.stringify(scriptId)};
+        var __tampersloth_token = ${JSON.stringify(token)};
 
         function __tampersloth_send(msg, retries) {
+            msg.token = __tampersloth_token;
             retries = retries || 0;
             return chrome.runtime.sendMessage(msg).catch(function(err) {
                 if (retries < 2 && /receiving end/i.test(err.message || '')) {
@@ -149,13 +189,16 @@ function buildWrappedCode(
     code: string,
     fnName: string,
     scriptId?: string,
+    token = '',
 ): string {
-    const storageHelpers = scriptId ? buildStorageHelpers(scriptId) : '';
+    const storageHelpers = scriptId ? buildStorageHelpers(scriptId, token) : '';
     const scriptIdJson = JSON.stringify(scriptId ?? '');
+    const tokenJson = JSON.stringify(token);
     const reportExecution = scriptId ? `
         try { chrome.runtime.sendMessage({
             type: 'SCRIPT_EXECUTION_REPORT',
             scriptId: ${scriptIdJson},
+            token: ${tokenJson},
             success: true,
             url: location.href
         }).catch(function() {}); } catch(e) {}
@@ -164,6 +207,7 @@ function buildWrappedCode(
         try { chrome.runtime.sendMessage({
             type: 'SCRIPT_EXECUTION_REPORT',
             scriptId: ${scriptIdJson},
+            token: ${tokenJson},
             success: false,
             error: __err.message || String(__err),
             url: location.href
@@ -246,24 +290,51 @@ async function syncRegisteredScriptsNow() {
         }
 
         const scripts = await getScripts();
-        const active = scripts.filter(s => s.status === 'active' && s.urlMatchPattern);
-
-        if (active.length === 0) return;
-
-        const registrations = active.map(script => {
+        const tokens = await scriptTokens(scripts);
+        const registrations: chrome.userScripts.RegisteredUserScript[] = [];
+        const worlds = new Set<string>();
+        for (const script of scripts) {
+            if (script.status !== 'active') continue;
+            if (script.userscript) {
+                registrations.push(...userscriptRegistrations(script as BackgroundScript & {userscript: ImportedUserscript}, tokens[script.id]));
+                // Right-click scripts register nothing but still run in their own world.
+                if (script.userscript.contextMenu) worlds.add(userscriptWorldId(script.id));
+                continue;
+            }
+            if (!script.urlMatchPattern) continue;
             const fnMatch = script.code.match(/function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/);
             const fnName = fnMatch?.[1] ?? 'main';
-
-            return {
+            registrations.push({
                 id: `tampersloth_${script.id}`,
                 matches: [script.urlMatchPattern] as string[],
-                js: [{code: buildWrappedCode(script.code, fnName, script.id)}],
+                js: [{code: buildWrappedCode(script.code, fnName, script.id, tokens[script.id])}],
                 runAt: (script.runAt ?? 'document_idle') as 'document_start' | 'document_end' | 'document_idle',
                 world: 'USER_SCRIPT' as const,
-            };
-        });
+            });
+        }
 
-        await chrome.userScripts.register(registrations);
+        // Each isolated userscript has its own world; forget worlds whose script is gone or paused.
+        for (const {worldId} of registrations) if (worldId) worlds.add(worldId);
+        for (const worldId of worlds) {
+            await chrome.userScripts.configureWorld({worldId, csp: "script-src 'self' 'unsafe-eval' 'unsafe-inline'", messaging: true});
+        }
+        for (const world of await chrome.userScripts.getWorldConfigurations()) {
+            if (world.worldId?.startsWith('tsw_') && !worlds.has(world.worldId)) {
+                await chrome.userScripts.resetWorldConfiguration(world.worldId);
+            }
+        }
+
+        if (registrations.length === 0) return;
+        try {
+            await chrome.userScripts.register(registrations);
+        } catch (e) {
+            // One bad registration rejects the whole batch; keep the rest running.
+            console.warn('[Tampersloth] Batch registration failed, registering one by one:', e);
+            for (const registration of registrations) {
+                await chrome.userScripts.register([registration])
+                    .catch(error => console.error(`[Tampersloth] Could not register ${registration.id}:`, error));
+            }
+        }
         console.log(`[Tampersloth] Registered ${registrations.length} userscripts`);
     } catch (e) {
         console.error('[Tampersloth] Failed to sync registered scripts:', e);
@@ -275,6 +346,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes['ts_background_scripts']) {
         invalidateCache();
         syncRegisteredScripts();
+        refreshUserscriptMenus();
     }
 });
 
@@ -282,42 +354,53 @@ chrome.storage.onChanged.addListener((changes, area) => {
 syncRegisteredScripts();
 
 // ── Message Handlers ─────────────────────────────────────────
-function handleUserScriptMessage(message: any, _: any, sendResponse: (r: any) => void): boolean {
-    if (message.type === 'SCRIPT_GET_VALUE') {
-        getScriptValue(message.scriptId, message.key).then((value: any) => sendResponse({value}));
-        return true;
-    }
-    if (message.type === 'SCRIPT_SET_VALUE') {
-        void setScriptValue(message.scriptId, message.key, message.value)
-            .then(() => sendResponse({ok: true}), error => sendResponse({error: error.message}));
-        return true;
-    }
-    if (message.type === 'SCRIPT_DELETE_VALUE') {
-        void deleteScriptValue(message.scriptId, message.key)
-            .then(() => sendResponse({ok: true}), error => sendResponse({error: error.message}));
-        return true;
-    }
-    if (message.type === 'SCRIPT_LIST_VALUES') {
-        listScriptValues(message.scriptId).then((values: any) => sendResponse({values}));
-        return true;
-    }
-    if (message.type === 'SCRIPT_EXECUTION_REPORT') {
-        (async () => {
-            const scripts = await getScripts();
-            const script = scripts.find(s => s.id === message.scriptId);
+// Value writes for one script run in order; each rewrites the script's whole record.
+const valueChains = new Map<string, Promise<unknown>>();
+function queueValueWrite(scriptId: string, write: () => Promise<void>): Promise<void> {
+    const next = (valueChains.get(scriptId) ?? Promise.resolve()).catch(() => {}).then(write);
+    valueChains.set(scriptId, next);
+    void next.catch(() => {}).finally(() => { if (valueChains.get(scriptId) === next) valueChains.delete(scriptId); });
+    return next;
+}
+
+async function answerUserScript(message: any, sender: chrome.runtime.MessageSender): Promise<unknown> {
+    const script = await authenticateScript(message);
+    if (!script) return {denied: true, error: "TamperSloth doesn't recognise this script anymore. Reload the page."};
+    switch (message.type) {
+        case 'SCRIPT_GET_VALUE':
+            await valueChains.get(script.id)?.catch(() => {});
+            return {value: await getScriptValue(script.id, message.key)};
+        case 'SCRIPT_SET_VALUE':
+            await queueValueWrite(script.id, () => setScriptValue(script.id, message.key, message.value));
+            // Its other tabs keep their copy of the values current, and listeners hear about it.
+            pushToScript(script.id, {type: 'value', key: message.key, value: message.value}, message.instance);
+            return {ok: true};
+        case 'SCRIPT_DELETE_VALUE':
+            await queueValueWrite(script.id, () => deleteScriptValue(script.id, message.key));
+            pushToScript(script.id, {type: 'value', key: message.key, deleted: true}, message.instance);
+            return {ok: true};
+        case 'SCRIPT_LIST_VALUES':
+            await valueChains.get(script.id)?.catch(() => {});
+            return {values: await listScriptValues(script.id)};
+        case 'SCRIPT_EXECUTION_REPORT':
             logExecution({
-                scriptId: message.scriptId,
-                scriptName: script?.name ?? 'Unknown',
+                scriptId: script.id,
+                scriptName: script.name,
                 url: message.url ?? '',
                 timestamp: Date.now(),
                 success: message.success,
                 error: message.error,
             });
-            sendResponse({ok: true});
-        })();
-        return true;
+            return {ok: true};
+        default:
+            return (await handleGmRequest(message, sender, script)) ?? {error: `Unknown request ${message.type}`};
     }
-    return false;
+}
+
+function handleUserScriptMessage(message: any, sender: chrome.runtime.MessageSender, sendResponse: (r: any) => void): boolean {
+    if (typeof message?.type !== 'string' || !/^(SCRIPT|GM)_/.test(message.type)) return false;
+    answerUserScript(message, sender).then(sendResponse, error => sendResponse({error: error?.message || String(error)}));
+    return true;
 }
 
 if (chrome.runtime.onUserScriptMessage) {
@@ -353,6 +436,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'DRAW_ENDED') return false;
     // The pricing page's relay; installPricingBridge answers it, so the refusal below must not.
     if (message.type === BILLING_TOKEN_REQUEST) return false;
+    // The Greasy Fork button and the install tab's hand-back; installGreasyForkButton answers them.
+    if (message.type === GREASYFORK_INSTALL || message.type === USERSCRIPT_INSTALLED) return false;
+    // The "may this script contact that site?" window; installConnectPrompt answers it.
+    if (message.type === CONNECT_DECISION) return false;
+    // "Check for updates" from the script viewer's tab; installUserscriptUpdates answers it.
+    if (message.type === CHECK_USERSCRIPT_UPDATE) return false;
     // After a saved script is paused, resumed, deleted or imported: re-register
     // first so reloaded pages get the change, then reload every tab its pattern
     // covers. Any extension page may ask, including the script viewer's own tab.
@@ -370,6 +459,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             await Promise.all([...ids].map(id => chrome.tabs.reload(id).catch(() => {})));
             sendResponse({count: ids.size});
         })().catch(error => sendResponse({error: error.message}));
+        return true;
+    }
+    // Whether "Allow User Scripts" is on. Read-only, so any extension page may
+    // ask, including the install and viewer tabs the check below would refuse.
+    if (message.type === 'CHECK_USERSCRIPTS') {
+        if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL(''))) return false;
+        void probeUserScripts().then((available) => sendResponse({available}));
         return true;
     }
     // Only the extension's own UI may control tabs or evaluate code.
@@ -457,12 +553,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
-    // Developer mode / userScripts availability check
-    if (message.type === 'CHECK_USERSCRIPTS') {
-        void probeUserScripts().then((available) => sendResponse({available}));
-        return true;
-    }
-
     // Debugger: capture console logs
     if (message.type === 'GET_CONSOLE') {
         const targetTabId = message.tabId;
@@ -541,3 +631,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // The pricing page's token requests, beside the panel's own messages above.
 installPricingBridge();
+// The "Install with TamperSloth" button on Greasy Fork script pages.
+installGreasyForkButton();
+// What installed userscripts need while they run: push channels, menus, the @connect question.
+installUserscriptHost({authenticate: authenticateScript, getScripts, tokens: scriptTokens});
+installConnectPrompt();
+installGmTabTracking();
+installUserscriptLinks();
+installUserscriptUpdates();

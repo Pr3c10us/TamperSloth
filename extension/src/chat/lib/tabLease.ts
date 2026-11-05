@@ -11,8 +11,8 @@ import {useSyncExternalStore} from "react";
 
 /** Tools that never look at or act on the page. */
 const TAB_FREE_TOOLS = new Set([
-    "getSkill", "viewCodeFiles", "createFileTool", "strReplaceTool", "deleteFileTool",
-    "saveScript", "listScripts", "toggleScript", "removeScript", "askUser",
+    "getSkill", "viewCodeFiles", "createFileTool", "appendToFile", "strReplaceTool", "replaceLines", "deleteFileTool",
+    "openScript", "saveScript", "listScripts", "toggleScript", "removeScript", "askUser",
 ]);
 
 interface Waiter {

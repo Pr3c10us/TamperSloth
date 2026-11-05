@@ -8,6 +8,7 @@ import {DEFAULT_AGENT_SETTINGS, loadAgentSettings, saveAgentSettings, type Agent
 import {THINKING_LEVELS} from "@/src/chat/lib/thinkingLevel";
 import {saveThemePreference, useThemePreference, type ThemePreference} from "../lib/theme";
 import {SettingRow, SettingsGroup, SettingsSection, TabIntro} from "./Section";
+import {loadUserscriptPrefs, saveUserscriptPrefs, type UserscriptPrefs} from "@/src/scripts/prefs";
 
 const BUDGET_PRESETS = [
     {value: 100_000, label: "100k"},
@@ -54,6 +55,14 @@ export function PreferencesTab() {
     const [budgetDraft, setBudgetDraft] = useState<string | null>(null);
     const latest = useRef(settings);
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [userscriptPrefs, setUserscriptPrefs] = useState<UserscriptPrefs | null>(null);
+
+    useEffect(() => { void loadUserscriptPrefs().then(setUserscriptPrefs); }, []);
+
+    const updateUserscriptPrefs = (changes: Partial<UserscriptPrefs>) => {
+        setUserscriptPrefs(current => current && {...current, ...changes});
+        void saveUserscriptPrefs(changes);
+    };
 
     useEffect(() => { let active = true; void loadAgentSettings().then(value => {
         if (active) { latest.current = value; setSettings(value); setReady(true); }
@@ -191,6 +200,21 @@ export function PreferencesTab() {
                                 </Choice>
                             ))}
                         </div>
+                    </SettingRow>
+                </SettingsGroup>
+            </SettingsSection>
+
+            <SettingsSection title="Userscripts">
+                <SettingsGroup>
+                    <SettingRow label="Open .user.js links here" htmlFor="captureUserscriptLinks"
+                        description="Show TamperSloth's install page for userscript links. Turn off if another manager should handle them.">
+                        <Switch id="captureUserscriptLinks" disabled={!userscriptPrefs} checked={userscriptPrefs?.captureLinks ?? true}
+                            onCheckedChange={checked => updateUserscriptPrefs({captureLinks: checked})} />
+                    </SettingRow>
+                    <SettingRow label="Update automatically" htmlFor="autoUpdateUserscripts"
+                        description="Checks daily. A version asking for new permissions always waits for your review.">
+                        <Switch id="autoUpdateUserscripts" disabled={!userscriptPrefs} checked={userscriptPrefs?.autoUpdate ?? true}
+                            onCheckedChange={checked => updateUserscriptPrefs({autoUpdate: checked})} />
                     </SettingRow>
                 </SettingsGroup>
             </SettingsSection>

@@ -58,10 +58,10 @@ export interface ActionAssessment {
 
 /** Tools that only read, or only touch Tampersloth's own state. */
 const READ_ONLY = new Set([
-    "getCurrentTab", "getPageText", "getPageStructure", "getElementDetails", "getSkill", "enableTools", "readToolResult",
+    "getCurrentTab", "getPageText", "getPageStructure", "getElementDetails", "getSkill", "loadPlaybook", "enableTools", "readToolResult",
     "takeScreenshot", "takeMarkedScreenshot", "accessibilityTree", "getDebugInfo", "viewCodeFiles", "listScripts",
     "wait", "showTab", "waitForElement", "annotatePage", "waitForUserAction", "listControls", "askUser", "getLocalStorage", "getCookies",
-    "createFileTool", "strReplaceTool", "deleteFileTool", "browserNotify",
+    "createFileTool", "appendToFile", "strReplaceTool", "replaceLines", "deleteFileTool", "openScript", "browserNotify",
 ]);
 
 const PAYMENT = /\b(?:buy(?: now| it now)?|purchase|place (?:your |my )?order|complete (?:my |your )?(?:purchase|order|checkout|payment)|confirm (?:and pay|payment|purchase|order)|submit (?:payment|order)|pay(?: now| securely)?|pay \$?[\d.,]+|proceed to (?:payment|pay)|donate|send money|send payment|transfer(?: funds| money)?|withdraw|make (?:a )?payment)\b/i;
