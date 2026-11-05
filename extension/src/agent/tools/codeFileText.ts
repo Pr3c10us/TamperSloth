@@ -1,16 +1,16 @@
 /** Reading and changing virtual code files by piece, so a large file never has to pass through the model whole. */
 
-/**
- * Most of one tool result, measured as encoded JSON. Results past RESULT_CHARS
- * are archived behind a preview, which would turn every view into two calls.
- */
 /** Lines one view shows when it names no range. */
 export const DEFAULT_VIEW_LINES = 120;
 
+/**
+ * Most code one result carries, in characters. Code reaches the model as plain
+ * text (codeResultText), so quotes and newlines cost no escaping.
+ */
 const VIEW_BUDGET = 5000;
 
-const encodedLength = (text: string) => JSON.stringify(text).length;
-const numbered = (line: number, text: string) => `${String(line).padStart(5)}\t${text}`;
+/** `12\tcode`, unpadded: padding the number costs a token on every line. */
+const numbered = (line: number, text: string) => `${line}\t${text}`;
 
 /** Lines start..end, numbered, stopping at the budget. A single overlong line (minified code) is clipped. */
 export function numberedWindow(content: string, start: number, end: number, budget = VIEW_BUDGET): {text: string; lastLine: number} {
@@ -20,7 +20,7 @@ export function numberedWindow(content: string, start: number, end: number, budg
     let lastLine = start - 1;
     for (let line = Math.max(1, start); line <= Math.min(end, lines.length); line++) {
         const text = numbered(line, lines[line - 1]);
-        const cost = encodedLength(text) + 2;
+        const cost = text.length + 1;
         if (used + cost > budget) {
             if (!shown.length) {
                 shown.push(`${numbered(line, lines[line - 1].slice(0, Math.floor(budget / 2)))}…[line clipped, ${lines[line - 1].length} chars]`);
@@ -70,8 +70,8 @@ export function findLines(content: string, query: string, context = 2, budget = 
         const to = Math.min(hit + context, lines.length - 1);
         const block = [];
         for (let index = from; index <= to; index++) block.push(numbered(index + 1, clipAround(lines[index], match(lines[index]))));
-        if (from > previous + 1 && shown.length) block.unshift("  ...");
-        const cost = encodedLength(block.join("\n")) + 2;
+        if (from > previous + 1 && shown.length) block.unshift("...");
+        const cost = block.join("\n").length + 1;
         if (used + cost > budget && shown.length) break;
         shown.push(...block);
         used += cost;
@@ -91,14 +91,61 @@ export function outlineCode(content: string, budget = 2500): string {
     for (let index = 0; index < lines.length; index++) {
         if (!OUTLINE_LINE.test(lines[index])) continue;
         const entry = numbered(index + 1, lines[index].length > 80 ? `${lines[index].slice(0, 80)}…` : lines[index]);
-        used += encodedLength(entry) + 2;
+        used += entry.length + 1;
         if (used > budget) {
-            entries.push("  ...[outline truncated; use a query to find the rest]");
+            entries.push("...[outline truncated; use a query to find the rest]");
             break;
         }
         entries.push(entry);
     }
     return entries.join("\n");
+}
+
+/** The lines where each occurrence of `needle` starts, so an ambiguous edit can be told apart without a search. */
+export function occurrenceLines(content: string, needle: string, limit = 8): number[] {
+    const lines: number[] = [];
+    for (let at = content.indexOf(needle); at >= 0 && lines.length < limit; at = content.indexOf(needle, at + needle.length)) {
+        lines.push(content.slice(0, at).split("\n").length);
+    }
+    return lines;
+}
+
+const squeeze = (text: string) => text.trim().replace(/\s+/g, " ");
+
+/**
+ * Lines that hold the first line of text that wasn't found, ignoring spacing:
+ * usually the edit was right but its indentation or quotes weren't. Numbered,
+ * so the next edit can use them without viewing the file.
+ */
+export function nearMisses(content: string, needle: string, limit = 3): string | undefined {
+    const first = needle.split("\n").map(squeeze).find(line => line.length >= 3);
+    if (!first) return undefined;
+    const lines = content.split("\n");
+    const hits = lines.flatMap((line, index) => squeeze(line).includes(first) ? [index] : []).slice(0, limit);
+    return hits.length ? hits.map(index => numbered(index + 1, clipAround(lines[index], 0))).join("\n") : undefined;
+}
+
+/**
+ * The model's copy of a code result: a header line, then the numbered code as
+ * plain text. Inside JSON every quote, tab and newline of the code is escaped.
+ * Undefined for results without code, which keep the default projection.
+ */
+export function codeResultText(output: unknown): string | undefined {
+    if (!output || typeof output !== "object") return undefined;
+    const result = output as Record<string, any>;
+    if (result.type === "file") {
+        const [from, to] = result.viewedRange as [number, number];
+        const more = result.truncated ? `; more from start_line ${result.nextStartLine}, or find code with query` : "";
+        return `${result.path} lines ${from}-${to} of ${result.totalLines}${more}\n${result.content}`;
+    }
+    if (result.type === "search") {
+        const shown = result.shownMatches < result.matches ? `, showing ${result.shownMatches}; narrow the query` : "";
+        return `${result.path}: ${result.matches} ${result.matches === 1 ? "match" : "matches"} for ${JSON.stringify(result.query)}${shown} (${result.totalLines} lines)${result.content ? `\n${result.content}` : ""}`;
+    }
+    if (typeof result.around === "string") {
+        return `${result.path}: replaced ${result.removedLines} with ${result.addedLines} lines (${result.totalLines} now)\n${result.around}`;
+    }
+    return undefined;
 }
 
 /** Adds a piece to the end of a file, on a new line. */
@@ -135,14 +182,28 @@ export function scriptFilePath(name: string, id: string): string {
     return `scripts/${slug || id.slice(0, 8)}.js`;
 }
 
+interface NoteScript {
+    id: string;
+    name: string;
+    lines: number;
+    /** This chat's working file for it, when it has one. */
+    path?: string;
+    /** The working file has edits the saved script lacks. */
+    unsaved?: boolean;
+    /** The saved script changed elsewhere while the working file has edits of its own. */
+    diverged?: boolean;
+}
+
 /** What a run starts knowing about this chat's code, so an edit can go straight to it. */
-export function codeContextNote(files: {path: string; lines: number}[], scripts: {id: string; name: string; lines: number; path?: string}[]): string {
+export function codeContextNote(files: {path: string; lines: number}[], scripts: NoteScript[]): string {
     if (!files.length && !scripts.length) return "";
     const parts = ["\nCode from earlier in this chat; no need to list it or read it all."];
     if (files.length) parts.push(`Working files: ${JSON.stringify(files)}`);
     if (scripts.length) {
-        parts.push(`Saved changes: ${JSON.stringify(scripts.map(s => ({scriptId: s.id, name: s.name, lines: s.lines, ...(s.path ? {path: s.path} : {})})))}`);
-        parts.push("To change a saved one: openScript (skip it when its path is in Working files), viewCodeFiles with query to find the code, strReplaceTool or replaceLines to edit, then saveScript with scriptId. Never rewrite it from scratch.");
+        parts.push(`Saved changes: ${JSON.stringify(scripts.map(s => ({scriptId: s.id, name: s.name, lines: s.lines,
+            ...(s.path ? {path: s.path} : {}), ...(s.unsaved ? {unsaved: true} : {}), ...(s.diverged ? {diverged: true} : {})})))}`);
+        parts.push("To change a saved one, edit its path in place (find the code with viewCodeFiles query; strReplaceTool or replaceLines), test, then saveScript with scriptId. "
+            + "Without a path, openScript first. unsaved: the file has edits not saved yet. diverged: the saved code also changed elsewhere; openScript says how to resolve it. Never rewrite a saved script from scratch.");
     }
     return parts.join("\n");
 }

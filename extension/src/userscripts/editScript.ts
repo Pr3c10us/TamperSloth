@@ -3,6 +3,7 @@ import {saveScript} from "@/storage/scripts";
 import type {BackgroundScript} from "./types";
 import {prepareUserscript, userscriptFields} from "./installUserscript";
 import {parseUserscript} from "./userscript";
+import {codeFingerprint, linkedChat} from "./workingFile";
 
 const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((value, i) => value === b[i]);
 
@@ -52,13 +53,16 @@ export async function withEditedCode(script: BackgroundScript, code: string): Pr
 /**
  * Saves a hand edit. The chat's working file follows along when it was in step,
  * so the agent's next save can't bring the old code back. A working file with
- * edits of its own is left alone: those aren't ours to discard.
+ * edits of its own is left alone: those aren't ours to discard. It keeps the
+ * code it last shared, so the agent is told before a save would undo this edit.
  */
 export async function saveEditedScript(script: BackgroundScript, code: string): Promise<BackgroundScript> {
-    const updated = await withEditedCode(script, code);
-    if (script.sourcePath && script.conversationId) {
-        const working = await readFile(script.conversationId, script.sourcePath);
-        if (working === script.code) await writeFile(script.conversationId, script.sourcePath, code);
+    let updated = await withEditedCode(script, code);
+    if (script.sourcePath) {
+        const chat = linkedChat(script);
+        const inStep = await readFile(chat, script.sourcePath) === script.code;
+        if (inStep) await writeFile(chat, script.sourcePath, code);
+        updated = {...updated, sourceBase: inStep ? codeFingerprint(code) : script.sourceBase ?? codeFingerprint(script.code)};
     }
     await saveScript(updated);
     return updated;

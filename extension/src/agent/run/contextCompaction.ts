@@ -4,14 +4,55 @@ import {resultReceipt, serialize} from "@/agent/tools/toolOutput";
 
 const CONTEXT_CHARS = 48000;
 
-/** Deterministic, sticky compaction: never edits tool inputs, reasoning/signatures,
- * user messages, or call/result IDs. Recent observations and approvals stay exact.
- * IDs remain compacted on later steps to avoid oscillating the cached prefix. */
+/** File writes whose code the file now holds, and the input fields carrying it. */
+const WRITE_FIELDS: Record<string, string[]> = {
+    createFileTool: ["file_text"], appendToFile: ["text"], strReplaceTool: ["old_str", "new_str", "edits"], replaceLines: ["new_text"],
+};
+const WRITTEN_CODE_CHARS = 600;
+
+/** Gemini signs a call part itself; its arguments must reach it as they were. */
+const isSigned = (part: {providerOptions?: unknown}) => Object.values((part.providerOptions ?? {}) as Record<string, unknown>)
+    .some(options => Boolean(options) && typeof options === "object" && "thoughtSignature" in (options as object));
+
+/** A write's input with its code replaced by a note: the code is in the file, where a view or search reads it fresh. */
+function withoutWrittenCode(toolName: string, input: unknown): Record<string, unknown> | undefined {
+    const fields = WRITE_FIELDS[toolName];
+    if (!fields || !input || typeof input !== "object") return undefined;
+    const record = input as Record<string, unknown>;
+    if (serialize(fields.map(field => record[field] ?? "")).length < WRITTEN_CODE_CHARS) return undefined;
+    const note = (text: string) => `[${text.split("\n").length} lines, applied; the file holds the current code]`;
+    const stubbed = {...record};
+    for (const field of fields) {
+        const value = record[field];
+        if (typeof value === "string") stubbed[field] = note(value);
+        else if (Array.isArray(value)) stubbed[field] = value.map(edit => ({old_str: "[applied]", new_str: "[applied]", ...((edit as {all?: boolean})?.all ? {all: true} : {})}));
+    }
+    return stubbed;
+}
+
+/** Deterministic, sticky compaction: never edits reasoning/signatures, user messages,
+ * call/result IDs, or tool inputs other than the code of applied file writes.
+ * Recent observations, writes and approvals stay exact. Compacted items stay
+ * compacted on later steps to avoid oscillating the cached prefix. */
 export function compactMessages(messages: ModelMessage[], archived: Set<string>): ModelMessage[] {
     const toolMessages = messages.filter(m => m.role === "tool");
     const recentIds = new Set(toolMessages.slice(-3).flatMap(m => m.content.map(p => "toolCallId" in p ? p.toolCallId : "")));
     const overBudget = serialize(messages).length > CONTEXT_CHARS;
     return messages.map(message => {
+        if (message.role === "assistant" && typeof message.content !== "string") {
+            let changed = false;
+            const content = message.content.map(part => {
+                if (part.type !== "tool-call" || !WRITE_FIELDS[part.toolName] || isSigned(part)) return part;
+                const key = `input:${part.toolCallId}`;
+                if (!archived.has(key) && (!overBudget || recentIds.has(part.toolCallId))) return part;
+                const input = withoutWrittenCode(part.toolName, part.input);
+                if (!input) return part;
+                archived.add(key);
+                changed = true;
+                return {...part, input};
+            });
+            return changed ? {...message, content} : message;
+        }
         if (message.role !== "tool") return message;
         return {...message, content: message.content.map(part => {
             if (part.type !== "tool-result" || ["getSkill", "loadPlaybook", "askUser", "enableTools"].includes(part.toolName)) return part;

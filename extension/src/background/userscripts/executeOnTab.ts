@@ -25,5 +25,8 @@ export async function executeOnTab(tabId: number, code: string): Promise<any> {
         js: [{code: wrappedCode}],
         world: 'USER_SCRIPT',
     });
-    return results?.[0]?.result;
+    // A syntax error or a throw comes back as error, with no result: say so instead of returning nothing.
+    const first = results?.[0];
+    if (first?.error) throw new Error(first.error);
+    return first?.result;
 }

@@ -1,8 +1,14 @@
 import {tool} from "ai";
 import {z} from "zod";
-import {appendChunk, DEFAULT_VIEW_LINES, findLines, lineCount, numberedWindow, replaceLineRange} from "./codeFileText";
+import {appendChunk, codeResultText, DEFAULT_VIEW_LINES, findLines, lineCount, nearMisses, numberedWindow, occurrenceLines, replaceLineRange} from "./codeFileText";
 import {deleteFile, fileExists, listFiles, readFile, writeFile} from "@/storage/codeFiles";
+import {compactToolOutput, serialize} from "./toolOutput";
 import type {ToolContext} from "./toolContext";
+
+/** Code reaches the model as plain text; any other result as the runtime would send it. */
+export function codeProjection({toolCallId, output}: {toolCallId: string; output: unknown}) {
+    return {type: "text" as const, value: codeResultText(output) ?? serialize(compactToolOutput(output, toolCallId))};
+}
 
 export function createCodeFileTools(context: ToolContext) {
     return {
@@ -88,6 +94,7 @@ export function createCodeFileTools(context: ToolContext) {
                     return {error: err instanceof Error ? err.message : String(err)};
                 }
             },
+            toModelOutput: codeProjection,
         }),
 
         createFileTool: tool({
@@ -135,15 +142,16 @@ export function createCodeFileTools(context: ToolContext) {
 
         strReplaceTool: tool({
             description:
-                "Replace exact unique strings in a virtual file. Use old_str/new_str or an ordered edits array. Batch edits commit atomically. Empty replacement deletes. For a large block, replaceLines avoids retyping it.",
+                "Replace exact strings in a virtual file, each matching once (replace_all, or all per edit: every match). Use old_str/new_str or an ordered edits array, committed atomically. Empty replacement deletes. For a large block, replaceLines avoids retyping it.",
             inputSchema: z.object({
                 path: z.string().describe('Virtual path to edit'),
-                old_str: z.string().min(1).optional().describe('Exact unique string. Omit when using edits.'),
+                old_str: z.string().min(1).optional().describe('Exact string. Omit when using edits.'),
                 new_str: z.string().default('').describe('Replacement string (empty deletes old_str)'),
-                edits: z.array(z.object({old_str: z.string().min(1), new_str: z.string()})).min(1).max(20).optional()
-                    .describe('Ordered replacements, committed together only if every match is unique. Alternative to old_str/new_str.'),
+                replace_all: z.boolean().optional(),
+                edits: z.array(z.object({old_str: z.string().min(1), new_str: z.string(), all: z.boolean().optional()})).min(1).max(20).optional()
+                    .describe('Ordered replacements, all or none. Alternative to old_str/new_str.'),
             }),
-            execute: async ({path, old_str, new_str, edits}) => {
+            execute: async ({path, old_str, new_str, replace_all, edits}) => {
                 try {
                     const content = await readFile(context.conversationId, path);
                     if (content === null) {
@@ -153,19 +161,31 @@ export function createCodeFileTools(context: ToolContext) {
                     if ((old_str !== undefined) === (edits !== undefined)) {
                         return {error: 'Provide either old_str/new_str or edits, not both.'};
                     }
-                    const replacements = edits ?? [{old_str: old_str!, new_str}];
+                    const replacements = edits ?? [{old_str: old_str!, new_str, all: replace_all}];
                     let updated = content;
+                    let replaced = 0;
                     for (const [index, edit] of replacements.entries()) {
+                        const label = edits ? `Edit ${index + 1}: ` : '';
                         const occurrences = updated.split(edit.old_str).length - 1;
-                        if (occurrences !== 1) return {error: `Edit ${index + 1}: old_str matches ${occurrences} times; expected exactly once. No changes written.`};
-                        updated = updated.replace(edit.old_str, () => edit.new_str);
+                        if (occurrences === 0) {
+                            // Usually right but for its spacing: show where, so the retry needs no view.
+                            const similarLines = nearMisses(updated, edit.old_str);
+                            return {error: `${label}old_str was not found. No changes written.`,
+                                ...(similarLines && {similarLines, hint: 'Copy the exact text from these lines, indentation included.'})};
+                        }
+                        if (occurrences > 1 && !edit.all) {
+                            const lines = occurrenceLines(updated, edit.old_str).join(', ') + (occurrences > 8 ? ', …' : '');
+                            return {error: `${label}old_str matches ${occurrences} times (lines ${lines}); add surrounding text to pick one, or set ${edits ? 'all' : 'replace_all'} to change every one. No changes written.`};
+                        }
+                        updated = edit.all ? updated.split(edit.old_str).join(edit.new_str) : updated.replace(edit.old_str, () => edit.new_str);
+                        replaced += edit.all ? occurrences : 1;
                     }
                     await writeFile(context.conversationId, path, updated);
 
                     return {
                         success: true as const,
                         path,
-                        replaced: replacements.length,
+                        replaced,
                         delta: updated.length - content.length,
                     };
                 } catch (err) {
@@ -205,6 +225,7 @@ export function createCodeFileTools(context: ToolContext) {
                     return {error: err instanceof Error ? err.message : String(err)};
                 }
             },
+            toModelOutput: codeProjection,
         }),
 
         deleteFileTool: tool({

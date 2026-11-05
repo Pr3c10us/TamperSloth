@@ -6,6 +6,10 @@ export interface BackgroundScript {
     code: string;
     /** The working file it was saved from, where later edits pick it up. */
     sourcePath?: string;
+    /** The chat holding that working file, when not the chat it was made in. */
+    sourceConversationId?: string;
+    /** Fingerprint of the code the working file and the script last shared (see workingFile.ts). */
+    sourceBase?: string;
     urlMatchPattern: string;
     status: "active" | "paused";
     runAt: "document_start" | "document_end" | "document_idle";

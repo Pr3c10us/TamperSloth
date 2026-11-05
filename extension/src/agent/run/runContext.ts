@@ -4,17 +4,40 @@ import {codeContextNote, lineCount} from "@/agent/tools/codeFileText";
 import {serialize} from "@/agent/tools/toolOutput";
 import {initialToolGroups} from "@/agent/tools/toolRuntime";
 import {listFiles, readFile} from "@/storage/codeFiles";
-import {loadScriptsByConversation} from "@/storage/scripts";
+import {loadScripts} from "@/storage/scripts";
+import type {BackgroundScript} from "@/userscripts/types";
+import {linkedHere, syncWorkingFile} from "@/userscripts/workingFile";
 
-/** This chat's working files and saved scripts, so an edit needs no lookup and its tools are ready. */
+/**
+ * A saved script as the run-start note lists it, with this chat's working file brought up to date
+ * first. A file the user deleted stays deleted: without a path, openScript brings it back if needed.
+ */
+async function noteScript(script: BackgroundScript, conversationId: string) {
+    const listed = {id: script.id, name: script.name, lines: lineCount(script.code)};
+    try {
+        if (!linkedHere(script, conversationId) || await readFile(conversationId, script.sourcePath) === null) return listed;
+        const {path, code, state} = await syncWorkingFile(script, conversationId);
+        return {...listed, path, lines: lineCount(code), unsaved: state === "unsaved", diverged: state === "diverged"};
+    } catch {
+        return listed;
+    }
+}
+
+/**
+ * This chat's working files and saved scripts, so an edit needs no lookup and its tools are ready.
+ * Each saved script's working file is refreshed first where that loses nothing, so editing one
+ * starts from its path, with no openScript step.
+ */
 async function loadCodeContext(conversationId: string): Promise<{note: string; hasCode: boolean}> {
-    const [paths, scripts] = await Promise.all([
-        listFiles(conversationId).catch((): string[] => []),
-        loadScriptsByConversation(conversationId).catch(() => []),
-    ]);
+    const all = await loadScripts().catch((): BackgroundScript[] => []);
+    const ours = all.filter(s => s.conversationId === conversationId || linkedHere(s, conversationId));
+    // One at a time: each may rewrite the stored script list.
+    const scripts = [];
+    for (const script of ours) scripts.push(await noteScript(script, conversationId));
+    const paths = await listFiles(conversationId).catch((): string[] => []);
     const files = await Promise.all(paths.slice(0, 20).map(async path => ({path, lines: lineCount(await readFile(conversationId, path).catch(() => null) ?? "")})));
     return {
-        note: codeContextNote(files, scripts.map(s => ({id: s.id, name: s.name, lines: lineCount(s.code), path: s.sourcePath}))),
+        note: codeContextNote(files, scripts),
         hasCode: scripts.length > 0 || paths.some(path => path.startsWith("scripts/")),
     };
 }

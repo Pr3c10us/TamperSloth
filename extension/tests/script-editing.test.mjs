@@ -60,6 +60,29 @@ test('the working file follows a hand edit, unless it has edits of its own', asy
     assert.equal(ahead.store.ts_background_scripts[0].code, 'function b() {}');
 });
 
+test('a hand edit keeps what the working file last shared, so the agent cannot quietly undo it', async () => {
+    const {saveEditedScript, store, storage} = setup([]);
+    const {codeFingerprint, compareWorkingFile} = createLoader()('src/userscripts/workingFile.ts');
+    const linked = plainScript({sourcePath: 'scripts/a.js'});
+    const fileKey = 'ts_file:chat/scripts/a.js';
+
+    await storage.writeFile('chat', 'scripts/a.js', 'function a() {}');
+    const followed = await saveEditedScript(linked, 'function b() {}');
+    assert.equal(followed.sourceBase, codeFingerprint('function b() {}'), 'a file in step follows, and so does what they share');
+    assert.equal(compareWorkingFile(followed, store[fileKey]), 'saved');
+
+    await storage.writeFile('chat', 'scripts/a.js', 'function agentWork() {}');
+    const kept = await saveEditedScript(followed, 'function c() {}');
+    assert.equal(kept.sourceBase, codeFingerprint('function b() {}'));
+    assert.equal(compareWorkingFile(kept, store[fileKey]), 'diverged');
+
+    // Linked to another chat: that chat's file follows, not one named the same here.
+    await storage.writeFile('elsewhere', 'scripts/a.js', 'function c() {}');
+    await saveEditedScript({...kept, code: 'function c() {}', sourceConversationId: 'elsewhere'}, 'function d() {}');
+    assert.equal(store['ts_file:elsewhere/scripts/a.js'], 'function d() {}');
+    assert.equal(store[fileKey], 'function agentWork() {}');
+});
+
 test('a userscript edit reads its header again and keeps what the header does not decide', async () => {
     const {withEditedCode, fetched} = setup([installed()]);
     const code = header('// @match https://b.com/*', '// @require https://cdn.example/lib.js', '// @run-at document-start', '// @grant GM_setValue', '// @version 3');

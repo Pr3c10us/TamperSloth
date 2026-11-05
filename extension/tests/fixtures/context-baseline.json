@@ -4,5 +4,22 @@
   "toolDefinitionChars": 28298,
   "systemPromptChars": 7064,
   "skillContentChars": 23516,
-  "pageTextDefaultChars": 10000
+  "pageTextDefaultChars": 10000,
+  "scriptSession": {
+    "description": "Script session replay before the coding-tool changes (same calls; steps the tools now make unnecessary were still taken).",
+    "create": {
+      "steps": 16,
+      "sentChars": 1304266,
+      "historyChars": 442650,
+      "codeReadChars": 5589,
+      "codeWrittenChars": 22043
+    },
+    "modify": {
+      "steps": 9,
+      "sentChars": 509451,
+      "historyChars": 24792,
+      "codeReadChars": 879,
+      "codeWrittenChars": 127
+    }
+  }
 }

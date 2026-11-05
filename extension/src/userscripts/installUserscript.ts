@@ -1,6 +1,7 @@
 import {loadScripts, saveScript} from "@/storage/scripts";
 import type {BackgroundScript, ImportedUserscript} from "./types";
 import {parseUserscript, readIntegrity, type ParsedUserscript} from "./userscript";
+import {codeFingerprint, linkedChat} from "./workingFile";
 
 /** A parsed userscript with its remote code fetched, ready for the user to review. */
 export interface UserscriptDraft {
@@ -137,6 +138,12 @@ export async function installUserscript(draft: UserscriptDraft, status?: Backgro
         urlMatchPattern: parsed.matches[0] ?? parsed.includes[0] ?? "",
         status: status ?? draft.existing?.status ?? "active",
         runAt: parsed.runAt,
+        // An update keeps the chat working file, which follows it unless it has edits of its own.
+        ...(draft.existing?.sourcePath ? {
+            sourcePath: draft.existing.sourcePath,
+            sourceConversationId: linkedChat(draft.existing),
+            sourceBase: draft.existing.sourceBase ?? codeFingerprint(draft.existing.code),
+        } : {}),
         userscript: {
             ...userscriptFields(parsed),
             requires: draft.requires,

@@ -108,10 +108,12 @@ export function leaseTabTools<T extends Record<string, {execute?: (...args: any[
     const leased: Record<string, unknown> = {};
     for (const [name, definition] of Object.entries(tools)) {
         const execute = definition.execute;
-        leased[name] = !execute || TAB_FREE_TOOLS.has(name) ? definition : {
+        // Saving touches the tab only when asked to reload it.
+        const needsTab = (input: unknown) => !TAB_FREE_TOOLS.has(name) || (name === "saveScript" && Boolean((input as {reload?: boolean})?.reload));
+        leased[name] = !execute || (TAB_FREE_TOOLS.has(name) && name !== "saveScript") ? definition : {
             ...definition,
             execute: async (input: unknown, options: {abortSignal?: AbortSignal}) => {
-                await acquireTab(getTabId(), conversationId, options?.abortSignal ?? signal);
+                if (needsTab(input)) await acquireTab(getTabId(), conversationId, options?.abortSignal ?? signal);
                 return execute(input, options);
             },
         };

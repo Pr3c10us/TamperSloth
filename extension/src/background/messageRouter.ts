@@ -48,6 +48,15 @@ export function installMessageRouter() {
         if (message.type === CONNECT_DECISION) return false;
         // "Check for updates" from the script viewer's tab; installUserscriptUpdates answers it.
         if (message.type === CHECK_USERSCRIPT_UPDATE) return false;
+        // The agent saved, paused or removed a script: answer once the browser runs what
+        // storage now holds, so its next reload gets the change. Storage's own change
+        // event may not have arrived yet, so this registers again rather than waiting on it.
+        if (message.type === 'SYNC_SCRIPTS') {
+            if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL(''))) return false;
+            invalidateCache();
+            syncRegisteredScripts().then(() => sendResponse({ok: true}), error => sendResponse({error: error?.message || String(error)}));
+            return true;
+        }
         // After a saved script is paused, resumed, deleted or imported: re-register
         // first so reloaded pages get the change, then reload every tab its pattern
         // covers. Any extension page may ask, including the script viewer's own tab.

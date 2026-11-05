@@ -49,9 +49,13 @@ See [DeepSeek's thinking-mode guide](https://api-docs.deepseek.com/guides/thinki
   results retain error/status/identifier fields and an archive reference. Full
   tool results remain in the conversation. `readToolResult` retrieves exact
   character windows, original inputs, or screenshot images across turns.
-- At 48,000 message characters, older large results become short receipts.
-  The latest three tool messages, loaded guidance, user answers, tool inputs,
-  call/result IDs, and reasoning/signature metadata are preserved. This is a
+- At 48,000 message characters, older large results become short receipts,
+  and older file writes (600+ characters of code) keep their path but replace
+  the code with a note: the file holds it, where a view or search reads it fresh.
+  The latest three tool messages, loaded guidance, user answers, other tool
+  inputs, call/result IDs, and reasoning/signature metadata are preserved.
+  Gemini's signed call parts are never changed; for Claude a changed write
+  counts as a history change, so earlier thinking is removed as described above. This is a
   compaction trigger, not a hard context limit: large user inputs and reasoning
   can still exceed it. Compaction is sticky within the run.
 - Recent observations, saved-script references, and user decisions are retained
@@ -72,6 +76,48 @@ replace repeated narration, and specialized instructions are loaded on demand.
 
 The page-text schema default and console `.slice(-0)` cap bugs are fixed. Virtual
 file listings now return paths that the read/edit tools can consume directly.
+
+## Writing and editing code
+
+Scripts are written in chat working files and saved as browser scripts. The
+tools aim to keep code out of the model's context unless it needs it, and to
+need fewer steps:
+
+- File views, searches, line edits and `openScript` reach the model as plain
+  text: a header line, then `12<TAB>code` lines. Inside JSON every quote, tab
+  and newline of the code was escaped and line numbers were padded. A 5,000-character view
+  now shows about 15% more lines (69 instead of 60 in the replay below).
+- A failed `strReplaceTool` says where to look. Text that wasn't found returns
+  the lines holding its first line, ignoring spacing. Text found several times
+  returns their line numbers. `replace_all` (or `all` per edit) does a rename
+  in one call.
+- `openScript` takes `query`, so opening a script from another chat and
+  finding the code to change is one call.
+- `executeContentScript` returns the browser's error instead of `null`. For a
+  syntax error it adds the line, counted in the file rather than the
+  wrapper, and the code around it, ready for `replaceLines`.
+- `saveScript` (and `toggleScript`, `removeScript`) returns once the
+  background has registered what storage holds. Before this, a reload right
+  after a save could beat the registration and load the page without the new
+  version. `reload: true` then reloads the tab in the same call.
+
+A saved script links to one working file: `sourcePath` in the chat
+`sourceConversationId` (the chat it was made in when absent). `sourceBase`
+fingerprints the code the two last shared, so `workingFile.ts` can tell which
+side moved:
+
+- At the start of each run, this chat's linked files are synced: a file left
+  behind by a save made elsewhere (a hand edit, an update, another chat) is
+  refreshed. The run's notes give each such script its path, plus `unsaved` or
+  `diverged`, so editing one needs no `openScript`. A file deleted in
+  Settings → Code stays deleted. Its script is listed without a path, and
+  `openScript` restores the file from the saved code.
+- A file with edits of its own is never overwritten. If the saved script also
+  changed, `saveScript` refuses to undo that change unless told `overwrite`,
+  and `openScript` explains the choice. A file that is merely behind is refused
+  too, since saving it would revert the newer code.
+- Opening a script from another chat links it to this chat's file. Hand edits
+  and userscript updates keep the link and the shared fingerprint.
 
 ## Faster actions
 
@@ -162,6 +208,22 @@ preservation, historical text turns, and empty DeepSeek reasoning. Streaming
 checks cover all three providers, including OpenAI encrypted reasoning completed
 after an initially partial item. Tests make no live provider requests and do not
 control a real browser tab.
+
+The script session replay runs the real file and script tools on in-memory
+storage, through the runtime's projections and compaction, for a 298-line
+script (20,099 characters). The calls are fixed, and a step the tools make
+unnecessary is skipped:
+
+| Run | Steps | Sent chars before | Sent chars after | History chars before → after |
+| --- | ---: | ---: | ---: | ---: |
+| Create, test, edit, save, verify | 16 → 15 | 1,304,266 | 1,212,998 (−7.0%) | 442,650 → 403,283 |
+| Change a script from another chat | 9 → 8 | 509,451 | 450,135 (−11.6%) | 24,792 → 18,287 |
+
+The new parameters and wording add 130 characters to the scripting tools and
+guidance, which are counted in both runs. The replay never crosses the
+48,000-character compaction trigger, so the write compaction above saves
+nothing in it, and it does not count the steps a failed test run's error saves
+over finding the cause another way.
 
 The audit baseline is stored in `tests/fixtures/context-baseline.json`. These
 measurements count locally serialized schema, prompt, and guidance characters,

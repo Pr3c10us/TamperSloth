@@ -13,6 +13,27 @@ function sameDocument(a: string, b?: string) {
     } catch { return false; }
 }
 
+/** Reloads a tab and waits for it to finish loading. */
+export async function reloadAndWait(chrome: ToolContext["chrome"], tabId: number, {bypassCache = false, timeoutMs = 15000} = {}) {
+    const startTime = Date.now();
+    await chrome.tabs.reload(tabId, {bypassCache});
+    await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+            chrome.tabs.onUpdated.removeListener(listener);
+            reject(new Error(`Reload timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+        const listener = (updatedTabId: number, changeInfo: {status?: string}) => {
+            if (updatedTabId !== tabId || changeInfo.status !== "complete") return;
+            clearTimeout(timer);
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+    });
+    const tab = await chrome.tabs.get(tabId);
+    return {url: tab.url, title: tab.title, timeMs: Date.now() - startTime};
+}
+
 export function createNavigationTools(context: ToolContext) {
     const {chrome} = context;
     return {
@@ -224,41 +245,8 @@ export function createNavigationTools(context: ToolContext) {
                     .describe("Maximum wait time in ms for the page to load (default: 15000)"),
             }),
             execute: async ({bypassCache, timeout}) => {
-                const timeoutMs = timeout ?? 15000;
-                const startTime = Date.now();
-
-                await chrome.tabs.reload(context.tabId, {bypassCache: bypassCache ?? false});
-
-                // Wait for load complete
-                await new Promise<void>((resolve, reject) => {
-                    const timer = setTimeout(() => {
-                        chrome.tabs.onUpdated.removeListener(listener);
-                        reject(new Error(`Reload timed out after ${timeoutMs}ms`));
-                    }, timeoutMs);
-
-                    const listener = (
-                        updatedTabId: number,
-                        changeInfo: { status?: string }
-                    ) => {
-                        if (updatedTabId !== context.tabId) return;
-                        if (changeInfo.status === "complete") {
-                            clearTimeout(timer);
-                            chrome.tabs.onUpdated.removeListener(listener);
-                            resolve();
-                        }
-                    };
-
-                    chrome.tabs.onUpdated.addListener(listener);
-                });
-
-                const tab = await chrome.tabs.get(context.tabId);
-                return {
-                    success: true,
-                    url: tab.url,
-                    title: tab.title,
-                    bypassCache: bypassCache ?? false,
-                    timeMs: Date.now() - startTime,
-                };
+                const page = await reloadAndWait(chrome, context.tabId, {bypassCache: bypassCache ?? false, timeoutMs: timeout ?? 15000});
+                return {success: true, ...page, bypassCache: bypassCache ?? false};
             },
         }),
     };

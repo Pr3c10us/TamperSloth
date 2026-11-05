@@ -49,11 +49,14 @@ export async function deleteScript(id: string): Promise<void> {
     await clearScriptStorage(id);
 }
 
-export async function updateScriptStatus(id: string, status: "active" | "paused"): Promise<void> {
+/** Changes some fields of the stored copy, so whatever else changed since it was loaded stays. */
+export async function updateScript(id: string, changes: Partial<BackgroundScript>): Promise<void> {
     const all = await loadScripts();
     const script = all.find((s) => s.id === id);
     if (script) {
-        script.status = status;
+        Object.assign(script, changes);
         await saveScripts(all);
     }
 }
+
+export const updateScriptStatus = (id: string, status: "active" | "paused") => updateScript(id, {status});
