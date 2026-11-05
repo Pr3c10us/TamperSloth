@@ -260,6 +260,23 @@ test('long files build up piece by piece', async () => {
     assert.match((await invoke(tools, 'createFileTool', {path: 'scripts/a.js', file_text: 'again'})).output.error, /appendToFile/);
 });
 
+test('a whole file goes in one call, and writes sent together land in the order sent', async () => {
+    const {tools, loader, files} = fixture();
+    const runtime = loader('src/agent/tools/toolRuntime.ts').createToolRuntime(tools, {request: 'script', findPrevious: () => undefined});
+    assert.doesNotMatch(runtime.tools.createFileTool.description + runtime.tools.appendToFile.description + runtime.initialGuidance, /150 lines/);
+    assert.match(runtime.initialGuidance, /one createFileTool call/);
+    // One reply's calls start together; each append reads the file before writing it.
+    await Promise.all([
+        invoke(tools, 'createFileTool', {path: 'a.js', file_text: 'one'}),
+        invoke(tools, 'appendToFile', {path: 'a.js', text: 'two'}),
+        invoke(tools, 'appendToFile', {path: 'a.js', text: 'three'}),
+        invoke(tools, 'strReplaceTool', {path: 'a.js', old_str: 'two', new_str: 'TWO'}),
+        invoke(tools, 'createFileTool', {path: 'b.js', file_text: 'other'}),
+    ]);
+    assert.equal(files.get('a.js'), 'one\nTWO\nthree');
+    assert.equal(files.get('b.js'), 'other');
+});
+
 test('search finds code in a huge file without reading it', async () => {
     const code = `${numberedCode(5000)}\nfunction hideBanner() {\n  banner.remove();\n}`;
     const {tools} = fixture({files: new Map([['a.js', code]])});

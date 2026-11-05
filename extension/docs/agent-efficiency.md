@@ -83,6 +83,12 @@ Scripts are written in chat working files and saved as browser scripts. The
 tools aim to keep code out of the model's context unless it needs it, and to
 need fewer steps:
 
+- A new file is written in one `createFileTool` call. Writes used to go in
+  pieces of at most 150 lines, each a step of its own where the model thought
+  again before the next piece. A reply that hits the output limit loses
+  nothing (see `writeRecovery.ts`): its finished lines are saved and the next
+  step carries on with `appendToFile`. Writes to one file that arrive in the
+  same reply run one at a time, in the order sent.
 - File views, searches, line edits and `openScript` reach the model as plain
   text: a header line, then `12<TAB>code` lines. Inside JSON every quote, tab
   and newline of the code was escaped and line numbers were padded. A 5,000-character view
@@ -216,11 +222,11 @@ unnecessary is skipped:
 
 | Run | Steps | Sent chars before | Sent chars after | History chars before → after |
 | --- | ---: | ---: | ---: | ---: |
-| Create, test, edit, save, verify | 16 → 15 | 1,304,266 | 1,212,998 (−7.0%) | 442,650 → 403,283 |
-| Change a script from another chat | 9 → 8 | 509,451 | 450,135 (−11.6%) | 24,792 → 18,287 |
+| Create, test, edit, save, verify | 16 → 14 | 1,304,266 | 1,140,526 (−12.6%) | 442,650 → 387,032 |
+| Change a script from another chat | 9 → 8 | 509,451 | 448,855 (−11.9%) | 24,792 → 18,287 |
 
-The new parameters and wording add 130 characters to the scripting tools and
-guidance, which are counted in both runs. The replay never crosses the
+The scripting tools and guidance end up 30 characters shorter than before
+(53,821 for a script request), counted in both runs. The replay never crosses the
 48,000-character compaction trigger, so the write compaction above saves
 nothing in it, and it does not count the steps a failed test run's error saves
 over finding the cause another way.

@@ -174,7 +174,7 @@ export function cutOffNote(reports: WriteReport[], {kept, reasoning}: {kept: boo
     if (kept) lines.push("Your text so far is already shown to the user. Continue it from exactly where it stopped, without repeating any of it.");
     if (!reports.length && !kept) lines.push("Nothing was written yet, so your thinking used up the limit. Act now with little further thought.");
     if (reasoning) lines.push(`What you had worked out before the cut-off:\n${reasoning}`);
-    lines.push("Keep each write to at most 150 lines, with appendToFile for what comes next.");
+    lines.push("Write the rest in one appendToFile call; if that is cut off too, its finished lines are kept as well.");
     return lines.join("\n");
 }
 

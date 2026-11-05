@@ -10,8 +10,26 @@ export function codeProjection({toolCallId, output}: {toolCallId: string; output
     return {type: "text" as const, value: codeResultText(output) ?? serialize(compactToolOutput(output, toolCallId))};
 }
 
+/**
+ * Calls in one reply run together, but each write reads the file and then
+ * replaces it: writes to the same file go one at a time, in the order sent.
+ */
+function writesInOrder<T extends Record<string, {execute?: (input: any, options: any) => any}>>(tools: T, names: (keyof T)[]): T {
+    const queues = new Map<string, Promise<unknown>>();
+    const wrapped = {...tools};
+    for (const name of names) {
+        const execute = tools[name].execute!;
+        wrapped[name] = {...tools[name], execute: (input: {path: string}, options: unknown) => {
+            const run = (queues.get(input.path) ?? Promise.resolve()).catch(() => {}).then(() => execute(input, options));
+            queues.set(input.path, run);
+            return run;
+        }};
+    }
+    return wrapped;
+}
+
 export function createCodeFileTools(context: ToolContext) {
-    return {
+    return writesInOrder({
         viewCodeFiles: tool({
             description:
                 "Read numbered file lines, find lines with query, or list files with a path ending in /. In a long file, find the code with query rather than paging through it. Line-number prefixes are display-only.",
@@ -99,10 +117,10 @@ export function createCodeFileTools(context: ToolContext) {
 
         createFileTool: tool({
             description:
-                "Create a virtual file. Fails if it exists. Write at most about 150 lines per call and add the rest with appendToFile; edit existing files with strReplaceTool or replaceLines.",
+                "Create a virtual file with its whole content in one call. Fails if it exists; edit existing files with strReplaceTool or replaceLines.",
             inputSchema: z.object({
                 path: z.string().describe('Virtual path where the new file should live'),
-                file_text: z.string().describe("The file's content, or its first piece when appendToFile will add the rest"),
+                file_text: z.string().describe("The file's whole content"),
             }),
             execute: async ({path, file_text}) => {
                 try {
@@ -124,7 +142,7 @@ export function createCodeFileTools(context: ToolContext) {
 
         appendToFile: tool({
             description:
-                "Add the next piece to the end of a virtual file, on a new line. Write long files this way, at most about 150 lines per call. Send only the new code, never what is already saved.",
+                "Add code to the end of a virtual file, on a new line, e.g. to carry on after a reply was cut off. Send only the new code, never what is already saved.",
             inputSchema: z.object({
                 path: z.string().describe('Virtual path to add to; created if it does not exist'),
                 text: z.string().min(1).describe('The code that comes next'),
@@ -243,5 +261,5 @@ export function createCodeFileTools(context: ToolContext) {
                 }
             },
         }),
-    };
+    }, ["createFileTool", "appendToFile", "strReplaceTool", "replaceLines", "deleteFileTool"]);
 }

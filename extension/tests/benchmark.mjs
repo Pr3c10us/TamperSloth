@@ -135,8 +135,8 @@ const saveAndReload = (input) => [
     ({supports}) => supports('saveScript', 'reload') ? null : {name: 'reloadPage', synthetic: {success: true, url: 'https://example.com/', title: 'Example', timeMs: 900}},
 ];
 const createRun = await scriptSession('Create a script to hide the banner', results[2].afterChars, [
-    {name: 'createFileTool', input: {path: scriptPath, file_text: sessionLines.slice(0, 150).join('\n')}},
-    {name: 'appendToFile', input: {path: scriptPath, text: sessionLines.slice(150).join('\n')}},
+    // The whole file in one call; it used to go in pieces of at most 150 lines.
+    {name: 'createFileTool', input: {path: scriptPath, file_text: sessionLines.join('\n')}},
     {name: 'executeContentScript', input: {path: scriptPath}},
     check,
     {name: 'viewCodeFiles', input: {path: scriptPath, query: 'promo-12"'}},
