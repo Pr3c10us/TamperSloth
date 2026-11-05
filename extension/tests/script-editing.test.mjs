@@ -17,7 +17,7 @@ function setup(scripts, files = {}) {
         },
         TextEncoder, TextDecoder, btoa,
     }});
-    return {store, fetched, ...load('src/scripts/editScript.ts'), storage: load('src/chat/lib/storage.ts')};
+    return {store, fetched, ...load('src/userscripts/editScript.ts'), storage: load('src/storage/storage.ts')};
 }
 
 const plainScript = (changes = {}) => ({
@@ -97,7 +97,7 @@ test('a rename stays the same script', async () => {
 });
 
 test('syntax problems are found with their line, and valid script code passes', () => {
-    const {findSyntaxProblem} = createLoader()('src/scripts/scriptSyntax.ts');
+    const {findSyntaxProblem} = createLoader()('src/userscripts/scriptSyntax.ts');
     assert.equal(findSyntaxProblem('function a() {\n  return /x\\/y/.test(`t${1}`) ? a?.b ?? 1 / 2 : class { #p = 1; };\n}'), null);
     assert.equal(findSyntaxProblem('const x = 1;\nreturn x;'), null, 'a script body runs inside a function');
     const broken = 'function a() {\n  const x = ;\n}';

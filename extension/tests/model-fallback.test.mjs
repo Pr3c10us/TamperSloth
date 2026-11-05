@@ -28,7 +28,7 @@ function setup({keys = {}, selected = null, signedIn = false} = {}) {
         removeItem: key => items.delete(key),
     };
     const load = createLoader({globals: {localStorage, atob, btoa, Response, TextDecoderStream, TransformStream, ReadableStream}});
-    const {reconcileSelectedModel} = load('src/chat/lib/modelFallback.ts');
+    const {reconcileSelectedModel} = load('src/agent/models/modelFallback.ts');
     const saved = () => items.has('ts_selected_model') ? JSON.parse(items.get('ts_selected_model')) : null;
     return {reconcile: async added => plain(await reconcileSelectedModel(added)), saved, items};
 }

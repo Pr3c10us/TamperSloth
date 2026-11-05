@@ -34,7 +34,7 @@ function fixture({animate=false,measurable=true,chrome}={}) {
         setTimeout:(fn,ms)=>{const id=++sequence;timers.set(id,{fn,ms});return id;},clearTimeout:id=>timers.delete(id),
         setInterval:fn=>{const id=++sequence;intervals.set(id,fn);return id;},clearInterval:id=>intervals.delete(id),
     }});
-    const run=load('src/background/pageGuidance.ts').pageGuidance;
+    const run=load('src/injected/pageGuidance.ts').pageGuidance;
     const fire=(type,hit=target,isTrusted=true,extra={})=>{
         const event={type,isTrusted,composedPath:()=>[hit],defaultPrevented:false,stopped:false,preventDefault(){this.defaultPrevented=true;},stopImmediatePropagation(){this.stopped=true;},...extra};
         for(const fn of [...(windowListeners.get(type)??[])]){fn(event);if(event.stopped) return event;}
@@ -56,7 +56,7 @@ function timedToolFixture(poll, start={status:'waiting',ready:true}) {
     }},tabs:{get:async()=>({url:'https://example.com',title:'Page'})}};
     const load=createLoader({globals:{chrome,Date:class extends Date {static now(){return elapsed;}},
         setTimeout:(fn,ms)=>{elapsed+=ms;queueMicrotask(fn);return 0;}}});
-    const tool=load('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{}).waitForUserAction;
+    const tool=load('src/agent/tools/browserTools.ts').createBrowserTools(()=>7,()=>{}).waitForUserAction;
     return {tool,calls,elapsed:()=>elapsed,run:input=>tool.execute(tool.inputSchema.parse(input),{abortSignal:new AbortController().signal})};
 }
 
@@ -182,7 +182,7 @@ test('observation failures return fresh evidence and recovery guidance instead o
         if(msg.operation==='perception') return {screenshot:'data:image/png;base64,aW1hZ2U=',metadata:{freshness:{settled:true}}};
         return {ok:true};
     }},tabs:{get:async()=>({url:'https://example.com',title:'Current page'})}};
-    const tools=createLoader({globals:{chrome}})('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{});
+    const tools=createLoader({globals:{chrome}})('src/agent/tools/browserTools.ts').createBrowserTools(()=>7,()=>{});
     const input=tools.waitForUserAction.inputSchema.parse({selector:'#stale',instruction:'Select Rectangle'});
     const result=await tools.waitForUserAction.execute(input,{abortSignal:new AbortController().signal});
     assert.equal(result.status,'needsReview');assert.equal(result.recoverable,true);assert.equal(result.error,undefined);
@@ -200,7 +200,7 @@ test('failed highlights retry transient targets using one stable annotation ID',
         }
         return {ok:true};
     }}};
-    const tools=createLoader({globals:{chrome}})('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{});
+    const tools=createLoader({globals:{chrome}})('src/agent/tools/browserTools.ts').createBrowserTools(()=>7,()=>{});
     const input=tools.annotatePage.inputSchema.parse({action:'draw',selector:'#target',kind:'highlight'});
     const result=await tools.annotatePage.execute(input,{abortSignal:new AbortController().signal});
     assert.equal(result.ok,true);assert.equal(result.attempts,3);assert.equal(drawings.length,3);
@@ -215,7 +215,7 @@ test('a highlight that still fails returns page evidence and requests another vi
         if(msg.operation==='perception') return {screenshot:'data:image/png;base64,aW1hZ2U='};
         return {ok:true};
     }}};
-    const tools=createLoader({globals:{chrome}})('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{});
+    const tools=createLoader({globals:{chrome}})('src/agent/tools/browserTools.ts').createBrowserTools(()=>7,()=>{});
     const input=tools.annotatePage.inputSchema.parse({action:'draw',selector:'#old'});
     const result=await tools.annotatePage.execute(input,{abortSignal:new AbortController().signal});
     assert.equal(attempts,3);assert.equal(result.status,'needsReview');assert.equal(result.error,undefined);
@@ -229,7 +229,7 @@ test('highlight retries stop on cancellation',async()=>{
         if(msg.operation==='guidance' && msg.input.action==='draw'){attempts++;controller.abort();return {error:'Target disappeared'};}
         return {ok:true};
     }}};
-    const tools=createLoader({globals:{chrome}})('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{});
+    const tools=createLoader({globals:{chrome}})('src/agent/tools/browserTools.ts').createBrowserTools(()=>7,()=>{});
     const input=tools.annotatePage.inputSchema.parse({action:'draw',selector:'#target'});
     await assert.rejects(tools.annotatePage.execute(input,{abortSignal:controller.signal}),/Aborted/);
     assert.equal(attempts,1);
@@ -238,7 +238,7 @@ test('highlight retries stop on cancellation',async()=>{
 test('already-completed tool starts return directly and do not poll a nonexistent wait',async()=>{
     const calls=[];
     const chrome={runtime:{sendMessage:async msg=>{calls.push(msg.input.action);return {status:'completed',alreadySatisfied:true};}},tabs:{get:async()=>({url:'https://example.com',title:'Page'})}};
-    const tools=createLoader({globals:{chrome}})('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{});
+    const tools=createLoader({globals:{chrome}})('src/agent/tools/browserTools.ts').createBrowserTools(()=>7,()=>{});
     const input=tools.waitForUserAction.inputSchema.parse({selector:'#target',instruction:'Select Rectangle',completion:{selector:'#rectangle',state:'pressed'}});
     const result=await tools.waitForUserAction.execute(input,{abortSignal:new AbortController().signal});
     assert.equal(result.alreadySatisfied,true);assert.deepEqual(calls.filter(action=>action!=='controls'),['start']);
@@ -302,7 +302,7 @@ test('an idle user ends the wait early while page activity restarts the idle win
 });
 
 test('the guidance guard holds text-only fallbacks after an observer failure and resumes the overlay',()=>{
-    const {createGuidanceGuard}=createLoader()('src/chat/lib/guidanceGuard.ts');
+    const {createGuidanceGuard}=createLoader()('src/agent/run/guidanceGuard.ts');
     const guard=createGuidanceGuard();
     assert.equal(guard.holding(),false);
     guard.observe('waitForUserAction',{status:'needsReview',observationPhase:'notStarted'});
@@ -325,7 +325,7 @@ test('the guidance guard holds text-only fallbacks after an observer failure and
 });
 
 test('the guidance guard stops nudging after repeated failures',()=>{
-    const {createGuidanceGuard}=createLoader()('src/chat/lib/guidanceGuard.ts');
+    const {createGuidanceGuard}=createLoader()('src/agent/run/guidanceGuard.ts');
     const guard=createGuidanceGuard();
     for(let i=0;i<3;i++) guard.observe('waitForUserAction',{status:'needsReview',observationPhase:'timedOut'});
     assert.equal(guard.holding(),false);assert.equal(guard.resume(),false);
@@ -362,7 +362,7 @@ test('the first idle timeout allows a check-in instead of another long wait',asy
     assert.equal(result.status,'needsReview');assert.equal(result.checkInAllowed,true);assert.equal(result.actionObserved,false);
     assert.ok(result.screenshot);assert.ok(result.currentState);
     assert.match(result.hint,/Do not silently start another wait/);assert.doesNotMatch(result.hint,/45000/);
-    const guard=createLoader()('src/chat/lib/guidanceGuard.ts').createGuidanceGuard();
+    const guard=createLoader()('src/agent/run/guidanceGuard.ts').createGuidanceGuard();
     guard.observe('waitForUserAction',result);
     assert.equal(guard.holding(),false);assert.equal(guard.resume(),false);
 });
@@ -622,8 +622,8 @@ test('ending a run disposes the cursor and an unfocused keyboard event does not 
 test('run cleanup covers all visited tabs and releases their debugger sessions',async()=>{
     const disposed=[],detached=[],removed=[];
     const chrome={storage:{session:{get:async()=>({ts_guidance_tab_7:true,ts_guidance_tab_9:true,unrelated:true}),remove:async keys=>removed.push(...keys)}}};
-    const load=createLoader({globals:{chrome},mocks:{'./pageGuidance':{runPageGuidance:async (id,args)=>disposed.push([id,args.action])}}});
-    await load('src/background/panelLifecycle.ts').cleanupBrowserGuidance({status:()=>[7,10],detach:async id=>detached.push(id)});
+    const load=createLoader({globals:{chrome},mocks:{'src/injected/pageGuidance.ts':{runPageGuidance:async (id,args)=>disposed.push([id,args.action])}}});
+    await load('src/background/panel/panelLifecycle.ts').cleanupBrowserGuidance({status:()=>[7,10],detach:async id=>detached.push(id)});
     assert.deepEqual(disposed,[[7,'dispose'],[9,'dispose'],[10,'dispose']]);
     assert.deepEqual(detached,[7,9,10]);assert.deepEqual(removed,['ts_guidance_tab_7','ts_guidance_tab_9']);
 });
@@ -632,8 +632,8 @@ test('closing the last extension panel disposes guidance and blocks further inpu
     let connected;const disposed=[],closed=[],detached=[];
     const chrome={runtime:{id:'test-extension',getURL:()=> 'chrome-extension://test-extension/',onConnect:{addListener:fn=>{connected=fn;}}},
         storage:{session:{get:async()=>({ts_guidance_tab_7:true}),remove:async()=>{}}}};
-    const load=createLoader({globals:{chrome},mocks:{'./pageGuidance':{runPageGuidance:async id=>disposed.push(id)}}});
-    load('src/background/panelLifecycle.ts').installPanelLifecycle({status:()=>[7],detach:async id=>detached.push(id),setPanelClosed:value=>closed.push(value)});
+    const load=createLoader({globals:{chrome},mocks:{'src/injected/pageGuidance.ts':{runPageGuidance:async id=>disposed.push(id)}}});
+    load('src/background/panel/panelLifecycle.ts').installPanelLifecycle({status:()=>[7],detach:async id=>detached.push(id),setPanelClosed:value=>closed.push(value)});
     function port(){let disconnect;return {name:'tampersloth-panel',sender:{id:'test-extension',url:'chrome-extension://test-extension/index.html'},onDisconnect:{addListener:fn=>{disconnect=fn;}},close:()=>disconnect()};}
     const first=port(),second=port();connected(first);connected(second);first.close();
     assert.deepEqual(closed,[false,false]);assert.equal(disposed.length,0);
@@ -644,7 +644,7 @@ test('closing the last extension panel disposes guidance and blocks further inpu
 test('tool waits cancel on abort and return current page metadata after completion',async()=>{
     const calls=[];let polls=0;
     const chrome={runtime:{sendMessage:async msg=>{calls.push(msg.input);return msg.input.action==='poll' ? {status:++polls===1?'waiting':'completed'} : {status:'waiting'};}},tabs:{get:async()=>({url:'https://example.com/updated',title:'Updated'})}};
-    const load=createLoader({globals:{chrome}}), tools=load('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{});
+    const load=createLoader({globals:{chrome}}), tools=load('src/agent/tools/browserTools.ts').createBrowserTools(()=>7,()=>{});
     const schema=tools.waitForUserAction.inputSchema;
     const input=schema.parse({selector:'#target',instruction:'Continue'});
     const controller=new AbortController();
@@ -737,7 +737,7 @@ test('coordinate fallback unlocks only after repeated selector failures and retu
         if(msg.operation==='accessibility') return {nodes:[]};
         return {ok:true};
     }},tabs:{get:async()=>({url:'https://figma.com',title:'Figma'})}};
-    const tools=createLoader({globals:{chrome}})('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{});
+    const tools=createLoader({globals:{chrome}})('src/agent/tools/browserTools.ts').createBrowserTools(()=>7,()=>{});
     const schema=tools.waitForUserAction.inputSchema,options={abortSignal:new AbortController().signal};
     const regional=schema.parse({region:{x:300,y:200,width:40,height:40},instruction:'Pick the Frame tool'});
     await assert.rejects(tools.waitForUserAction.execute(regional,options),/unlocks after 2/);
@@ -760,7 +760,7 @@ test('region steps check a screenshot once the user interacts elsewhere and paus
         if(msg.operation==='perception') return {screenshot:'data:image/png;base64,aW1hZ2U=',metadata:{}};
         return {ok:true};
     }},tabs:{get:async()=>({url:'https://figma.com',title:'Figma'})}};
-    const tools=createLoader({globals:{chrome}})('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{});
+    const tools=createLoader({globals:{chrome}})('src/agent/tools/browserTools.ts').createBrowserTools(()=>7,()=>{});
     const schema=tools.waitForUserAction.inputSchema,options={abortSignal:new AbortController().signal};
     for(const selector of ['#a','#b']) await tools.waitForUserAction.execute(schema.parse({selector,instruction:'Draw a frame'}),options);
     failing=false;
@@ -1057,7 +1057,7 @@ test('errors raised in the page come back with their reason instead of "unavaila
     const calls=[];
     const chrome={storage:{session:{set:async()=>{}}},runtime:{getURL:path=>path},
         scripting:{executeScript:async options=>{calls.push(options.args[0]);return [{result:{guidanceError:'Guidance selector is ambiguous (3 matches)'}}];}}};
-    const {runPageGuidance}=createLoader({globals:{chrome}})('src/background/pageGuidance.ts');
+    const {runPageGuidance}=createLoader({globals:{chrome}})('src/injected/pageGuidance.ts');
     await assert.rejects(runPageGuidance(7,{action:'start'}),/ambiguous \(3 matches\)/);
     assert.equal(calls[0].reportErrors,true);
 });
@@ -1090,7 +1090,7 @@ test('the overlay is injected once per build; later calls run the installed copy
         scripting:{executeScript:async ({func,args})=>{calls.push(func.name);return [{result:func(...args)}];}}};
     const page=createLoader({globals:{chrome,window:f.window,document:f.document,location:{href:'https://example.com'},innerWidth:800,innerHeight:600,
         getComputedStyle:()=>({visibility:'visible'}),matchMedia:()=>({matches:true}),requestAnimationFrame:fn=>{fn();return 0;},cancelAnimationFrame:()=>{},
-        MutationObserver:class{observe(){}disconnect(){}},ResizeObserver:class{observe(){}unobserve(){}disconnect(){}},sessionStorage:{getItem:()=>null,setItem(){},removeItem(){}}}})('src/background/pageGuidance.ts');
+        MutationObserver:class{observe(){}disconnect(){}},ResizeObserver:class{observe(){}unobserve(){}disconnect(){}},sessionStorage:{getItem:()=>null,setItem(){},removeItem(){}}}})('src/injected/pageGuidance.ts');
     await page.runPageGuidance(7,{action:'agentLock',locked:true});
     await page.runPageGuidance(7,{action:'agentLock',locked:false});
     await page.runPageGuidance(7,{action:'cursor',method:'Input.dispatchMouseEvent',params:{type:'mouseMoved',x:1,y:1}});
@@ -1106,11 +1106,11 @@ test('the overlay is injected once per build; later calls run the installed copy
 });
 
 test('the browser service keeps every guidance field the tools send',()=>{
-    const {browserSchemas}=createLoader()('src/chat/lib/browserSchemas.ts');
+    const {browserSchemas}=createLoader()('src/shared/browserSchemas.ts');
     const parsed=browserSchemas.guidance.parse({action:'start',tabId:7,target:{ref:'c4'},path:[{x:1,y:2},{x:3,y:4}],shape:'ellipse',completion:{state:'expanded'}});
     assert.equal(parsed.target.ref,'c4');assert.equal(parsed.path.length,2);assert.equal(parsed.shape,'ellipse');assert.equal(parsed.completion.state,'expanded');
     assert.throws(()=>browserSchemas.guidance.parse({action:'start',target:{role:'button'}}),/ref, role\+name, or text/);
-    const tools=createLoader()('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{});
+    const tools=createLoader()('src/agent/tools/browserTools.ts').createBrowserTools(()=>7,()=>{});
     assert.equal('target' in tools.annotatePage.inputSchema.shape,true);assert.equal('query' in tools.annotatePage.inputSchema.shape,false);
 });
 
@@ -1125,7 +1125,7 @@ test('a completed step hands over the controls it opened once the page settles',
         return {ok:true};
     }},tabs:{get:async()=>({url:'https://example.com',title:'Page'})}};
     const load=createLoader({globals:{chrome,Date:class extends Date {static now(){return elapsed;}},setTimeout:(fn,ms)=>{elapsed+=ms;queueMicrotask(fn);return 0;}}});
-    const tool=load('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{}).waitForUserAction;
+    const tool=load('src/agent/tools/browserTools.ts').createBrowserTools(()=>7,()=>{}).waitForUserAction;
     const result=await tool.execute(tool.inputSchema.parse({target:{ref:'c3'},instruction:'Open the menu'}),{abortSignal:new AbortController().signal});
     assert.equal(messages.find(msg=>msg.input.action==='start').input.target.ref,'c3');
     assert.equal(result.status,'completed');assert.equal(result.newControls[0],'c7 menuitem "Settings"');assert.equal(result.controls.length,1);
@@ -1140,7 +1140,7 @@ test('a target that does not resolve returns its candidates without a screenshot
         if(msg.input.action==='start') return {error:'Guidance target is ambiguous: 2 controls match "Settings"; pass one ref. Candidates: c2 link "Settings" in nav; c9 menuitem "Settings" in menu'};
         return {ok:true};
     }},tabs:{get:async()=>({url:'https://example.com',title:'Page'})}};
-    const tool=createLoader({globals:{chrome}})('src/chat/lib/browserTools.ts').createBrowserTools(()=>7,()=>{}).waitForUserAction;
+    const tool=createLoader({globals:{chrome}})('src/agent/tools/browserTools.ts').createBrowserTools(()=>7,()=>{}).waitForUserAction;
     const result=await tool.execute(tool.inputSchema.parse({target:{text:'Settings'},instruction:'Open Settings'}),{abortSignal:new AbortController().signal});
     assert.equal(result.status,'needsReview');assert.equal(result.observationPhase,'notStarted');
     assert.match(result.reason,/c9 menuitem "Settings" in menu/);assert.match(result.hint,/Pick the intended ref/);

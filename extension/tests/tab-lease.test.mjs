@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createLoader} from './load-ts.mjs';
 
-const fresh = () => createLoader()('src/chat/lib/tabLease.ts');
+const fresh = () => createLoader()('src/agent/tools/tabLease.ts');
 const settled = async promise => {
     let done = false;
     promise.then(() => { done = true; }, () => { done = true; });

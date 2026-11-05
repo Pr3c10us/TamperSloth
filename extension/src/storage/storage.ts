@@ -1,0 +1,326 @@
+import type { ProviderId } from "@/agent/models/provider";
+import type { BackgroundScript } from "@/userscripts/types";
+import type { ThinkingLevel } from "@/agent/models/thinkingLevel";
+import {readChat, readChatSummaries, writeChat, removeChat, writeAttachments, readAttachment, removeAttachments, type ConversationSummary, type StoredAttachmentData} from './conversationDB';
+import {exportImages, importImages, referencedImageNames} from './imageLibrary';
+export type {ConversationSummary} from './conversationDB';
+
+
+const isChromeExtension = typeof chrome !== "undefined" && !!chrome?.storage?.local;
+
+const SELECTED_MODEL_KEY = "ts_selected_model";
+const SCRIPTS_KEY = "ts_background_scripts";
+
+// ── Selected model ──────────────────────────────────────────
+
+export interface SelectedModel {
+    providerId: ProviderId;
+    modelId: string;
+}
+
+export async function loadSelectedModel(): Promise<SelectedModel | null> {
+    if (isChromeExtension) {
+        const result = await chrome.storage.local.get(SELECTED_MODEL_KEY);
+        return (result[SELECTED_MODEL_KEY] as SelectedModel) ?? null;
+    }
+    const raw = localStorage.getItem(SELECTED_MODEL_KEY);
+    return raw ? JSON.parse(raw) : null;
+}
+
+export async function saveSelectedModel(providerId: ProviderId, modelId: string): Promise<void> {
+    const data: SelectedModel = { providerId, modelId };
+    if (isChromeExtension) {
+        await chrome.storage.local.set({ [SELECTED_MODEL_KEY]: data });
+    } else {
+        localStorage.setItem(SELECTED_MODEL_KEY, JSON.stringify(data));
+    }
+}
+
+export async function clearSelectedModel(): Promise<void> {
+    if (isChromeExtension) {
+        await chrome.storage.local.remove(SELECTED_MODEL_KEY);
+    } else {
+        localStorage.removeItem(SELECTED_MODEL_KEY);
+    }
+}
+
+/** Calls `listener` whenever the selection changes, including from Settings or another panel. */
+export function subscribeSelectedModel(listener: () => void): () => void {
+    if (!isChromeExtension) return () => {};
+    const handler = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+        if (area === "local" && SELECTED_MODEL_KEY in changes) listener();
+    };
+    chrome.storage.onChanged.addListener(handler);
+    return () => chrome.storage.onChanged.removeListener(handler);
+}
+
+// ── Conversations ───────────────────────────────────────────
+
+export interface StoredConversation {
+    id: string;
+    title: string;
+    messages: unknown[];
+    /** Absent on chats saved before thinking levels; they follow the default. */
+    thinkingLevel?: ThinkingLevel;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export async function loadConversationHistory(): Promise<ConversationSummary[]> {
+    return (await readChatSummaries()).sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export function loadStoredConversation(id: string): Promise<StoredConversation | null> {
+    return readChat(id);
+}
+
+export async function saveConversation(conversation: StoredConversation): Promise<void> {
+    // One conversation per record; no chrome.storage.onChanged payloads and no
+    // read/modify/write of other chats. Transcript and summary commit atomically.
+    await writeChat(conversation);
+}
+
+/** Attachment bytes are written once, when the message is sent; transcripts reference them by id. */
+export async function saveAttachments(records: StoredAttachmentData[]): Promise<void> {
+    if (records.length) await writeAttachments(records);
+}
+
+export async function loadAttachment(id: string): Promise<Blob | null> {
+    return readAttachment(id);
+}
+
+export async function deleteAttachments(ids: string[]): Promise<void> {
+    if (ids.length) await removeAttachments(ids);
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+    await removeChat(id);
+}
+
+// ── Scripts ─────────────────────────────────────────────────
+
+export async function loadScripts(): Promise<BackgroundScript[]> {
+    if (!isChromeExtension) return [];
+    const result = await chrome.storage.local.get(SCRIPTS_KEY);
+    return (result[SCRIPTS_KEY] as BackgroundScript[]) ?? [];
+}
+
+export async function loadScriptsByConversation(conversationId: string): Promise<BackgroundScript[]> {
+    const all = await loadScripts();
+    return all.filter((s) => s.conversationId === conversationId);
+}
+
+/** Calls back with the full list whenever saved scripts change, from any page. Returns an unsubscribe. */
+export function subscribeToScripts(callback: (scripts: BackgroundScript[]) => void): () => void {
+    if (!isChromeExtension) return () => {};
+    const listener = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+        if (area === "local" && SCRIPTS_KEY in changes) {
+            callback((changes[SCRIPTS_KEY].newValue as BackgroundScript[]) ?? []);
+        }
+    };
+    chrome.storage.onChanged.addListener(listener);
+    return () => chrome.storage.onChanged.removeListener(listener);
+}
+
+async function saveScripts(scripts: BackgroundScript[]): Promise<void> {
+    if (!isChromeExtension) return;
+    await chrome.storage.local.set({ [SCRIPTS_KEY]: scripts });
+}
+
+export async function saveScript(script: BackgroundScript): Promise<void> {
+    const all = await loadScripts();
+    const idx = all.findIndex((s) => s.id === script.id);
+    if (idx >= 0) {
+        all[idx] = script;
+    } else {
+        all.unshift(script);
+    }
+    await saveScripts(all);
+}
+
+export async function deleteScript(id: string): Promise<void> {
+    const all = await loadScripts();
+    await saveScripts(all.filter((s) => s.id !== id));
+    await clearScriptStorage(id);
+}
+
+export async function updateScriptStatus(id: string, status: "active" | "paused"): Promise<void> {
+    const all = await loadScripts();
+    const script = all.find((s) => s.id === id);
+    if (script) {
+        script.status = status;
+        await saveScripts(all);
+    }
+}
+
+// ── Per-script value storage ────────────────────────────────
+
+export async function getScriptValue(scriptId: string, key: string): Promise<unknown> {
+    if (!isChromeExtension) return null;
+    const storageKey = `scriptData_${scriptId}`;
+    const result = await chrome.storage.local.get(storageKey);
+    const data = (result[storageKey] as Record<string, unknown>) ?? {};
+    return data[key] ?? null;
+}
+
+export async function setScriptValue(scriptId: string, key: string, value: unknown): Promise<void> {
+    if (!isChromeExtension) return;
+    const storageKey = `scriptData_${scriptId}`;
+    const result = await chrome.storage.local.get(storageKey);
+    const data = (result[storageKey] as Record<string, unknown>) ?? {};
+    data[key] = value;
+    await chrome.storage.local.set({ [storageKey]: data });
+}
+
+export async function deleteScriptValue(scriptId: string, key: string): Promise<void> {
+    if (!isChromeExtension) return;
+    const storageKey = `scriptData_${scriptId}`;
+    const result = await chrome.storage.local.get(storageKey);
+    const data = (result[storageKey] as Record<string, unknown>) ?? {};
+    delete data[key];
+    await chrome.storage.local.set({ [storageKey]: data });
+}
+
+export async function listScriptValues(scriptId: string): Promise<Record<string, unknown>> {
+    if (!isChromeExtension) return {};
+    const storageKey = `scriptData_${scriptId}`;
+    const result = await chrome.storage.local.get(storageKey);
+    return (result[storageKey] as Record<string, unknown>) ?? {};
+}
+
+/** Adds several values at once, for a script arriving with data from another manager. */
+export async function mergeScriptValues(scriptId: string, values: Record<string, unknown>): Promise<void> {
+    if (!isChromeExtension) return;
+    const storageKey = `scriptData_${scriptId}`;
+    const result = await chrome.storage.local.get(storageKey);
+    await chrome.storage.local.set({ [storageKey]: {...(result[storageKey] as Record<string, unknown>), ...values} });
+}
+
+export async function clearScriptStorage(scriptId: string): Promise<void> {
+    if (!isChromeExtension) return;
+    await chrome.storage.local.remove(`scriptData_${scriptId}`);
+}
+
+// ── Import/export ───────────────────────────────────────────
+
+function downloadFile(text: string, filename: string, type: string): void {
+    const blob = new Blob([text], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function downloadJson(json: string, filename: string): void {
+    downloadFile(json, filename, "application/json");
+}
+
+const scriptFileName = (script: BackgroundScript) => script.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+
+/** A script with the saved images its code asks for by name, so it still works in another browser. */
+async function withItsImages(script: BackgroundScript) {
+    const images = await exportImages(referencedImageNames(script.code));
+    return images.length ? {...script, images} : script;
+}
+
+export async function exportScript(script: BackgroundScript): Promise<void> {
+    downloadJson(JSON.stringify(await withItsImages(script), null, 2), `${scriptFileName(script)}.json`);
+}
+
+/** Downloads just the script's source, for reading or diffing outside TamperSloth. */
+export function downloadScriptSource(script: BackgroundScript): void {
+    downloadFile(script.code, `${scriptFileName(script)}.js`, "text/javascript");
+}
+
+function isBackgroundScript(obj: unknown): obj is BackgroundScript {
+    return !!obj && typeof obj === "object" && "name" in obj && "code" in obj && "urlMatchPattern" in obj;
+}
+
+export async function importScriptsFromJson(json: string): Promise<number> {
+    const parsed: unknown = JSON.parse(json);
+    const items: BackgroundScript[] = Array.isArray(parsed)
+        ? parsed.filter(isBackgroundScript)
+        : isBackgroundScript(parsed)
+            ? [parsed]
+            : [];
+    if (items.length === 0) throw new Error("No valid scripts found");
+    for (const item of items) {
+        const {images, ...script} = item as BackgroundScript & {images?: unknown};
+        // Images come along first so the script finds them; one with the same name already here stays.
+        await importImages(images);
+        script.id = crypto.randomUUID();
+        await saveScript(script);
+    }
+    return items.length;
+}
+
+// ── Code Files ───────────────────────────────────────────
+
+const FILE_PREFIX = 'ts_file:';
+
+function key(conversationId: string, path: string ): string {
+    return FILE_PREFIX + conversationId + "/" + path;
+}
+
+export async function readFile(conversationId: string,path: string): Promise<string | null> {
+    const k = key(conversationId,path);
+    const result = await chrome.storage.local.get(k);
+    const v = result[k];
+    return typeof v === 'string' ? v : null;
+}
+
+export async function writeFile(conversationId: string,path: string, content: string): Promise<void> {
+    await chrome.storage.local.set({ [key(conversationId,path)]: content });
+}
+
+export async function deleteFile(conversationId: string,path: string): Promise<void> {
+    await chrome.storage.local.remove(key(conversationId,path));
+}
+
+export async function fileExists(conversationId: string,path: string): Promise<boolean> {
+    return (await readFile(conversationId,path)) !== null;
+}
+
+export async function listFiles(conversationId: string,prefix = ''): Promise<string[]> {
+    const keys = await chrome.storage.local.getKeys();
+    const wanted = FILE_PREFIX + conversationId + "/" + prefix;
+    return keys
+        .filter((k) => k.startsWith(wanted))
+        .map((k) => k.slice((FILE_PREFIX + conversationId + "/").length))
+        .sort();
+}
+
+// ── Code Files (all) ─────────────────────────────────────────
+
+export interface CodeFileEntry {
+    conversationId: string;
+    path: string;
+}
+
+export async function listAllCodeFiles(): Promise<CodeFileEntry[]> {
+    if (!isChromeExtension) return [];
+    const keys = await chrome.storage.local.getKeys();
+    return keys
+        .filter((k) => k.startsWith(FILE_PREFIX))
+        .map((k) => {
+            const withoutPrefix = k.slice(FILE_PREFIX.length);
+            const slashIdx = withoutPrefix.indexOf('/');
+            return {
+                conversationId: withoutPrefix.slice(0, slashIdx),
+                path: withoutPrefix.slice(slashIdx + 1),
+            };
+        })
+        .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+export async function deleteAllFilesForConversation(conversationId: string): Promise<void> {
+    if (!isChromeExtension) return;
+    const allKeys = await chrome.storage.local.getKeys();
+    const keys = allKeys.filter(
+        (k) => k.startsWith(FILE_PREFIX + conversationId + '/'),
+    );
+    if (keys.length > 0) await chrome.storage.local.remove(keys);
+}
+

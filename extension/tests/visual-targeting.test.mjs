@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createLoader, plain} from './load-ts.mjs';
 
-const geometry = createLoader()('src/background/visualGeometry.ts');
+const geometry = createLoader()('src/background/browser/visualGeometry.ts');
 test('grid cells and crop bounds keep CSS coordinates through progressive zoom', () => {
     assert.equal(geometry.columnLabel(0), 'A');
     assert.equal(geometry.columnLabel(26), 'AA');
@@ -63,7 +63,7 @@ function pageFixture() {
         CSS: {escape: s => s}, getComputedStyle: () => ({visibility: 'visible', display: 'block', opacity: '1', cursor: 'auto'}),
         MutationObserver: class { constructor(callback) { this.callback = callback; observer = this; } observe() {} disconnect() {} },
     }});
-    return {read: load('src/background/pagePerception.ts').pagePerception, elements, send, Element, ShadowRoot, location, document, listeners, getObserver: () => observer};
+    return {read: load('src/injected/pagePerception.ts').pagePerception, elements, send, Element, ShadowRoot, location, document, listeners, getObserver: () => observer};
 }
 test('element resolution uses semantics and rejects ambiguity, occlusion and stale marks', () => {
     const f = pageFixture();

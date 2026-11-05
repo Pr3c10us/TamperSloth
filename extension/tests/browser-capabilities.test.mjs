@@ -96,14 +96,14 @@ function fixture(seed = {}) {
         async convertToBlob() { return new Blob(['png']); }
     }
     const load = createLoader({globals: {chrome, OffscreenCanvas: Canvas, createImageBitmap: async () => ({width: 800, height: 600, close() {}}),
-        fetch: async () => ({blob: async () => new Blob(['png'])}), btoa: s => Buffer.from(s, 'binary').toString('base64')}, mocks: {'@/src/chat/lib/storage.ts': {
+        fetch: async () => ({blob: async () => new Blob(['png'])}), btoa: s => Buffer.from(s, 'binary').toString('base64')}, mocks: {'src/storage/storage.ts': {
         loadScripts: async () => [
             {id: 'saved-1', name: 'Test', code: 'function main() { return 1; }', status: 'active', urlMatchPattern: 'https://example.com/*'},
             {id: 'paused-1', name: 'Paused', code: 'function main() {}', status: 'paused', urlMatchPattern: 'https://example.com/*'},
         ],
         getScriptValue: async () => null, setScriptValue: async () => {}, deleteScriptValue: async () => {}, listScriptValues: async () => ({}),
     }}});
-    const service = load('src/background/browserService.ts');
+    const service = load('src/background/browser/browserService.ts');
     const call = message => service.handleBrowserMessage(message);
     const run = (operation, input) => call({type: 'BROWSER_CALL', operation, input});
     return {load, service, run, call, chrome, commands, saved, session, downloads, tabs, groups, canvasOps};
@@ -121,7 +121,7 @@ test('legacy stopped state does not block browser actions or recreate an audit l
 
 test('tab selection retargets existing page tools and popups track their opener', async () => {
     const f = fixture();
-    const tools = f.load('src/chat/lib/tools.ts').createAgentTools({conversationId: 'test'});
+    const tools = f.load('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'test'});
     const created = await invoke(tools, 'browserTabs', {action: 'create', url: 'https://example.com/popup', openerTabId: 7, group: 'Popup Check'});
     assert.equal(created.output.tabId, 8);
     assert.equal((await invoke(tools, 'getCurrentTab')).output.tabId, 8);
@@ -160,7 +160,7 @@ test('task tabs open together in one named group, stay tied to their notes, and 
     const f = fixture();
     f.groups.set(50, {id: 50, windowId: 1, title: 'Mine', color: 'red', collapsed: false});
     f.tabs.get(7).groupId = 50;
-    const tools = f.load('src/chat/lib/tools.ts').createAgentTools({conversationId: 'test'});
+    const tools = f.load('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'test'});
     const task = input => f.run('tabs', {conversationId: 'test', originTabId: 7, ...input});
     await assert.rejects(task({action: 'create', url: 'https://www.awwwards.com/'}), /Name the task group/);
     const sites = ['https://www.awwwards.com/', 'https://www.behance.net/', 'https://dribbble.com/'];
@@ -210,7 +210,7 @@ test('task tabs open together in one named group, stay tied to their notes, and 
 test('a chat started on a new tab page groups that tab with the task and keeps it at finish', async () => {
     const f = fixture();
     f.tabs.get(7).url = 'chrome://newtab/';
-    const tools = f.load('src/chat/lib/tools.ts').createAgentTools({conversationId: 'test'});
+    const tools = f.load('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'test'});
     const opened = await invoke(tools, 'browserTabs', {action: 'create', urls: ['https://www.behance.net/', 'https://dribbble.com/'], group: 'Portfolio Inspiration'});
     const groupId = opened.output.group.groupId;
     assert.deepEqual([7, 8, 9].map(id => f.tabs.get(id).groupId), [groupId, groupId, groupId]);
@@ -229,7 +229,7 @@ test('reference tabs are read in place while page actions stay on the working ta
     const f = fixture();
     const targets = [];
     f.chrome.scripting.executeScript = async ({target}) => { targets.push(target.tabId); return [{result: {url: 'https://dribbble.com/', text: 'Shots'}}]; };
-    const tools = f.load('src/chat/lib/tools.ts').createAgentTools({conversationId: 'test'});
+    const tools = f.load('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'test'});
     const opened = await invoke(tools, 'browserTabs', {action: 'create', urls: ['https://dribbble.com/', 'https://www.behance.net/'], group: 'Portfolio Inspiration'});
     const [reference] = opened.output.opened.map(t => t.tabId);
     await invoke(tools, 'getPageText', {tabId: reference});
@@ -244,7 +244,7 @@ test('reference tabs are read in place while page actions stay on the working ta
 
 test('task groups carry the sloth prefix and green color, show waiting, and tidy away behind the working tab', async () => {
     const f = fixture();
-    const tools = f.load('src/chat/lib/tools.ts').createAgentTools({conversationId: 'test'});
+    const tools = f.load('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'test'});
     const opened = await invoke(tools, 'browserTabs', {action: 'create', urls: ['https://dribbble.com/', 'https://www.behance.net/'], group: '🦥 TS | Portfolio Inspiration'});
     const groupId = opened.output.group.groupId;
     assert.equal(opened.output.group.title, 'Portfolio Inspiration', 'A prefix the model typed is not doubled');
@@ -279,7 +279,7 @@ test('leftover sloth groups from an earlier session are offered for closing, nev
     f.tabs.set(21, {id: 21, windowId: 1, url: 'https://b.example', groupId: 41});
     f.tabs.set(22, {id: 22, windowId: 1, url: 'https://example.com/editor', groupId: 40});
     f.saved.ts_task_origins = {old: 'https://example.com/editor'};
-    f.load('src/background/taskTabs.ts').installLeftoverGroupCheck();
+    f.load('src/background/browser/taskTabs.ts').installLeftoverGroupCheck();
     f.chrome.runtime.onStartup.fire();
     await new Promise(resolve => setTimeout(resolve, 20));
     assert.equal(notices.length, 1);
@@ -296,7 +296,7 @@ test('leftover sloth groups from an earlier session are offered for closing, nev
 test('a task keeps at most the configured number of tabs open, not counting the working tab', async () => {
     const f = fixture({ts_agent_settings: {maxTaskTabs: 2}});
     f.tabs.get(7).url = 'chrome://newtab/';
-    const tools = f.load('src/chat/lib/tools.ts').createAgentTools({conversationId: 'test'});
+    const tools = f.load('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'test'});
     const task = input => f.run('tabs', {conversationId: 'test', originTabId: 7, originBlank: true, ...input});
     await assert.rejects(task({action: 'create', urls: ['https://a.example/', 'https://b.example/', 'https://c.example/'], group: 'Limits'}), /2 tabs open|0 of 2/);
     assert.equal(f.tabs.size, 1, 'Over the limit nothing opens');
@@ -411,17 +411,17 @@ test('clipboard, downloads, notifications and AX trees use their extension APIs'
 
 test('ordinary tools do not require the removed automation service', async () => {
     const f = fixture({ts_browser_control: {stopped: true}});
-    const raw = f.load('src/chat/lib/tools.ts').createAgentTools({conversationId: 'test'});
+    const raw = f.load('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'test'});
     raw.getCurrentTab.execute = async () => ({tabId: 7});
     f.chrome.runtime.sendMessage = async () => { assert.fail('Unexpected automation IPC'); };
-    const runtime = f.load('src/chat/lib/toolRuntime.ts').createToolRuntime(raw, {request: '', findPrevious: () => undefined});
+    const runtime = f.load('src/agent/tools/toolRuntime.ts').createToolRuntime(raw, {request: '', findPrevious: () => undefined});
     assert.equal((await invoke(runtime.tools, 'getCurrentTab')).output.tabId, 7);
 });
 
 test('chat cancellation still prevents later page mutations', async () => {
     const f = fixture();
     const controller = new AbortController();
-    const tools = f.load('src/chat/lib/tools.ts').createAgentTools({conversationId: 'test', abortSignal: controller.signal});
+    const tools = f.load('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'test', abortSignal: controller.signal});
     let injected = false;
     f.chrome.scripting.executeScript = async () => { injected = true; return [{result: {text: 'x'}}]; };
     controller.abort();
@@ -512,8 +512,8 @@ test('marked screenshots preserve legend and pixel transforms through zoom and i
     assert.deepEqual(plain(zoom.metadata.imagePixels), {width: 600, height: 600});
     assert.equal(zoom.cells[0].x, 200);
     assert.ok(f.canvasOps.some(op => op.method === 'moveTo' && op.args[0] === 238));
-    const tools = f.load('src/chat/lib/tools.ts').createAgentTools({conversationId: 'test'});
-    const runtime = f.load('src/chat/lib/toolRuntime.ts').createToolRuntime(tools, {request: 'screenshot', findPrevious: () => undefined});
+    const tools = f.load('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'test'});
+    const runtime = f.load('src/agent/tools/toolRuntime.ts').createToolRuntime(tools, {request: 'screenshot', findPrevious: () => undefined});
     const projected = await invoke(runtime.tools, 'takeMarkedScreenshot');
     assert.equal(projected.projected.value[0].mediaType, 'image/png');
     assert.ok(projected.projected.value[1].text.includes('"legend"'));
@@ -668,7 +668,7 @@ test('manifest and build entries include all platform permissions and clipboard 
 });
 
 test('gesture projection keeps only outcome signals and flags problems', () => {
-    const {compactGestureOutput, compactGestureSteps} = createLoader({globals: {chrome: {}}})('src/chat/lib/browserTools.ts');
+    const {compactGestureOutput, compactGestureSteps} = createLoader({globals: {chrome: {}}})('src/agent/tools/browserTools.ts');
     const target = {tag: 'button', role: 'button', name: 'Send', selector: '#send'};
     const focus = {tag: 'input', role: 'textbox', name: 'Message', selector: '#msg'};
     const other = {tag: 'div', role: '', name: 'Overlay', selector: '#overlay'};
@@ -705,8 +705,8 @@ test('browserGesture runs a batch in order and reports completed steps on failur
             ...(input.postScreenshot ? {screenshot: 'data:image/png;base64,aW1hZ2U=', postAction: {metadata: {imagePixels: {width: 200, height: 150}, cssRegion: {x: 0, y: 0, width: 200, height: 150}}}} : {})};
     }}};
     const load = createLoader({globals: {chrome}});
-    const {browserSchemas} = load('src/chat/lib/browserSchemas.ts');
-    const tools = load('src/chat/lib/browserTools.ts').createBrowserTools(() => 7, () => {});
+    const {browserSchemas} = load('src/shared/browserSchemas.ts');
+    const tools = load('src/agent/tools/browserTools.ts').createBrowserTools(() => 7, () => {});
     const input = tools.browserGesture.inputSchema.parse({feedbackMs: 0, postScreenshot: true, gestures: [
         {action: 'drag', from: {x: 10, y: 10}, to: {x: 90, y: 10}},
         {action: 'drag', from: {x: 90, y: 10}, to: {x: 90, y: 60}},
@@ -741,7 +741,7 @@ test('browserGesture runs a batch in order and reports completed steps on failur
 test('compact gesture schemas reject incomplete targets and clickTarget always clicks', async () => {
     const calls = [];
     const chrome = {runtime: {sendMessage: async ({input}) => { calls.push(input); return {ok: true}; }}};
-    const tools = createLoader({globals: {chrome}})('src/chat/lib/browserTools.ts').createBrowserTools(() => 7, () => {});
+    const tools = createLoader({globals: {chrome}})('src/agent/tools/browserTools.ts').createBrowserTools(() => 7, () => {});
     assert.equal(tools.clickTarget.inputSchema.safeParse({target: {role: 'button'}}).success, false);
     assert.equal(tools.clickTarget.inputSchema.safeParse({target: {mark: 3}}).success, false);
     assert.equal(tools.browserGesture.inputSchema.safeParse({gestures: []}).success, false);

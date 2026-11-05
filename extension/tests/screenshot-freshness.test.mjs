@@ -28,7 +28,7 @@ function fixture() {
     const load = createLoader({globals: {chrome, OffscreenCanvas: Canvas,
         createImageBitmap: async () => ({width: 1600, height: 1200, close() {}}),
         fetch: async () => ({blob: async () => new Blob(['image'])}), btoa: s => Buffer.from(s, 'binary').toString('base64')}});
-    return {api: load('src/background/screenshotCapture.ts'), chrome, tabs, captures, state, observation};
+    return {api: load('src/background/browser/screenshotCapture.ts'), chrome, tabs, captures, state, observation};
 }
 const check = async () => {};
 
@@ -139,7 +139,7 @@ test('the actual page observer waits across paint turns and detects mutations an
         MutationObserver: class {constructor(callback) { observer = this; this.callback = callback; } observe() {} takeRecords() { return []; }},
         requestAnimationFrame: callback => setTimeout(() => { frames++; callback(); }, 16), cancelAnimationFrame: clearTimeout,
     };
-    const api = createLoader({globals})('src/background/screenshotCapture.ts');
+    const api = createLoader({globals})('src/background/browser/screenshotCapture.ts');
     const settled = await api.pageScreenshotState(true);
     assert.equal(settled.settled, true);
     assert.ok(frames >= 2);
@@ -157,7 +157,7 @@ test('the render wait times out and cleans up RAF when the page cannot paint', a
         requestAnimationFrame: () => 123, cancelAnimationFrame: id => { cancelled = id === 123; },
         setTimeout: (callback, ms) => setTimeout(callback, ms === 1500 ? 10 : ms),
     };
-    const api = createLoader({globals})('src/background/screenshotCapture.ts');
+    const api = createLoader({globals})('src/background/browser/screenshotCapture.ts');
     const result = await api.pageScreenshotState(true);
     assert.equal(result.settled, false);
     assert.equal(result.visible, false);

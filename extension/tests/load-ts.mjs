@@ -20,11 +20,13 @@ export function createLoader({globals = {}, mocks = {}} = {}) {
         const module = {exports: {}};
         cache.set(filename, module);
         const localRequire = id => {
-            if (id in mocks) return mocks[id];
-            if (!id.startsWith('.')) return require(id);
-            let target = path.resolve(path.dirname(filename), id);
+            const isSource = id.startsWith('.') || id.startsWith('@/');
+            if (!isSource) return id in mocks ? mocks[id] : require(id);
+            let target = id.startsWith('@/') ? path.resolve('src', id.slice(2)) : path.resolve(path.dirname(filename), id);
             if (!path.extname(target)) target += '.ts';
-            return load(target);
+            // Mocks name the file they replace ('src/storage/scripts.ts'), however it is imported.
+            const mockKey = path.relative(process.cwd(), target).replaceAll(path.sep, '/');
+            return mockKey in mocks ? mocks[mockKey] : load(target);
         };
         const source = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
             compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022},

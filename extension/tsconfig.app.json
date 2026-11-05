@@ -16,7 +16,7 @@
     "jsx": "react-jsx",
 
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./src/*"]
     },
 
     /* Linting */
@@ -25,5 +25,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "components"]
+  "include": ["src"]
 }

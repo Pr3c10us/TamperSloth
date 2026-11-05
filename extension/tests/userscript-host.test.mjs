@@ -23,7 +23,7 @@ const script = (code, overrides = {}) => ({
 });
 
 const runtimeChrome = {runtime: {getManifest: () => ({version: '3.2'}), sendMessage: async () => ({ok: true})}};
-const runtime = createLoader({globals: {chrome: runtimeChrome, crypto}})('src/background/userscriptRuntime.ts');
+const runtime = createLoader({globals: {chrome: runtimeChrome, crypto}})('src/background/userscripts/userscriptRuntime.ts');
 
 function fakePort() {
     const posted = [];
@@ -169,11 +169,11 @@ function promptFixture(stored = {}) {
         }},
         windows,
     };
-    const mocks = {'../chat/lib/storage': {
+    const mocks = {'src/storage/storage.ts': {
         loadScripts: async () => [structuredClone(stored)],
         saveScript: async s => { saved.push(s); },
     }};
-    const mod = createLoader({globals: {chrome, crypto}, mocks})('src/background/connectPrompt.ts');
+    const mod = createLoader({globals: {chrome, crypto}, mocks})('src/background/userscripts/connectPrompt.ts');
     mod.installConnectPrompt();
     const answer = async (allow, remember) => {
         await settle();
@@ -258,11 +258,11 @@ function updateFixture(installed, responses) {
         const body = new TextEncoder().encode(responses[url]);
         return {ok: true, status: 200, statusText: 'OK', headers: {get: () => ''}, arrayBuffer: async () => body.buffer};
     };
-    const mocks = {'../chat/lib/storage': {
+    const mocks = {'src/storage/storage.ts': {
         loadScripts: async () => scripts,
         saveScript: async s => { saved.push(s); },
     }};
-    const mod = createLoader({globals: {chrome, crypto, fetch, TextDecoder, TextEncoder, btoa}, mocks})('src/background/userscriptUpdates.ts');
+    const mod = createLoader({globals: {chrome, crypto, fetch, TextDecoder, TextEncoder, btoa}, mocks})('src/background/userscripts/userscriptUpdates.ts');
     mod.installUserscriptUpdates();
     const [listener] = onMessage.set;
     const check = () => new Promise(resolve => {
@@ -357,7 +357,7 @@ function makeZip(files) {
     return new Uint8Array(Buffer.concat([...locals, directoryBytes, end]));
 }
 
-const zipModule = createLoader({globals: {TextDecoder, Blob, Response, DecompressionStream}})('src/scripts/zip.ts');
+const zipModule = createLoader({globals: {TextDecoder, Blob, Response, DecompressionStream}})('src/userscripts/backupZip.ts');
 
 test('reads a Tampermonkey backup: scripts, their saved data and on/off state', async () => {
     const entries = await zipModule.readZip(makeZip([
@@ -403,11 +403,11 @@ function bridgeFixture(us, {fetchResult, askAnswer = false} = {}) {
     };
     const fetched = [];
     const mocks = {
-        './browserService': {clipboard: async () => ({ok: true})},
-        './connectPrompt': {askToConnect: async (_, host) => { asked.push(host); return askAnswer; }},
-        './userscriptHost': {pushToScript: () => {}},
+        'src/background/browser/browserService.ts': {clipboard: async () => ({ok: true})},
+        'src/background/userscripts/connectPrompt.ts': {askToConnect: async (_, host) => { asked.push(host); return askAnswer; }},
+        'src/background/userscripts/userscriptHost.ts': {pushToScript: () => {}},
     };
-    const {handleGmRequest} = createLoader({globals: {chrome, fetch, Headers, FormData, AbortController, btoa, atob}, mocks})('src/background/userscriptBridge.ts');
+    const {handleGmRequest} = createLoader({globals: {chrome, fetch, Headers, FormData, AbortController, btoa, atob}, mocks})('src/background/userscripts/userscriptBridge.ts');
     const target = script('1', us);
     const sender = {url: 'https://example.com/page', tab: {id: 3, index: 0, windowId: 1}};
     const request = message => handleGmRequest(message, sender, target);

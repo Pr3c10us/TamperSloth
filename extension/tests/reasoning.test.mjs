@@ -6,12 +6,12 @@ import {z} from 'zod';
 import {createLoader, invoke, plain} from './load-ts.mjs';
 
 const load = createLoader();
-const {createReasoningNormalizer, thinkingDuration} = load('src/chat/lib/reasoning.ts');
-const {partialReason, toolReason, REASON_MAX} = load('src/chat/lib/toolReason.ts');
-const {createToolRuntime} = load('src/chat/lib/toolRuntime.ts');
-const {agentProviderOptions} = load('src/chat/lib/providerCompatibility.ts');
-const {screenshotSource, toolErrorMessage} = load('src/chat/lib/toolPreview.ts');
-const {summarizeSteps, toolVerb} = load('src/chat/lib/stepSummary.ts');
+const {createReasoningNormalizer, thinkingDuration} = load('src/agent/models/reasoning.ts');
+const {partialReason, toolReason, REASON_MAX} = load('src/agent/tools/toolReason.ts');
+const {createToolRuntime} = load('src/agent/tools/toolRuntime.ts');
+const {agentProviderOptions} = load('src/agent/models/providerCompatibility.ts');
+const {screenshotSource, toolErrorMessage} = load('src/pages/chat/messages/toolPreview.ts');
+const {summarizeSteps, toolVerb} = load('src/pages/chat/messages/stepSummary.ts');
 
 function clock() {
     let t = 1000;
@@ -147,9 +147,9 @@ test('partial tool JSON yields the reason as soon as it is being written', () =>
 });
 
 test('every runtime tool requires a leading reason that never reaches the implementation', async () => {
-    const browserLoad = createLoader({mocks: {'./storage': {}}});
-    const raw = browserLoad('src/chat/lib/tools.ts').createAgentTools({conversationId: 'reason'});
-    const runtime = browserLoad('src/chat/lib/toolRuntime.ts').createToolRuntime(raw, {request: '', findPrevious: () => undefined});
+    const browserLoad = createLoader({mocks: {'src/storage/storage.ts': {}}});
+    const raw = browserLoad('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'reason'});
+    const runtime = browserLoad('src/agent/tools/toolRuntime.ts').createToolRuntime(raw, {request: '', findPrevious: () => undefined});
     for (const [name, definition] of Object.entries(runtime.tools)) {
         const schema = z.toJSONSchema(definition.inputSchema, {io: 'input'});
         assert.equal(Object.keys(schema.properties)[0], 'reason', name);

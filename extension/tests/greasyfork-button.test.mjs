@@ -44,7 +44,7 @@ function fixture(prefs = {}) {
         setItem: (key, value) => storage.set(key, value),
         removeItem: key => storage.delete(key),
     };
-    const mod = createLoader({globals: {chrome, document, CustomEvent, MouseEvent: Event, localStorage, Date, window: {navigation}}})('src/background/greasyForkButton.ts');
+    const mod = createLoader({globals: {chrome, document, CustomEvent, MouseEvent: Event, localStorage, Date, window: {navigation}}})('src/background/userscripts/greasyForkButton.ts');
     mod.installGreasyForkButton();
     const [listener] = chrome.runtime.onMessage.set;
     const send = (message, sender) => new Promise(resolve => {

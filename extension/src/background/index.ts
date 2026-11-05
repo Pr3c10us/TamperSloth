@@ -1,27 +1,27 @@
-import type {BackgroundScript, ImportedUserscript} from "@/src/chat/lib/types.ts";
-import {handleBrowserMessage, cdp} from './browserService';
-import {captureAnnotatedViewport, captureRegion, captureViewportScreenshot} from './screenshotCapture';
-import {installPanelLifecycle, cleanupBrowserGuidance} from './panelLifecycle';
-import {installContextMenu} from './contextMenu';
-import {installLeftoverGroupCheck} from './taskTabs';
-import {BILLING_TOKEN_REQUEST, installPricingBridge} from './pricingBridge';
-import {GREASYFORK_INSTALL, installGreasyForkButton, USERSCRIPT_INSTALLED} from './greasyForkButton';
-import {queuePanelRequest} from '../chat/lib/panelRequests';
-import {userscriptRegistrations, userscriptWorldId} from './userscriptRuntime';
-import {handleGmRequest, installGmTabTracking} from './userscriptBridge';
-import {installUserscriptHost, pushToScript, refreshUserscriptMenus} from './userscriptHost';
-import {CONNECT_DECISION, installConnectPrompt} from './connectPrompt';
-import {installUserscriptLinks} from './userscriptLinks';
-import {CHECK_USERSCRIPT_UPDATE, installUserscriptUpdates} from './userscriptUpdates';
-import {savedScriptImageHelpers, temporaryImageHelpers, temporaryImageToken, usesImageHelpers} from './imageScriptApi';
-import {imageForScript, listImages} from '../chat/lib/imageLibrary';
+import type {BackgroundScript, ImportedUserscript} from "@/userscripts/types";
+import {handleBrowserMessage, cdp} from '@/background/browser/browserService';
+import {captureAnnotatedViewport, captureRegion, captureViewportScreenshot} from '@/background/browser/screenshotCapture';
+import {installPanelLifecycle, cleanupBrowserGuidance} from '@/background/panel/panelLifecycle';
+import {installContextMenu} from '@/background/panel/contextMenu';
+import {installLeftoverGroupCheck} from '@/background/browser/taskTabs';
+import {BILLING_TOKEN_REQUEST, installPricingBridge} from '@/background/billing/pricingBridge';
+import {GREASYFORK_INSTALL, installGreasyForkButton, USERSCRIPT_INSTALLED} from '@/background/userscripts/greasyForkButton';
+import {queuePanelRequest} from '@/shared/panelRequests';
+import {userscriptRegistrations, userscriptWorldId} from '@/background/userscripts/userscriptRuntime';
+import {handleGmRequest, installGmTabTracking} from '@/background/userscripts/userscriptBridge';
+import {installUserscriptHost, pushToScript, refreshUserscriptMenus} from '@/background/userscripts/userscriptHost';
+import {CONNECT_DECISION, installConnectPrompt} from '@/background/userscripts/connectPrompt';
+import {installUserscriptLinks} from '@/background/userscripts/userscriptLinks';
+import {CHECK_USERSCRIPT_UPDATE, installUserscriptUpdates} from '@/background/userscripts/userscriptUpdates';
+import {savedScriptImageHelpers, temporaryImageHelpers, temporaryImageToken, usesImageHelpers} from '@/background/images/imageScriptApi';
+import {imageForScript, listImages} from '@/storage/imageLibrary';
 import {
     deleteScriptValue,
     getScriptValue,
     listScriptValues,
     loadScripts,
     setScriptValue
-} from "@/src/chat/lib/storage.ts";
+} from "@/storage/storage";
 
 chrome.sidePanel.setOptions({enabled: false});
 if(chrome.runtime.onConnect) installPanelLifecycle(cdp);

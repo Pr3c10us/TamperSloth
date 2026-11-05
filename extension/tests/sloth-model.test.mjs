@@ -23,7 +23,7 @@ function fakeStorage(session) {
 function loadProvider(session = {token: LIVE, refreshToken: 'refresh-1'}) {
     const localStorage = fakeStorage(session);
     const load = createLoader({globals: {localStorage, atob, btoa, Response, TextDecoderStream, TransformStream, ReadableStream}});
-    return {...load('src/chat/lib/provider.ts'), ...load('src/chat/lib/providerCompatibility.ts'), localStorage};
+    return {...load('src/agent/models/provider.ts'), ...load('src/agent/models/providerCompatibility.ts'), localStorage};
 }
 
 const ndjson = parts => new Response(parts.map(p => JSON.stringify(p)).join('\n') + '\n',
@@ -117,7 +117,7 @@ test('every step of a run names the run, so the server can hold it to the plan b
 
 test('a Sloth plan run budget caps the user setting, whichever is lower', () => {
     const load = createLoader();
-    const {withPlanRunBudget, DEFAULT_AGENT_SETTINGS} = load('src/chat/lib/agentSettings.ts');
+    const {withPlanRunBudget, DEFAULT_AGENT_SETTINGS} = load('src/agent/agentSettings.ts');
     assert.equal(withPlanRunBudget({...DEFAULT_AGENT_SETTINGS, tokenBudget: 1_000_000}, 500_000).tokenBudget, 500_000);
     assert.equal(withPlanRunBudget({...DEFAULT_AGENT_SETTINGS, tokenBudget: 200_000}, 500_000).tokenBudget, 200_000);
     assert.equal(withPlanRunBudget({...DEFAULT_AGENT_SETTINGS, tokenBudget: 0}, 500_000).tokenBudget, 500_000);

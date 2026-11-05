@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {createLoader} from './load-ts.mjs';
 
 const load = createLoader();
-const {scanText, scanUntrusted, injectionNotice, revealTagCharacters} = load('src/chat/lib/contentScreen.ts');
-const {assessAction, decide, looksLikeCardNumber, parseVerdict, payloadFromFlagged} = load('src/chat/lib/actionScreen.ts');
-const {createSafetyGate, targetSpecs} = load('src/chat/lib/safetyGate.ts');
+const {scanText, scanUntrusted, injectionNotice, revealTagCharacters} = load('src/agent/safety/contentScreen.ts');
+const {assessAction, decide, looksLikeCardNumber, parseVerdict, payloadFromFlagged} = load('src/agent/safety/actionScreen.ts');
+const {createSafetyGate, targetSpecs} = load('src/agent/safety/safetyGate.ts');
 
 // Objects made inside the loader's sandbox have its prototypes; compare them as plain data.
 const plain = value => JSON.parse(JSON.stringify(value));

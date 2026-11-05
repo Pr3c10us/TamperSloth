@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {APICallError, RetryError} from 'ai';
 import {createLoader} from './load-ts.mjs';
 
-const fresh = () => createLoader()('src/chat/lib/credits.ts');
+const fresh = () => createLoader()('src/agent/models/credits.ts');
 
 const apiError = (statusCode, body) => new APICallError({
     message: body?.message ?? 'nope', url: 'https://api.tampersloth.test', requestBodyValues: {}, statusCode,

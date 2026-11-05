@@ -19,7 +19,7 @@ The agent can enable the following tool groups with `enableTools`. Tools also ac
 
 ## Multi-tab tasks
 
-Each chat keeps a task workspace in session storage (`src/background/taskTabs.ts`):
+Each chat keeps a task workspace in session storage (`src/background/browser/taskTabs.ts`):
 
 - `browserTabs create` takes `url` or `urls` (loaded concurrently in the background) and puts every tab the task opens into one group, named by `group` on the first create. A task tab already at the same URL is reused. Tabs opened from a task tab (target=_blank links, popups) join the group.
 - `note` records a tab's purpose, findings (tied to its URL) and `retain`. Tabs the user already had are tracked as consulted, never owned.

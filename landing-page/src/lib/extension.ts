@@ -1,4 +1,4 @@
-/** Matches BillingTokenReply in extension/src/background/pricingBridge.ts. */
+/** Matches BillingTokenReply in extension/src/background/billing/pricingBridge.ts. */
 export type BillingTokenReply =
   | { ok: true; token: string }
   | { ok: false; reason: "signed-out"; panelOpened: boolean }

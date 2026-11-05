@@ -13,7 +13,7 @@ function fixture({logs = [], text = 'content', files = new Map(), scripts = []} 
         readFile: async (_, path) => files.get(path) ?? null,
         writeFile: async (_, path, content) => files.set(path, content),
     };
-    const load = createLoader({mocks: {'./storage': storage}, globals: {
+    const load = createLoader({mocks: {'src/storage/storage.ts': storage}, globals: {
         document: {title: 'Fixture', body: root, querySelector: () => root},
         location: {href: 'https://example.com/article'},
         chrome: {runtime: {sendMessage: async () => ({logs, ok: true})},
@@ -22,7 +22,7 @@ function fixture({logs = [], text = 'content', files = new Map(), scripts = []} 
                 return [{result: func(...args)}];
             }}},
     }});
-    return {load, files, tools: load('src/chat/lib/tools.ts').createAgentTools({conversationId: 'test'})};
+    return {load, files, tools: load('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'test'})};
 }
 
 test('concise text defaults to 3000 characters and paginates without gaps', async () => {
@@ -45,7 +45,7 @@ test('screenshots in a parallel tool batch follow preceding page changes while i
     tools.clickElement.execute = async () => { order.push('click-start'); await gate; order.push('click-end'); return {ok: true}; };
     tools.takeScreenshot.execute = async () => { order.push('screenshot'); return {screenshot: 'data:image/jpeg;base64,YQ=='}; };
     tools.getCurrentTab.execute = async () => { order.push('read'); return {tabId: 7}; };
-    const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(tools, {request: 'click and screenshot', findPrevious: () => undefined});
+    const runtime = load('src/agent/tools/toolRuntime.ts').createToolRuntime(tools, {request: 'click and screenshot', findPrevious: () => undefined});
     const click = invoke(runtime.tools, 'clickElement', {selector: '#send'});
     const screenshot = invoke(runtime.tools, 'takeScreenshot');
     await invoke(runtime.tools, 'getCurrentTab');
@@ -63,7 +63,7 @@ test('aborting a queued screenshot releases its slot without capturing or blocki
     const gate = new Promise(resolve => { release = resolve; });
     tools.clickElement.execute = async () => { await gate; return {ok: true}; };
     tools.takeScreenshot.execute = async () => { captures++; return {screenshot: 'data:image/jpeg;base64,YQ=='}; };
-    const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(tools, {request: 'click and screenshot', findPrevious: () => undefined});
+    const runtime = load('src/agent/tools/toolRuntime.ts').createToolRuntime(tools, {request: 'click and screenshot', findPrevious: () => undefined});
     const click = invoke(runtime.tools, 'clickElement', {selector: '#send'});
     const controller = new AbortController();
     const screenshot = runtime.tools.takeScreenshot.execute({detail: 'standard'}, {toolCallId: 'aborted-shot', messages: [], abortSignal: controller.signal});
@@ -109,7 +109,7 @@ test('batched edits are atomic and preserve literal replacement dollar character
 
 test('output projection caps large data while preserving errors and UI payloads', async () => {
     const {load, tools} = fixture();
-    const {createToolRuntime} = load('src/chat/lib/toolRuntime.ts');
+    const {createToolRuntime} = load('src/agent/tools/toolRuntime.ts');
     const payload = {error: 'Failed to update', url: 'https://example.com', data: 'x'.repeat(50000)};
     tools.getCurrentTab.execute = async () => payload;
     const runtime = createToolRuntime(tools, {request: '', findPrevious: () => undefined});
@@ -129,7 +129,7 @@ test('output projection caps large data while preserving errors and UI payloads'
 
 test('per-call token estimates fall back to characters for older records', async () => {
     const {load} = fixture();
-    const {toolCallTokens, estimateImageTokens} = load('src/chat/lib/efficiency.ts');
+    const {toolCallTokens, estimateImageTokens} = load('src/agent/run/contextCompaction.ts');
     const current = toolCallTokens({name: 'getPageText', inputChars: 40, outputChars: 0, modelOutputChars: 0, inputTokens: 10, modelOutputTokens: 700});
     assert.equal(current.input, 10);
     assert.equal(current.output, 700);
@@ -142,7 +142,7 @@ test('per-call token estimates fall back to characters for older records', async
 
 test('tools expand monotonically and group guidance is sent only once', async () => {
     const {load, tools} = fixture();
-    const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(tools, {request: 'Summarize this article', findPrevious: () => undefined});
+    const runtime = load('src/agent/tools/toolRuntime.ts').createToolRuntime(tools, {request: 'Summarize this article', findPrevious: () => undefined});
     assert.equal(runtime.activeTools().length, 14);
     assert.ok(runtime.activeTools().includes('annotatePage'));
     assert.ok(runtime.activeTools().includes('waitForUserAction'));
@@ -159,7 +159,7 @@ test('tools expand monotonically and group guidance is sent only once', async ()
 });
 
 test('action requests load action tools up front; questions, walkthroughs and saved changes do not', () => {
-    const {initialToolGroups, wantsAction} = createLoader()('src/chat/lib/toolRuntime.ts');
+    const {initialToolGroups, wantsAction} = createLoader()('src/agent/tools/toolRuntime.ts');
     for (const request of ['Add the XL hoodie to my cart', 'change my delivery address', 'Can you create a GitHub repo called notes?',
         'Please book a table for two at 7', 'remove this item from my cart']) {
         const groups = initialToolGroups(request);
@@ -175,7 +175,7 @@ test('action requests load action tools up front; questions, walkthroughs and sa
 test('identical failing calls are detected despite different UI labels', async () => {
     const {load, tools} = fixture();
     tools.getCurrentTab.execute = async () => ({error: 'Tab gone'});
-    const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(tools, {request: '', findPrevious: () => undefined});
+    const runtime = load('src/agent/tools/toolRuntime.ts').createToolRuntime(tools, {request: '', findPrevious: () => undefined});
     for (let i = 0; i < 3; i++) await invoke(runtime.tools, 'getCurrentTab', {description: 'attempt ' + i});
     assert.match(runtime.repeatedFailure(), /failed three times/);
     assert.equal(runtime.metrics().filter(metric => metric.repeated).length, 2);
@@ -186,19 +186,19 @@ test('navigate/read waits for navigation, then reads exactly once', async () => 
     const sequence = [];
     tools.navigateTo.execute = async () => { sequence.push('navigate'); return {success: true, finalUrl: 'https://example.com', waitForSelector: {found: true}}; };
     tools.getPageText.execute = async input => { sequence.push('read'); assert.equal(input.selector, 'main'); return {text: 'Done'}; };
-    const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(tools, {request: '', findPrevious: () => undefined});
+    const runtime = load('src/agent/tools/toolRuntime.ts').createToolRuntime(tools, {request: '', findPrevious: () => undefined});
     const result = await invoke(runtime.tools, 'navigateTo', {url: 'https://example.com', readText: true, readSelector: 'main'});
     assert.deepEqual(sequence, ['navigate', 'read']);
     assert.equal(result.output.page.text, 'Done');
     tools.navigateTo.execute = async () => ({success: true, waitForSelector: {found: false}});
-    const failedWait = load('src/chat/lib/toolRuntime.ts').createToolRuntime(tools, {request: '', findPrevious: () => undefined});
+    const failedWait = load('src/agent/tools/toolRuntime.ts').createToolRuntime(tools, {request: '', findPrevious: () => undefined});
     await invoke(failedWait.tools, 'navigateTo', {url: 'https://example.com', readText: true});
     assert.equal(sequence.length, 2);
 });
 
 test('archive retrieval works across turns and restores screenshots as images', async () => {
     const {load, tools} = fixture();
-    const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(tools, {request: '', findPrevious: id => id === 'old-image'
+    const runtime = load('src/agent/tools/toolRuntime.ts').createToolRuntime(tools, {request: '', findPrevious: id => id === 'old-image'
         ? {name: 'takeScreenshot', input: {}, output: {screenshot: 'data:image/jpeg;base64,YQ=='}} : undefined});
     const result = await invoke(runtime.tools, 'readToolResult', {resultId: 'old-image'});
     assert.equal(result.projected.type, 'content');
@@ -209,7 +209,7 @@ test('archive retrieval works across turns and restores screenshots as images', 
 });
 
 test('context compaction preserves pair IDs, reasoning metadata, approvals and recent results', () => {
-    const {compactMessages} = createLoader()('src/chat/lib/efficiency.ts');
+    const {compactMessages} = createLoader()('src/agent/run/contextCompaction.ts');
     const messages = [{role: 'user', content: 'Do not purchase anything without asking.'}];
     for (let i = 0; i < 10; i++) {
         messages.push({role: 'assistant', content: [
@@ -234,7 +234,7 @@ test('context compaction preserves pair IDs, reasoning metadata, approvals and r
 });
 
 test('Claude drops earlier thinking on tool changes and never resurrects it', () => {
-    const {createStepMessagePreparer} = createLoader()('src/chat/lib/efficiency.ts');
+    const {createStepMessagePreparer} = createLoader()('src/agent/run/contextCompaction.ts');
     const prepare = createStepMessagePreparer('anthropic', new Set());
     const initial = [{role: 'user', content: 'Send the approved draft'}];
     const thinking = {type: 'reasoning', text: 'Plan', providerOptions: {anthropic: {signature: 'signed'}}};
@@ -259,7 +259,7 @@ test('Claude drops earlier thinking on tool changes and never resurrects it', ()
 });
 
 test('Claude compaction removes invalid thinking, empty turns, and preserves approvals', () => {
-    const {createStepMessagePreparer} = createLoader()('src/chat/lib/efficiency.ts');
+    const {createStepMessagePreparer} = createLoader()('src/agent/run/contextCompaction.ts');
     const archived = new Set();
     const prepare = createStepMessagePreparer('anthropic', archived);
     const history = [{role: 'user', content: 'Send only if approved'}];
@@ -287,7 +287,7 @@ test('Claude compaction removes invalid thinking, empty turns, and preserves app
 });
 
 test('tool changes keep reasoning for other providers and preparation resets per run', () => {
-    const {createStepMessagePreparer} = createLoader()('src/chat/lib/efficiency.ts');
+    const {createStepMessagePreparer} = createLoader()('src/agent/run/contextCompaction.ts');
     const history = [{role: 'assistant', content: [{type: 'reasoning', text: 'Plan', providerOptions: {deepseek: {signature: 's'}}}]}];
     for (const provider of ['openai', 'google', 'vertex', 'deepseek']) {
         const prepare = createStepMessagePreparer(provider, new Set());
@@ -324,8 +324,8 @@ test('Anthropic SDK sends valid history after deferred tool activation', async (
         getPageText: tool({inputSchema: z.object({}), execute: async () => ({text: 'Page'})}),
         listScripts: tool({inputSchema: z.object({}), execute: async () => ({scripts: []})}),
     };
-    const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(raw, {request: '', findPrevious: () => undefined});
-    const prepare = load('src/chat/lib/efficiency.ts').createStepMessagePreparer('anthropic', new Set());
+    const runtime = load('src/agent/tools/toolRuntime.ts').createToolRuntime(raw, {request: '', findPrevious: () => undefined});
+    const prepare = load('src/agent/run/contextCompaction.ts').createStepMessagePreparer('anthropic', new Set());
     const buildTabMessages = createTabMessageBuilder();
     const requests = [];
     const model = createAnthropic({apiKey: 'test-key', fetch: async (_url, init) => {
@@ -376,27 +376,27 @@ test('Anthropic SDK sends valid history after deferred tool activation', async (
 
 test('settings validate budgets and usage does not double-count cached/reasoning tokens', () => {
     const load = createLoader();
-    const {normalizeAgentSettings} = load('src/chat/lib/agentSettings.ts');
+    const {normalizeAgentSettings} = load('src/agent/agentSettings.ts');
     assert.deepEqual(plain(normalizeAgentSettings({maxSteps: 9999, tokenBudget: -10})), {maxSteps: 200, tokenBudget: 0, thinkingLevel: 'high', showRunTokens: false, showToolTokens: false, actionApproval: 'auto', maxTaskTabs: 6});
-    const {usageRecord} = load('src/chat/lib/efficiency.ts');
+    const {usageRecord} = load('src/agent/run/contextCompaction.ts');
     assert.deepEqual(plain(usageRecord({inputTokens: 100, outputTokens: 40, inputTokenDetails: {cacheReadTokens: 80, cacheWriteTokens: 10}, outputTokenDetails: {reasoningTokens: 30}})),
         {input: 100, output: 40, cacheRead: 80, cacheWrite: 10, reasoning: 30});
 });
 
 test('stopped runs total completed steps and token display toggles persist', () => {
     const load = createLoader();
-    const {sumUsage} = load('src/chat/lib/efficiency.ts');
+    const {sumUsage} = load('src/agent/run/contextCompaction.ts');
     assert.equal(sumUsage([]), undefined);
     assert.deepEqual(plain(sumUsage([{input: 100, output: 20, cacheRead: 50}, {input: 200, output: 30}])),
         {input: 300, output: 50, cacheRead: 50});
-    const {normalizeAgentSettings} = load('src/chat/lib/agentSettings.ts');
+    const {normalizeAgentSettings} = load('src/agent/agentSettings.ts');
     const shown = normalizeAgentSettings({showRunTokens: true, showToolTokens: true});
     assert.equal(shown.showRunTokens, true);
     assert.equal(shown.showToolTokens, true);
 });
 
 test('output budgets include JSON escaping and oversized structured errors', () => {
-    const {compactToolOutput} = createLoader()('src/chat/lib/efficiency.ts');
+    const {compactToolOutput} = createLoader()('src/agent/run/contextCompaction.ts');
     const payload = Object.fromEntries(['error', 'url', 'finalUrl', 'newUrl', 'title', 'scriptId', 'path', 'sourcePath', 'status', 'urlMatchPattern', 'runAt']
         .map(key => [key, '\\"\n\t'.repeat(5000)]));
     payload.error = {stack: '\\"\n'.repeat(10000)};
@@ -410,7 +410,7 @@ test('archive keeps user decisions after many later observations', async () => {
     const {load, tools} = fixture();
     tools.askUser.execute = async () => ({answer: {label: 'This page only', custom: false}});
     tools.getCurrentTab.execute = async () => ({url: 'https://example.com'});
-    const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(tools, {request: '', findPrevious: () => undefined});
+    const runtime = load('src/agent/tools/toolRuntime.ts').createToolRuntime(tools, {request: '', findPrevious: () => undefined});
     await invoke(runtime.tools, 'askUser', {question: 'Where should this run?', options: [{label: 'This page only'}, {label: 'All pages'}]}, 'decision');
     for (let i = 0; i < 15; i++) await invoke(runtime.tools, 'getCurrentTab');
     const decision = runtime.taskState().find(entry => entry.resultId === 'decision');
@@ -423,14 +423,14 @@ test('virtual file listings return paths that readFile can consume', async () =>
         getKeys: async () => ['ts_file:chat/scripts/a.js', 'ts_file:other/scripts/b.js', 'ts_conversations'],
         get: async () => { throw new Error('Listings must not load stored payloads'); },
     }}}}});
-    const {listFiles} = load('src/chat/lib/storage.ts');
+    const {listFiles} = load('src/storage/storage.ts');
     assert.deepEqual(plain(await listFiles('chat', 'scripts/')), ['scripts/a.js']);
 });
 
 test('escaped archive pages reconstruct the original without nested truncation stubs', async () => {
     const {load, tools} = fixture();
     const original = '\\"\n\t'.repeat(3000);
-    const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(tools, {request: '', findPrevious: () => ({name: 'executeContentScript', input: {}, output: original})});
+    const runtime = load('src/agent/tools/toolRuntime.ts').createToolRuntime(tools, {request: '', findPrevious: () => ({name: 'executeContentScript', input: {}, output: original})});
     let offset = 0, reconstructed = '';
     do {
         const result = await invoke(runtime.tools, 'readToolResult', {resultId: 'old', offset, length: 5000});
@@ -446,7 +446,7 @@ test('aborted calls never execute browser actions', async () => {
     const {load, tools} = fixture();
     let executed = false;
     tools.getCurrentTab.execute = async () => { executed = true; };
-    const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(tools, {request: '', findPrevious: () => undefined});
+    const runtime = load('src/agent/tools/toolRuntime.ts').createToolRuntime(tools, {request: '', findPrevious: () => undefined});
     const controller = new AbortController(); controller.abort();
     await assert.rejects(runtime.tools.getCurrentTab.execute({}, {toolCallId: 'cancelled', messages: [], abortSignal: controller.signal}), {name: 'AbortError'});
     assert.equal(executed, false);
@@ -454,8 +454,8 @@ test('aborted calls never execute browser actions', async () => {
 
 test('SDK stops at a measured run budget without launching another step', async () => {
     const load = createLoader();
-    const {runStopReason, DEFAULT_AGENT_SETTINGS} = load('src/chat/lib/agentSettings.ts');
-    const {usageRecord} = load('src/chat/lib/efficiency.ts');
+    const {runStopReason, DEFAULT_AGENT_SETTINGS} = load('src/agent/agentSettings.ts');
+    const {usageRecord} = load('src/agent/run/contextCompaction.ts');
     const settings = {...DEFAULT_AGENT_SETTINGS, tokenBudget: 200};
     const steps = [];
     let reason = '', calls = 0;
@@ -484,7 +484,7 @@ test('real SDK multi-step streaming projects outputs and activates deferred tool
         getPageText: tool({inputSchema: z.object({}), execute: async () => ({text: 'x'.repeat(20000)})}),
         listScripts: tool({inputSchema: z.object({}), execute: async () => ({scripts: []})}),
     };
-    const runtime = load('src/chat/lib/toolRuntime.ts').createToolRuntime(raw, {request: '', findPrevious: () => undefined});
+    const runtime = load('src/agent/tools/toolRuntime.ts').createToolRuntime(raw, {request: '', findPrevious: () => undefined});
     let step = 0;
     const usage = {inputTokens: {total: 100, noCache: 20, cacheRead: 80}, outputTokens: {total: 10, text: 8, reasoning: 2}};
     const model = new MockLanguageModelV4({doStream: async request => {

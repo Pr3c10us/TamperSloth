@@ -8,7 +8,7 @@ const load = (local = {}) => {
         get: async key => (key in stored ? {[key]: stored[key]} : {}),
         set: async items => { Object.assign(stored, items); },
     }}};
-    return {...createLoader({globals: {chrome, Intl}})('src/chat/lib/dictation.ts'), stored};
+    return {...createLoader({globals: {chrome, Intl}})('src/pages/chat/composer/dictation.ts'), stored};
 };
 
 // A stand-in for SpeechRecognitionResultList: each result holds its best guess first.

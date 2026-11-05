@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {generateText} from 'ai';
 import {createLoader, plain} from './load-ts.mjs';
 
-const {buildModelMessages} = createLoader()('src/chat/lib/historyMessages.ts');
+const {buildModelMessages} = createLoader()('src/agent/conversation/historyMessages.ts');
 const image = name => ({id: name, kind: 'image', name, mediaType: 'image/png'});
 const options = {loadAttachment: async a => 'data:' + a.name, summarizeElement: html => 'summary of ' + html, maxAttachments: 3};
 const files = content => plain(content).filter(part => part.type === 'file').map(part => part.data);
@@ -62,7 +62,7 @@ test('a quote can be sent on its own', async () => {
     assert.equal(message.content, '[Quoted from the page]:\n> just this');
 });
 
-const {withInjected, asMidRun, beforeMessage, STOPPED_NOTE, MID_RUN_NOTE} = createLoader()('src/chat/lib/historyMessages.ts');
+const {withInjected, asMidRun, beforeMessage, STOPPED_NOTE, MID_RUN_NOTE} = createLoader()('src/agent/conversation/historyMessages.ts');
 
 test('a stopped reply tells the model it was cut short', async () => {
     const messages = await buildModelMessages([
@@ -137,7 +137,7 @@ test('whitespace beside an attachment does not become a text block', async () =>
 });
 
 test('Claude never receives an empty text block after a failed or tool-only reply', async () => {
-    const {getModel, MODELPROVIDERS} = createLoader()('src/chat/lib/provider.ts');
+    const {getModel, MODELPROVIDERS} = createLoader()('src/agent/models/provider.ts');
     const modelId = MODELPROVIDERS.find(p => p.id === 'anthropic').defaultModel;
     let sent;
     const transport = async (_url, init) => {
@@ -162,7 +162,7 @@ test('Claude never receives an empty text block after a failed or tool-only repl
     assert.deepEqual(blocks.filter(block => !block.text.trim()), []);
 });
 
-const {buildEditNote} = createLoader()('src/chat/lib/editNote.ts');
+const {buildEditNote} = createLoader()('src/agent/conversation/editNote.ts');
 
 test('an edited message tells the model what it replaced and what is still on the page', () => {
     const note = buildEditNote('redesign this page\nmake it dark', [

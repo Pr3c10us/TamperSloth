@@ -39,7 +39,7 @@ Nothing else needs registering. Run `npm test` to check it: the tests fail on an
 | `tools` | No | Tool groups to switch on when it loads, which saves the model an `enableTools` step. Only ever adds tools. |
 | `lastVerified` | Yes | `YYYY-MM-DD`: the date you last confirmed the process still works. The model sees it when the playbook loads. |
 
-Tool groups are `browsing`, `scripting`, `debugging`, `visual`, `browser`, `input`, `network`, `system` and `guidance`, as defined by `TOOL_GROUPS` in `src/chat/lib/toolRuntime.ts`.
+Tool groups are `browsing`, `scripting`, `debugging`, `visual`, `browser`, `input`, `network`, `system` and `guidance`, as defined by `TOOL_GROUPS` in `src/agent/tools/toolRuntime.ts`.
 
 ## playbook.md
 

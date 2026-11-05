@@ -5,8 +5,8 @@ import {z} from 'zod';
 import {createLoader} from './load-ts.mjs';
 
 const load = createLoader();
-const {getModel, MODELPROVIDERS} = load('src/chat/lib/provider.ts');
-const {VERTEX_PARTNER_MODELS, vertexProtocol} = load('src/chat/lib/vertexModels.ts');
+const {getModel, MODELPROVIDERS} = load('src/agent/models/provider.ts');
+const {VERTEX_PARTNER_MODELS, vertexProtocol} = load('src/agent/models/vertexModels.ts');
 // The wire protocol a model speaks. Vertex serves Gemini in Gemini's own and
 // partner and open models in their publisher's (or Chat Completions).
 const wireOf = (provider, model) => provider === 'google' ? 'gemini'
@@ -14,9 +14,9 @@ const wireOf = (provider, model) => provider === 'google' ? 'gemini'
         : provider === 'anthropic' ? 'anthropic'
             : provider === 'deepseek' || provider === 'kimi' ? 'chat' : 'responses';
 const isGemini = (provider, model) => wireOf(provider, model) === 'gemini';
-const {agentProviderOptions, thinkingLevelsFor, resolveThinkingLevel} = load('src/chat/lib/providerCompatibility.ts');
-const {createStepMessagePreparer} = load('src/chat/lib/efficiency.ts');
-const {createToolRuntime} = load('src/chat/lib/toolRuntime.ts');
+const {agentProviderOptions, thinkingLevelsFor, resolveThinkingLevel} = load('src/agent/models/providerCompatibility.ts');
+const {createStepMessagePreparer} = load('src/agent/run/contextCompaction.ts');
+const {createToolRuntime} = load('src/agent/tools/toolRuntime.ts');
 
 test('Gemini: production tools expose nonrecursive store values and decode JSON before execution', async () => {
     const messages = [];
@@ -24,7 +24,7 @@ test('Gemini: production tools expose nonrecursive store values and decode JSON 
         messages.push(message);
         return {ok: true};
     }}}}});
-    const tools = browserLoad('src/chat/lib/tools.ts').createAgentTools({conversationId: 'gemini-store'});
+    const tools = browserLoad('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'gemini-store'});
     const modelId = MODELPROVIDERS.find(p => p.id === 'google').defaultModel;
     const value = {nested: {items: [1, false, null, {text: 'hello'}]}};
     let requests = 0;

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createLoader} from './load-ts.mjs';
 
 const load = createLoader();
-const {createSwarm, CHOREOGRAPHIES, MAX_DOTS, CONVERGE_MS, BURST_MS, TEMPO, HOLD_SECONDS} = load('src/chat/lib/livingDots.ts');
+const {createSwarm, CHOREOGRAPHIES, MAX_DOTS, CONVERGE_MS, BURST_MS, TEMPO, HOLD_SECONDS} = load('src/pages/chat/messages/dotSwarm.ts');
 const FRAME = 1000 / 60;
 
 /** A seedable PRNG (mulberry32), so a swarm's run can be reproduced. */

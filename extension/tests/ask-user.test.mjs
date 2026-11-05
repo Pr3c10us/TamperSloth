@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import {createLoader, plain} from './load-ts.mjs';
 
 function setup() {
-    const load = createLoader({mocks: {'./storage': {}}});
-    const bus = load('src/chat/lib/askUserBus.ts');
-    const {askUser} = load('src/chat/lib/tools.ts').createAgentTools({conversationId: 'test'});
+    const load = createLoader({mocks: {'src/storage/storage.ts': {}}});
+    const bus = load('src/agent/tools/askUserBus.ts');
+    const {askUser} = load('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'test'});
     return {bus, askUser};
 }
 
@@ -34,7 +34,7 @@ test('bare string options still work', () => {
 });
 
 test('the question card wraps options instead of cutting them off', () => {
-    const overlay = fs.readFileSync('src/chat/components/askUser/askUserOverlay.tsx', 'utf8');
+    const overlay = fs.readFileSync('src/pages/chat/prompts/AskUserOverlay.tsx', 'utf8');
     assert.ok(!/\btruncate\b|line-clamp/.test(overlay));
     assert.match(overlay, /overflow-y-auto/);
 });

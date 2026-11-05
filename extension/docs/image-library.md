@@ -1,6 +1,6 @@
 # Image library
 
-TamperSloth can keep images in the browser under a name, so the agent, saved scripts and pages on any site can use them later. Nothing is written to the device's file system as a file the user manages. Images live in the `tampersloth-images` IndexedDB database in the extension's origin (`src/chat/lib/imageLibrary.ts`), which `unlimitedStorage` exempts from quota.
+TamperSloth can keep images in the browser under a name, so the agent, saved scripts and pages on any site can use them later. Nothing is written to the device's file system as a file the user manages. Images live in the `tampersloth-images` IndexedDB database in the extension's origin (`src/storage/imageLibrary.ts`), which `unlimitedStorage` exempts from quota.
 
 Not `chrome.storage`: storage listeners receive old and new values, which is what caused the out-of-memory crashes in [chat-storage.md](chat-storage.md). Not `@resource`: that inlines base64 into every injection. It is a database of its own so that its upgrades never wait on an open chat panel.
 

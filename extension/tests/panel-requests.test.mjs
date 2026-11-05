@@ -15,7 +15,7 @@ function sessionStorage() {
 
 const load = () => {
     const session = sessionStorage();
-    const lib = createLoader({globals: {chrome: {storage: {session}}}})('src/chat/lib/panelRequests.ts');
+    const lib = createLoader({globals: {chrome: {storage: {session}}}})('src/shared/panelRequests.ts');
     return {...lib, session};
 };
 

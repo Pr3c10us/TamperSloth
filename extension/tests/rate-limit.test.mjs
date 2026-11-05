@@ -4,7 +4,7 @@ import {APICallError, generateText, streamText} from 'ai';
 import {MockLanguageModelV4} from 'ai/test';
 import {createLoader} from './load-ts.mjs';
 
-const fresh = () => createLoader()('src/chat/lib/rateLimit.ts');
+const fresh = () => createLoader()('src/agent/models/rateLimit.ts');
 
 const rateLimited = (message, extra = {}) => new APICallError({
     message, url: 'https://api.example.test', requestBodyValues: {}, statusCode: 429, ...extra,

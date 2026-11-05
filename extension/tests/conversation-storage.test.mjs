@@ -22,7 +22,7 @@ function fixture({legacy = [], bytes = 0} = {}) {
         set: async value => { writes.push(value); Object.assign(saved, structuredClone(value)); },
         remove: async keys => { for (const key of Array.isArray(keys) ? keys : [keys]) delete saved[key]; },
     }}};
-    const reload = () => createLoader({globals: {chrome, indexedDB}})('src/chat/lib/storage.ts');
+    const reload = () => createLoader({globals: {chrome, indexedDB}})('src/storage/storage.ts');
     return {storage: reload(), reload, saved, reads, writes};
 }
 
@@ -68,7 +68,7 @@ test('file listings and deletions use keys without reading the chat archive or f
 });
 
 test('slow saves coalesce snapshots per conversation without dropping other chats', async () => {
-    const {createConversationSaver} = createLoader()('src/chat/lib/conversationSaver.ts');
+    const {createConversationSaver} = createLoader()('src/agent/conversation/conversationSaver.ts');
     const writes = [], errors = [];
     let release;
     const blocked = new Promise(resolve => { release = resolve; });

@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {createLoader, plain} from './load-ts.mjs';
 
 const chrome = {runtime: {getManifest: () => ({version: '3.2'}), sendMessage: async () => ({ok: true})}};
-const runtime = createLoader({globals: {chrome}})('src/background/userscriptRuntime.ts');
+const runtime = createLoader({globals: {chrome}})('src/background/userscripts/userscriptRuntime.ts');
 
 const userscript = (overrides = {}) => ({
     namespace: 'ns', version: '1.0', author: 'me', homepage: '',

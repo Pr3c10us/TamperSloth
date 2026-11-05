@@ -1,17 +1,17 @@
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import App from './App.tsx'
+import App from '@/pages/gallery/GalleryPage'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import Settings from "@/src/settings";
-import Chat from "@/src/chat";
-import MicrophoneAccess from "@/src/microphone";
-import ScriptViewer from "@/src/scripts";
-import InstallUserscript from "@/src/scripts/Install";
-import ConnectPrompt from "@/src/scripts/ConnectPrompt";
-import ImageLibrary from "@/src/images";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { usePanelRequestRouting } from "@/src/chat/hooks/usePanelRequests";
-import { initTheme } from "@/src/settings/lib/theme";
+import Settings from "@/pages/settings/SettingsPage";
+import Chat from "@/pages/chat/ChatPage";
+import MicrophoneAccess from "@/pages/microphone/MicrophonePage";
+import ScriptViewer from "@/pages/script-viewer/ScriptViewerPage";
+import InstallUserscript from "@/pages/install/InstallPage";
+import ConnectPrompt from "@/pages/connect/ConnectPage";
+import ImageLibrary from "@/pages/images/ImageLibraryPage";
+import { TooltipProvider } from "@/ui/shadcn/tooltip";
+import { usePanelRequestRouting } from "@/pages/chat/hooks/usePanelRequests";
+import { initTheme } from "@/ui/theme";
 
 initTheme();
 

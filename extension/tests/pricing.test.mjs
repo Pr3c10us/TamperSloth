@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {createLoader} from './load-ts.mjs';
 
 const load = createLoader();
-const {estimateUsageCost, estimateRunCost, formatCost} = load('src/chat/lib/pricing.ts');
-const {MODELPROVIDERS} = load('src/chat/lib/provider.ts');
+const {estimateUsageCost, estimateRunCost, formatCost} = load('src/agent/models/pricing.ts');
+const {MODELPROVIDERS} = load('src/agent/models/provider.ts');
 const sunday = Date.UTC(2026, 9, 11, 7);
 const mondayPeak = Date.UTC(2026, 9, 12, 7);
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-12, `${actual} != ${expected}`);
@@ -87,7 +87,7 @@ test('unknown legacy models and missing usage never masquerade as free', () => {
 });
 
 test('credits convert at the rate the account sets, ignoring bad values', () => {
-    const {formatCredits, setCreditsPerUsd} = createLoader()('src/chat/lib/pricing.ts');
+    const {formatCredits, setCreditsPerUsd} = createLoader()('src/agent/models/pricing.ts');
     assert.equal(formatCredits(1), '10 credits');
     setCreditsPerUsd(100);
     assert.equal(formatCredits(1), '100 credits');

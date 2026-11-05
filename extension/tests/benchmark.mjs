@@ -3,12 +3,12 @@ import {z} from 'zod';
 import {createLoader} from './load-ts.mjs';
 
 const baseline = JSON.parse(fs.readFileSync(new URL('./fixtures/context-baseline.json', import.meta.url), 'utf8'));
-const load = createLoader({mocks: {'./storage': {}}});
-const raw = load('src/chat/lib/tools.ts').createAgentTools({conversationId: 'benchmark'});
-const {createToolRuntime} = load('src/chat/lib/toolRuntime.ts');
-const {compactToolOutput, compactMessages, serialize} = load('src/chat/lib/efficiency.ts');
-const prompt = load('src/chat/lib/prompt.ts').default;
-const skills = load('src/chat/lib/skills.ts').skills;
+const load = createLoader({mocks: {'src/storage/storage.ts': {}}});
+const raw = load('src/agent/tools/createAgentTools.ts').createAgentTools({conversationId: 'benchmark'});
+const {createToolRuntime} = load('src/agent/tools/toolRuntime.ts');
+const {compactToolOutput, compactMessages, serialize} = load('src/agent/run/contextCompaction.ts');
+const prompt = load('src/agent/prompt/systemPrompt.ts').default;
+const skills = load('src/agent/prompt/skills.ts').skills;
 const previousPreamble = baseline.toolDefinitionChars + baseline.systemPromptChars;
 const reduction = (before, after) => `${((1 - after / before) * 100).toFixed(1)}%`;
 

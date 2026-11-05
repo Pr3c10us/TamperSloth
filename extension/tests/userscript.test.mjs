@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createLoader, plain} from './load-ts.mjs';
 
-const us = createLoader()('src/scripts/userscript.ts');
+const us = createLoader()('src/userscripts/userscript.ts');
 
 const script = (meta, body = '') => `// ==UserScript==\n${meta.map(line => `// ${line}`).join('\n')}\n// ==/UserScript==\n${body}`;
 const regex = ([source, flags]) => new RegExp(source, flags);

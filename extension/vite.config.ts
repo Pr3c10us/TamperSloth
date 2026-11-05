@@ -27,7 +27,7 @@ export default defineConfig(({ mode }) => ({
   },
   resolve: {
     alias: {
-      "@": resolve(dirname(fileURLToPath(import.meta.url)), "."),
+      "@": resolve(__dirname, "src"),
     },
   },
   // No static-copy plugin for the manifest: Vite's default publicDir already

@@ -4,7 +4,7 @@ import {MockLanguageModelV4} from 'ai/test';
 import {createLoader} from './load-ts.mjs';
 
 const load = createLoader();
-const {cleanTitle, requestTitle, generateChatTitle, TITLE_MAX} = load('src/chat/lib/chatTitle.ts');
+const {cleanTitle, requestTitle, generateChatTitle, TITLE_MAX} = load('src/agent/conversation/chatTitle.ts');
 
 test('cleanTitle keeps one plain line', () => {
     assert.equal(cleanTitle('"Hide YouTube Shorts."'), 'Hide YouTube Shorts');

@@ -81,7 +81,7 @@ function fixture() {
 
 test('picker joins the top layer and moves into a modal so picks inside it still land', () => {
     const f = fixture();
-    const {pickerOverlay} = f.load('src/background/pickerOverlay.ts');
+    const {pickerOverlay} = f.load('src/injected/pickerOverlay.ts');
     pickerOverlay({action: 'start', group: 'chat'});
     const host = f.track('tampersloth-picker');
     assert.equal(host.attrs.popover, 'manual');
@@ -151,7 +151,7 @@ test('picker follows the most recently opened modal when several are open', () =
     const first = new f.Element('dialog'); first.id = 'first';
     const second = new f.Element('dialog'); second.id = 'second';
     f.body.append(second, first);
-    const {pickerOverlay} = f.load('src/background/pickerOverlay.ts');
+    const {pickerOverlay} = f.load('src/injected/pickerOverlay.ts');
     // Already open before the overlay started: the later one in the document wins.
     first.setAttribute('open', ''); first.modal = true;
     pickerOverlay({action: 'start', group: 'chat'});
@@ -169,7 +169,7 @@ test('drawing overlay joins the top layer, moves into a modal and cleans up on d
     const f = fixture();
     const dialog = new f.Element('dialog'); dialog.id = 'modal'; f.body.append(dialog);
     dialog.setAttribute('open', ''); dialog.modal = true;
-    const {drawOverlay} = f.load('src/background/drawOverlay.ts');
+    const {drawOverlay} = f.load('src/injected/drawOverlay.ts');
     assert.equal(drawOverlay({action: 'start'}).ok, true);
     const host = f.track('tampersloth-draw');
     assert.equal(host.attrs.popover, 'manual');

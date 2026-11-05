@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createLoader} from './load-ts.mjs';
 
-const {summarizeError} = createLoader()('src/chat/lib/errorSummary.ts');
+const {summarizeError} = createLoader()('src/pages/chat/notices/errorSummary.ts');
 
 const TOOL_INPUT = 'AI_InvalidToolInputError: Invalid input for tool askUser: AI_TypeValidationError: Type validation failed: Value: {"question":"How?","options":["A","B"]}. Error message: [ { "expected": "object", "code": "invalid_type", "path": [ "options", 0 ], "message": "Invalid input: expected object, received string" } ]';
 

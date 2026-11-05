@@ -35,10 +35,10 @@ function fixture({scripts = [], responses = {}, page = () => ({}), clipboardResu
     const load = createLoader({
         globals: {chrome, indexedDB: new IDBFactory(), Blob, Response, fetch, atob, btoa, TextDecoder, TextEncoder, OffscreenCanvas,
             createImageBitmap: async () => ({width: 1000, height: 500, close() {}})},
-        mocks: {'./screenshotCapture': {capturePng: async (_tabId, box) => ({blob: pngBlob(), box})}},
+        mocks: {'src/background/browser/screenshotCapture.ts': {capturePng: async (_tabId, box) => ({blob: pngBlob(), box})}},
     });
-    const library = load('src/chat/lib/imageLibrary.ts');
-    const service = load('src/background/imageService.ts');
+    const library = load('src/storage/imageLibrary.ts');
+    const service = load('src/background/images/imageService.ts');
     const clipboard = async (...args) => { clipboardCalls.push(args); return clipboardResult; };
     const run = input => service.runImageAction({index: 0, ...input}, clipboard);
     return {library, run, fetched, injected, clipboardCalls};
@@ -322,8 +322,8 @@ test('importing a script brings its images, and exporting one packs them', async
     }
     const load = createLoader({globals: {chrome, indexedDB: new IDBFactory(), Blob, atob, btoa, TextDecoder, OffscreenCanvas: class {}, URL: CapturingURL,
         document: {createElement: () => ({click() {}})}, createImageBitmap: async () => ({width: 4, height: 4, close() {}})}});
-    const storage = load('src/chat/lib/storage.ts');
-    const library = load('src/chat/lib/imageLibrary.ts');
+    const storage = load('src/storage/storage.ts');
+    const library = load('src/storage/imageLibrary.ts');
     const script = {id: 'old', name: 'S', description: '', code: "MH_getImage('logo')", urlMatchPattern: '<all_urls>', status: 'active', runAt: 'document_idle', conversationId: ''};
     const count = await storage.importScriptsFromJson(JSON.stringify({...script, images: [{name: 'logo', dataUrl: pngDataUrl()}]}));
     assert.equal(count, 1);
@@ -345,7 +345,7 @@ test('importing a script brings its images, and exporting one packs them', async
 
 test('userscripts: GM_getImage reaches the background, gets a usable image, and missing means null', async () => {
     const chrome = {runtime: {getManifest: () => ({version: '3.2'}), sendMessage: async () => ({ok: true})}};
-    const runtime = createLoader({globals: {chrome}})('src/background/userscriptRuntime.ts');
+    const runtime = createLoader({globals: {chrome}})('src/background/userscripts/userscriptRuntime.ts');
     const code = runtime.buildUserscriptCode({
         id: 'abc', conversationId: '', name: 'T', description: '', urlMatchPattern: '', status: 'active', runAt: 'document_idle',
         code: `Promise.all([GM_getImage('Logo'), GM.getImage('none'), GM_listImages()]).then(function (r) { out.done(r); });`,
@@ -379,10 +379,10 @@ test('userscripts: GM_getImage reaches the background, gets a usable image, and 
 test('userscripts need their own @grant to read the library, and a reviewed one sees it', async () => {
     const load = createLoader({
         globals: {chrome: {runtime: {sendMessage: async () => ({ok: true})}, tabs: {}, storage: {session: {}}}, indexedDB: new IDBFactory(), Blob, atob, btoa, TextDecoder},
-        mocks: {'./browserService': {clipboard: async () => ({})}, './connectPrompt': {askToConnect: async () => false}, './userscriptHost': {pushToScript() {}}},
+        mocks: {'src/background/browser/browserService.ts': {clipboard: async () => ({})}, 'src/background/userscripts/connectPrompt.ts': {askToConnect: async () => false}, 'src/background/userscripts/userscriptHost.ts': {pushToScript() {}}},
     });
-    const bridge = load('src/background/userscriptBridge.ts');
-    const library = load('src/chat/lib/imageLibrary.ts');
+    const bridge = load('src/background/userscripts/userscriptBridge.ts');
+    const library = load('src/storage/imageLibrary.ts');
     await stored(library, 'logo');
     const script = grants => ({id: 'a', name: 'A', userscript: {grants}});
     const none = script(['GM_xmlhttpRequest']);
@@ -401,7 +401,7 @@ test('saved and one-off scripts get the same helpers; one-off code only carries 
     const load = createLoader({globals: {chrome: {storage: {session: {
         get: async key => ({[key]: session[key]}), set: async value => Object.assign(session, value),
     }}}}});
-    const api = load('src/background/imageScriptApi.ts');
+    const api = load('src/background/images/imageScriptApi.ts');
     assert.equal(api.usesImageHelpers('const a = 1;'), false);
     assert.equal(api.usesImageHelpers('await MH_getImage("a")'), true);
     const token = await api.temporaryImageToken();
@@ -425,7 +425,7 @@ test('saved and one-off scripts get the same helpers; one-off code only carries 
 test('the model cannot pass image bytes in, and an attachment goes through by file name', async () => {
     const calls = [];
     const load = createLoader({globals: {btoa, Blob, chrome: {runtime: {sendMessage: async message => { calls.push(message); return {ok: true}; }}}}});
-    const tools = load('src/chat/lib/browserTools.ts').createBrowserTools(() => 9, () => {}, undefined, {
+    const tools = load('src/agent/tools/browserTools.ts').createBrowserTools(() => 9, () => {}, undefined, {
         conversationId: 'c', findAttachment: async name => name === 'me.png' ? pngBlob() : null,
     });
     const schema = tools.imageLibrary.inputSchema;
@@ -441,7 +441,7 @@ test('the model cannot pass image bytes in, and an attachment goes through by fi
 });
 
 test('image requests load the tool, and the group can be enabled', async () => {
-    const {initialToolGroups, TOOL_GROUPS} = createLoader({globals: {}})('src/chat/lib/toolRuntime.ts');
+    const {initialToolGroups, TOOL_GROUPS} = createLoader({globals: {}})('src/agent/tools/toolRuntime.ts');
     assert.ok(initialToolGroups('save this picture and use it as my cursor').includes('images'));
     assert.ok(initialToolGroups('Generate an image on ChatGPT').includes('images'));
     assert.ok(!initialToolGroups('summarize this article').includes('images'));
@@ -449,7 +449,7 @@ test('image requests load the tool, and the group can be enabled', async () => {
 });
 
 test('the safety layer sees saves, replacements, uploads and deletions for what they are', () => {
-    const {assessAction} = createLoader({globals: {}})('src/chat/lib/actionScreen.ts');
+    const {assessAction} = createLoader({globals: {}})('src/agent/safety/actionScreen.ts');
     assert.equal(assessAction('imageLibrary', {action: 'list'}).risk, 'none');
     assert.equal(assessAction('imageLibrary', {action: 'view', name: 'a'}).risk, 'none');
     const save = assessAction('imageLibrary', {action: 'save', name: 'a', url: 'https://x.example/a.png'});

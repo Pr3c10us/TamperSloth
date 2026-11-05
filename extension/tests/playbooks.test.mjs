@@ -7,9 +7,9 @@ import {z} from 'zod';
 import {createLoader, invoke, plain} from './load-ts.mjs';
 
 const load = createLoader();
-const {parsePlaybook, parsePlaybooks, renderPlaybookIndex, loadedPlaybookIds} = load('src/chat/lib/playbooks.ts');
-const {createToolRuntime} = load('src/chat/lib/toolRuntime.ts');
-const {compactMessages} = load('src/chat/lib/efficiency.ts');
+const {parsePlaybook, parsePlaybooks, renderPlaybookIndex, loadedPlaybookIds} = load('src/agent/prompt/playbooks.ts');
+const {createToolRuntime} = load('src/agent/tools/toolRuntime.ts');
+const {compactMessages} = load('src/agent/run/contextCompaction.ts');
 
 function readSource(root, folder) {
     const read = name => {
@@ -36,7 +36,7 @@ test('every shipped playbook is valid, with unique ids', () => {
 
 test('code in shipped playbooks parses, and the 3D kit does not trigger the secrets approval', () => {
     const AsyncFunction = (async () => {}).constructor;
-    const {assessAction} = load('src/chat/lib/actionScreen.ts');
+    const {assessAction} = load('src/agent/safety/actionScreen.ts');
     for (const folder of fs.readdirSync('playbooks', {withFileTypes: true}).filter(entry => entry.isDirectory()).map(entry => entry.name)) {
         const markdown = fs.readFileSync(path.join('playbooks', folder, 'playbook.md'), 'utf8');
         const blocks = [...markdown.matchAll(/```js[^\n]*\r?\n([\s\S]*?)```/g)].map(match => match[1]);
@@ -181,7 +181,7 @@ test('a loaded playbook survives compaction in a long run', () => {
 });
 
 test('loadPlaybook is treated as read-only and is not scanned as page content', () => {
-    for (const file of ['actionScreen', 'safetyGate', 'stepSummary', 'toolMeta']) {
-        assert.ok(fs.readFileSync(`src/chat/lib/${file}.ts`, 'utf8').includes('loadPlaybook'), file);
+    for (const file of ['agent/safety/actionScreen', 'agent/safety/safetyGate', 'pages/chat/messages/stepSummary', 'pages/chat/messages/toolMeta']) {
+        assert.ok(fs.readFileSync(`src/${file}.ts`, 'utf8').includes('loadPlaybook'), file);
     }
 });
