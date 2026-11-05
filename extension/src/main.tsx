@@ -8,6 +8,7 @@ import MicrophoneAccess from "@/src/microphone";
 import ScriptViewer from "@/src/scripts";
 import InstallUserscript from "@/src/scripts/Install";
 import ConnectPrompt from "@/src/scripts/ConnectPrompt";
+import ImageLibrary from "@/src/images";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { usePanelRequestRouting } from "@/src/chat/hooks/usePanelRequests";
 import { initTheme } from "@/src/settings/lib/theme";
@@ -32,6 +33,7 @@ createRoot(document.getElementById('root')!).render(
       <Routes>
           <Route path="/" element={<Chat />} />
           <Route path="/gallery" element={<App />} />
+          <Route path="/images" element={<ImageLibrary />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/microphone" element={<MicrophoneAccess />} />
           <Route path="/scripts/:id" element={<ScriptViewer />} />

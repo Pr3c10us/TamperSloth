@@ -174,7 +174,7 @@ function sameDocument(a: string, b?: string) {
 
 const SKILL_IDS = Object.keys(skills) as [SkillId, ...SkillId[]];
 
-export function createAgentTools(context: { conversationId: string; abortSignal?: AbortSignal }) {
+export function createAgentTools(context: { conversationId: string; abortSignal?: AbortSignal; findAttachment?: (name: string) => Promise<Blob | null> }) {
     let tabId = Number(new URLSearchParams(window.location.search).get("tabId"));
     // Check cancellation at each browser mutation, including later steps of a tool.
     const guard = async () => {
@@ -240,7 +240,7 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
         } finally { globalThis.chrome.tabs.onUpdated.removeListener(listener); } };
     };
     return leaseTabTools({
-        ...createBrowserTools(() => tabId, id => { tabId = id; }, context.abortSignal, {conversationId: context.conversationId, originTabId: tabId > 0 ? tabId : undefined, originBlank}),
+        ...createBrowserTools(() => tabId, id => { tabId = id; }, context.abortSignal, {conversationId: context.conversationId, originTabId: tabId > 0 ? tabId : undefined, originBlank, findAttachment: context.findAttachment}),
         // ═══════════════════════════════════════════════
         //  Skills
         // ═══════════════════════════════════════════════
@@ -1100,6 +1100,16 @@ export function createAgentTools(context: { conversationId: string; abortSignal?
                     return {
                         success: false,
                         error: `No file at ${path}. Create it with createFileTool first.`,
+                    };
+                }
+
+                // Every script tags its UI this way, so a bare selector deletes other scripts' UI too.
+                if (/querySelector(?:All)?\(\s*(['"`])\[data-ts-ui\]\1\s*\)[\s\S]{0,80}?\.remove\(\)/.test(code)) {
+                    return {
+                        success: false,
+                        error:
+                            "This code removes every [data-ts-ui] element, which also deletes what the user's other scripts added to the page. " +
+                            "Give this script's elements unique data-ts-ui values and remove only those, e.g. [data-ts-ui=\"acme-css\"], then save again.",
                     };
                 }
 

@@ -6,6 +6,7 @@ import {
     ChevronDown,
     Download,
     FileCode,
+    Images,
     Pause,
     Play,
     Search,
@@ -151,6 +152,9 @@ function App() {
                 </PageHeaderAction>
                 <PageHeaderTitle className="flex-1">Gallery</PageHeaderTitle>
                 <div className="flex shrink-0 items-center gap-0.5">
+                    <PageHeaderAction label="Saved images" onClick={() => navigate("/images")}>
+                        <Images/>
+                    </PageHeaderAction>
                     {scripts.length > 0 && (
                         <>
                             <PageHeaderAction label="Install a userscript" onClick={() => openInstallPage()}>
@@ -334,8 +338,10 @@ function App() {
                                                     size="sm"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        exportScript(script);
-                                                        toast.success(`"${script.name}" exported.`);
+                                                        void exportScript(script).then(
+                                                            () => toast.success(`"${script.name}" exported.`),
+                                                            () => toast.error(`Could not export "${script.name}".`),
+                                                        );
                                                     }}
                                                     className="h-7 gap-1 px-2 text-[11.5px]"
                                                 >

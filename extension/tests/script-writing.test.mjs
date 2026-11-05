@@ -415,6 +415,30 @@ test('saving a file again updates what it was saved as, and a new script still n
     assert.match((await save({scriptId: first.scriptId, urlMatchPattern: 'nope'})).error, /Invalid URL/);
 });
 
+test('a script that would delete other scripts\' UI is not saved, but its own cleanup is', async () => {
+    const wipes = [
+        `document.querySelectorAll('[data-ts-ui]').forEach(e => e.remove());`,
+        `for (const n of document.querySelectorAll("[data-ts-ui]")) n.remove();`,
+        'document.querySelector(`[data-ts-ui]`)?.remove();',
+    ];
+    const keeps = [
+        `document.querySelectorAll('[data-ts-ui="acme-css"],[data-ts-ui="acme-app"]').forEach(e => e.remove());`,
+        `const count = document.querySelectorAll('[data-ts-ui]').length; ${'/* unrelated */ '.repeat(8)} popup.remove();`,
+    ];
+    for (const code of wipes) {
+        const {tools, scripts} = fixture({files: new Map([['scripts/a.js', code]])});
+        const {output} = await invoke(tools, 'saveScript', {path: 'scripts/a.js', name: 'A', urlMatchPattern: 'https://a.com/*'});
+        assert.match(output.error, /other scripts/, code);
+        assert.equal(scripts.length, 0, code);
+    }
+    for (const code of keeps) {
+        const {tools, scripts} = fixture({files: new Map([['scripts/a.js', code]])});
+        const {output} = await invoke(tools, 'saveScript', {path: 'scripts/a.js', name: 'A', urlMatchPattern: 'https://a.com/*'});
+        assert.equal(output.success, true, code);
+        assert.equal(scripts.length, 1, code);
+    }
+});
+
 test('listings give the size and working file of each script', async () => {
     const {tools} = fixture({scripts: [savedScript('a\nb', {sourcePath: 'scripts/x.js'})]});
     assert.equal((await invoke(tools, 'listScripts')).output.scripts[0].lines, 2);

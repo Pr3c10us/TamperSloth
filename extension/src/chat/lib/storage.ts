@@ -2,6 +2,7 @@ import type { ProviderId } from "./provider.ts";
 import type { BackgroundScript } from "./types.ts";
 import type { ThinkingLevel } from "./thinkingLevel.ts";
 import {readChat, readChatSummaries, writeChat, removeChat, writeAttachments, readAttachment, removeAttachments, type ConversationSummary, type StoredAttachmentData} from './conversationDB';
+import {exportImages, importImages, referencedImageNames} from './imageLibrary';
 export type {ConversationSummary} from './conversationDB';
 
 
@@ -218,8 +219,14 @@ function downloadJson(json: string, filename: string): void {
 
 const scriptFileName = (script: BackgroundScript) => script.name.replace(/[^a-zA-Z0-9_-]/g, "_");
 
-export function exportScript(script: BackgroundScript): void {
-    downloadJson(JSON.stringify(script, null, 2), `${scriptFileName(script)}.json`);
+/** A script with the saved images its code asks for by name, so it still works in another browser. */
+async function withItsImages(script: BackgroundScript) {
+    const images = await exportImages(referencedImageNames(script.code));
+    return images.length ? {...script, images} : script;
+}
+
+export async function exportScript(script: BackgroundScript): Promise<void> {
+    downloadJson(JSON.stringify(await withItsImages(script), null, 2), `${scriptFileName(script)}.json`);
 }
 
 /** Downloads just the script's source, for reading or diffing outside TamperSloth. */
@@ -228,7 +235,7 @@ export function downloadScriptSource(script: BackgroundScript): void {
 }
 
 export async function exportAllScripts(): Promise<void> {
-    const scripts = await loadScripts();
+    const scripts = await Promise.all((await loadScripts()).map(withItsImages));
     downloadJson(
         JSON.stringify(scripts, null, 2),
         `tampersloth-scripts-${new Date().toISOString().slice(0, 10)}.json`,
@@ -247,9 +254,12 @@ export async function importScriptsFromJson(json: string): Promise<number> {
             ? [parsed]
             : [];
     if (items.length === 0) throw new Error("No valid scripts found");
-    for (const s of items) {
-        s.id = crypto.randomUUID();
-        await saveScript(s);
+    for (const item of items) {
+        const {images, ...script} = item as BackgroundScript & {images?: unknown};
+        // Images come along first so the script finds them; one with the same name already here stays.
+        await importImages(images);
+        script.id = crypto.randomUUID();
+        await saveScript(script);
     }
     return items.length;
 }

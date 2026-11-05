@@ -104,14 +104,16 @@ export async function buildModelMessages(messages: HistoryMessage[], options: Hi
             const stopped = m.stopped ? `${m.content ? "\n\n" : ""}${STOPPED_NOTE}` : "";
             // Only until the next message has picked it up: after that the file has moved on.
             const resume = i === messages.length - 2 && m.resumeNote ? `\n\n${m.resumeNote}` : "";
-            built.push({role: "assistant", content: m.content + stopped + resume + state});
+            const reply = m.content + stopped + resume + state;
+            // A failed reply, or a tool-only one past the notes window, has no text. Claude rejects empty text blocks.
+            if (reply.trim()) built.push({role: "assistant", content: reply});
             continue;
         }
         const asked = withElementContext(withQuotes(m.content, m.quotes), m.pickedElements, summarizeElement);
         const text = m.editNote ? [m.editNote, asked].filter(Boolean).join("\n\n") : asked;
         const attachments = m.attachments ?? [];
         if (!attachments.length) {
-            built.push({role: "user", content: text});
+            if (text.trim()) built.push({role: "user", content: text});
             continue;
         }
         const isLatest = i === messages.length - 1;
@@ -129,7 +131,7 @@ export async function buildModelMessages(messages: HistoryMessage[], options: Hi
                 : {type: "file", data, mediaType: a.mediaType ?? "application/octet-stream", filename: a.name});
         }
         const note = omitted.length ? `\n\n[Attachments not shown: ${omitted.join(", ")}]` : "";
-        if (text || note) parts.unshift({type: "text", text: text + note});
+        if (text.trim() || note) parts.unshift({type: "text", text: text + note});
         built.push({role: "user", content: parts});
     }
     return built.reverse();

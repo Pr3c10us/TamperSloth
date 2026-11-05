@@ -1,6 +1,6 @@
-import {useEffect, useState} from "react";
+import {lazy, Suspense, useEffect, useRef, useState} from "react";
 import {useParams} from "react-router-dom";
-import {Check, Copy, Download, FileCode, Pause, Play, RefreshCw, Trash2, WrapText, X} from "lucide-react";
+import {Check, Copy, Download, FileCode, Pause, Pencil, Play, RefreshCw, Save, Trash2, TriangleAlert, WrapText, X} from "lucide-react";
 import {toast} from "sonner";
 import {cn} from "@/lib/utils";
 import {Button} from "@/components/ui/button";
@@ -27,11 +27,15 @@ import {
     updateScriptStatus,
 } from "@/src/chat/lib/storage";
 import type {BackgroundScript} from "@/src/chat/lib/types";
+import {saveEditedScript, scriptCodeProblem} from "./editScript";
 import {ScriptCode} from "./ScriptCode";
+import type {ScriptEditorHandle} from "./ScriptEditor";
 import {openChatInPanel, RUN_AT_LABELS, reloadedNote, reloadTabsForScript} from "./lib";
 import {SitesDialog} from "./SitesDialog";
 import {scriptTargets} from "./userscript";
 import {openInstallPage} from "./installUserscript";
+
+const ScriptEditor = lazy(() => import("./ScriptEditor"));
 
 const WRAP_KEY = "ts_script_viewer_wrap";
 
@@ -61,7 +65,7 @@ function Meta({label, children}: {label: string; children: React.ReactNode}) {
     );
 }
 
-/** Full-tab, read-only view of a saved script's source. Opened from the gallery. */
+/** Full-tab view of a saved script's source, where it can also be edited. Opened from the gallery. */
 export default function ScriptViewer() {
     const {id = ""} = useParams();
     const [script, setScript] = useState<BackgroundScript | null | undefined>(undefined);
@@ -73,6 +77,24 @@ export default function ScriptViewer() {
     const [confirmDelete, setConfirmDelete] = useState(false);
     const [deleted, setDeleted] = useState(false);
     const [checking, setChecking] = useState(false);
+    // While editing: the saved code it started from, and the code as it stands now.
+    const [editBase, setEditBase] = useState<string | null>(null);
+    const [draft, setDraft] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [confirmDiscard, setConfirmDiscard] = useState(false);
+    const [problem, setProblem] = useState<{message: string; offset?: number; canOverride?: boolean} | null>(null);
+    const editor = useRef<ScriptEditorHandle>(null);
+
+    const editing = editBase !== null;
+    const unsaved = editing && draft !== editBase;
+
+    // Closing or reloading the tab would lose the edits.
+    useEffect(() => {
+        if (!unsaved) return;
+        const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+        window.addEventListener("beforeunload", warn);
+        return () => window.removeEventListener("beforeunload", warn);
+    }, [unsaved]);
 
     // Stay in step with the gallery and the agent, which can pause or delete it meanwhile.
     useEffect(() => {
@@ -148,6 +170,62 @@ export default function ScriptViewer() {
         }});
     };
 
+    const startEditing = (current: BackgroundScript) => {
+        setProblem(null);
+        setDraft(current.code);
+        setEditBase(current.code);
+    };
+
+    const stopEditing = () => {
+        setProblem(null);
+        setConfirmDiscard(false);
+        setEditBase(null);
+    };
+
+    const loadLatest = (current: BackgroundScript) => {
+        setProblem(null);
+        setEditBase(current.code);
+        setDraft(current.code);
+        editor.current?.setCode(current.code);
+    };
+
+    const handleSave = async (current: BackgroundScript, override = false) => {
+        if (saving || draft === editBase) return;
+        const code = draft;
+        const blocking = scriptCodeProblem(current, code);
+        if (blocking) {
+            setProblem({message: blocking});
+            return;
+        }
+        setSaving(true);
+        try {
+            if (!override) {
+                const {findSyntaxProblem} = await import("./scriptSyntax");
+                const syntax = findSyntaxProblem(code);
+                if (syntax) {
+                    setProblem({message: `Line ${syntax.line} looks like a syntax error, so the script may not run.`, offset: syntax.offset, canOverride: true});
+                    editor.current?.goTo(syntax.offset);
+                    return;
+                }
+            }
+            setProblem(null);
+            // From the stored copy: a pause or a forgotten site since this page rendered stays.
+            const latest = (await loadScripts()).find((s) => s.id === current.id) ?? current;
+            const updated = await saveEditedScript(latest, code);
+            setEditBase(code);
+            toast.success(`"${updated.name}" saved.`, updated.status === "active"
+                ? {
+                    description: "Matching pages pick it up on their next load.",
+                    action: {label: "Reload tabs", onClick: () => void reloadTabsForScript(updated)},
+                }
+                : {description: "It's paused, so it won't run until you resume it."});
+        } catch (error) {
+            setProblem({message: error instanceof Error ? error.message : "Couldn't save the script."});
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const handleDelete = async (current: BackgroundScript) => {
         setDeleted(true);
         await deleteScript(current.id);
@@ -186,7 +264,8 @@ export default function ScriptViewer() {
     }
 
     const isActive = script.status === "active";
-    const lineCount = script.code.split("\n").length;
+    const lineCount = (editing ? draft : script.code).split("\n").length;
+    const changedElsewhere = editing && script.code !== editBase;
     const targets = scriptTargets(script);
     const userscript = script.userscript;
     const updatable = !!userscript && !!(userscript.updateURL || userscript.downloadURL || userscript.sourceUrl);
@@ -312,7 +391,7 @@ export default function ScriptViewer() {
                 <div className="mt-6 overflow-clip rounded-[10px] border border-border bg-card text-card-foreground">
                     <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-card px-3.5 py-2">
                         <span className="eyebrow flex-1 text-muted-foreground">
-                            JavaScript · {plural(lineCount, "line")}
+                            {editing ? "Editing" : "JavaScript"} · {plural(lineCount, "line")}{unsaved && " · Unsaved"}
                         </span>
                         <Tooltip>
                             <TooltipTrigger asChild>
@@ -329,30 +408,116 @@ export default function ScriptViewer() {
                             </TooltipTrigger>
                             <TooltipContent>{wrap ? "Scroll long lines" : "Wrap long lines"}</TooltipContent>
                         </Tooltip>
-                        <Button
-                            variant="ghost"
-                            size="xs"
-                            onClick={() => handleCopy(script.code)}
-                            className="text-muted-foreground"
-                        >
-                            {copied ? <Check strokeWidth={1.5}/> : <Copy strokeWidth={1.5}/>}
-                            {copied ? "Copied" : "Copy"}
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="xs"
-                            onClick={() => downloadScriptSource(script)}
-                            className="text-muted-foreground"
-                        >
-                            <Download strokeWidth={1.5}/>
-                            .js
-                        </Button>
+                        {editing ? (
+                            <>
+                                <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    onClick={() => (unsaved ? setConfirmDiscard(true) : stopEditing())}
+                                    className="text-muted-foreground"
+                                >
+                                    {unsaved ? "Cancel" : "Done"}
+                                </Button>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button size="xs" disabled={!unsaved || saving} onClick={() => void handleSave(script)}>
+                                            <Save strokeWidth={1.5}/>
+                                            {saving ? "Saving…" : "Save"}
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Ctrl+S</TooltipContent>
+                                </Tooltip>
+                            </>
+                        ) : (
+                            <>
+                                <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    onClick={() => handleCopy(script.code)}
+                                    className="text-muted-foreground"
+                                >
+                                    {copied ? <Check strokeWidth={1.5}/> : <Copy strokeWidth={1.5}/>}
+                                    {copied ? "Copied" : "Copy"}
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    onClick={() => downloadScriptSource(script)}
+                                    className="text-muted-foreground"
+                                >
+                                    <Download strokeWidth={1.5}/>
+                                    .js
+                                </Button>
+                                <Button variant="outline" size="xs" onClick={() => startEditing(script)}>
+                                    <Pencil strokeWidth={1.5}/>
+                                    Edit
+                                </Button>
+                            </>
+                        )}
                     </div>
-                    <div className={wrap ? undefined : "overflow-x-auto"}>
-                        <ScriptCode code={script.code} lineNumbers wrap={wrap} padding="14px 18px 18px 8px"/>
-                    </div>
+                    {editing && changedElsewhere && (
+                        <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3.5 py-2 text-[13px]">
+                            <TriangleAlert strokeWidth={1.5} className="size-4 shrink-0 text-muted-foreground"/>
+                            <span className="min-w-0 flex-1">This script was changed somewhere else while you were editing. Saving replaces that version.</span>
+                            <Button variant="outline" size="xs" onClick={() => loadLatest(script)}>Load that version</Button>
+                        </div>
+                    )}
+                    {editing && problem && (
+                        <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3.5 py-2 text-[13px] text-destructive">
+                            <TriangleAlert strokeWidth={1.5} className="size-4 shrink-0"/>
+                            <span className="min-w-0 flex-1">{problem.message}</span>
+                            {problem.offset !== undefined && (
+                                <Button variant="outline" size="xs" onClick={() => editor.current?.goTo(problem.offset!)}>Go to line</Button>
+                            )}
+                            {problem.canOverride && (
+                                <Button variant="outline" size="xs" disabled={saving} onClick={() => void handleSave(script, true)}>Save anyway</Button>
+                            )}
+                        </div>
+                    )}
+                    {editing && updatable && (
+                        <p className="border-b border-border px-3.5 py-2 text-[13px] text-muted-foreground">
+                            Header changes like @match and @grant apply when you save. Updating from its source replaces your edits.
+                        </p>
+                    )}
+                    {editing ? (
+                        <Suspense fallback={<Skeleton className="m-4 h-96"/>}>
+                            <ScriptEditor
+                                ref={editor}
+                                initialCode={editBase}
+                                wrap={wrap}
+                                onChange={(code) => { setDraft(code); setProblem(null); }}
+                                onSave={() => void handleSave(script)}
+                            />
+                        </Suspense>
+                    ) : (
+                        <div className={wrap ? undefined : "overflow-x-auto"}>
+                            <ScriptCode code={script.code} lineNumbers wrap={wrap} padding="14px 18px 18px 8px"/>
+                        </div>
+                    )}
                 </div>
             </div>
+
+            <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+                <AlertDialogContent className="max-w-xs rounded-[10px] border-foreground">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="font-heading text-[22px] leading-tight">
+                            Discard your changes?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="text-[13px] leading-relaxed text-muted-foreground">
+                            The script stays as it was last saved.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Keep editing</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={stopEditing}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            Discard
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
                 <AlertDialogContent className="max-w-xs rounded-[10px] border-foreground">

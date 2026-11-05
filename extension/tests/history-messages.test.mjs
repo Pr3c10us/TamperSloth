@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {generateText} from 'ai';
 import {createLoader, plain} from './load-ts.mjs';
 
 const {buildModelMessages} = createLoader()('src/chat/lib/historyMessages.ts');
@@ -94,6 +95,71 @@ test('editing a message hides it and everything after it', () => {
     assert.deepEqual(plain(beforeMessage(list, 'b')), [{id: 'a'}]);
     assert.deepEqual(plain(beforeMessage(list, undefined)), list);
     assert.deepEqual(plain(beforeMessage(list, 'missing')), list);
+});
+
+test('a reply with no text is left out once its tool notes have aged out', async () => {
+    const history = [
+        {role: 'user', content: 'first'},
+        {role: 'assistant', content: '', taskState: '{"read":"page"}'},
+        {role: 'assistant', content: 'done'},
+        {role: 'user', content: 'second'},
+        {role: 'assistant', content: 'ok'},
+        {role: 'user', content: 'third'},
+    ];
+    assert.deepEqual(plain(await buildModelMessages(history, options)).map(m => m.content),
+        ['first', 'done', 'second', 'ok', 'third']);
+});
+
+test('a reply with no text still goes back while its tool notes are recent', async () => {
+    const messages = await buildModelMessages([
+        {role: 'user', content: 'first'},
+        {role: 'assistant', content: '', taskState: '{"read":"page"}'},
+        {role: 'user', content: 'second'},
+    ], options);
+    assert.equal(messages.length, 3);
+    assert.match(messages[1].content, /Earlier tool observations/);
+});
+
+test('blank replies and blank messages are never sent', async () => {
+    const messages = await buildModelMessages([
+        {role: 'user', content: 'go'},
+        {role: 'assistant', content: ''},
+        {role: 'assistant', content: ' \n'},
+        {role: 'user', content: ' '},
+        {role: 'user', content: 'again'},
+    ], options);
+    assert.deepEqual(plain(messages).map(m => m.content), ['go', 'again']);
+});
+
+test('whitespace beside an attachment does not become a text block', async () => {
+    const [message] = await buildModelMessages([{role: 'user', content: ' ', attachments: [image('a')]}], options);
+    assert.deepEqual(plain(message.content).map(part => part.type), ['file']);
+});
+
+test('Claude never receives an empty text block after a failed or tool-only reply', async () => {
+    const {getModel, MODELPROVIDERS} = createLoader()('src/chat/lib/provider.ts');
+    const modelId = MODELPROVIDERS.find(p => p.id === 'anthropic').defaultModel;
+    let sent;
+    const transport = async (_url, init) => {
+        sent = JSON.parse(init.body).messages;
+        return new Response(JSON.stringify({id: 'msg', type: 'message', role: 'assistant', model: modelId,
+            content: [{type: 'text', text: 'ok'}], stop_reason: 'end_turn', stop_sequence: null,
+            usage: {input_tokens: 1, output_tokens: 1}}), {headers: {'content-type': 'application/json'}});
+    };
+    const messages = await buildModelMessages([
+        {role: 'user', content: 'first'},
+        {role: 'assistant', content: '', taskState: '{"read":"page"}'},
+        {role: 'assistant', content: 'done'},
+        {role: 'user', content: 'second'},
+        {role: 'assistant', content: ''},
+        {role: 'user', content: 'second again'},
+        {role: 'assistant', content: 'ok'},
+        {role: 'user', content: 'third'},
+    ], options);
+    await generateText({model: getModel('anthropic', 'test-key', modelId, transport), messages});
+    const blocks = sent.flatMap(m => m.content).filter(block => block.type === 'text');
+    assert.ok(blocks.length > 0);
+    assert.deepEqual(blocks.filter(block => !block.text.trim()), []);
 });
 
 const {buildEditNote} = createLoader()('src/chat/lib/editNote.ts');

@@ -1,7 +1,7 @@
 export type SkillId =
     | "verify_before_acting" | "virtual_file_system"
     | "research_workflow" | "script_creation_workflow" | "script_format"
-    | "injection_timing" | "persistent_storage" | "scope_confirmation"
+    | "injection_timing" | "persistent_storage" | "image_library" | "scope_confirmation"
     | "script_management" | "element_picker" | "quality_assurance" | "debugging_workflow";
 
 export interface Skill {description: string; content: string}
@@ -33,7 +33,7 @@ export const skills: Record<SkillId, Skill> = {
     },
     script_format: {
         description: "Named-function and sandbox requirements.",
-        content: `Each file must define one top-level named function, e.g. function highlightLinks() { document.querySelectorAll('a').forEach(el => el.style.backgroundColor = 'yellow'); return 'Links highlighted'; }. The runner invokes it automatically. Bare statements, arrow functions and top-level IIFEs are invalid. Keep it self-contained. The USER_SCRIPT sandbox can modify DOM but cannot access page globals/framework state. It is exempt from page CSP. Each script has an isolated instance per page load. MH_* persistence is available only to saved scripts; fetch persistent_storage before using it.`,
+        content: `Each file must define one top-level named function, e.g. function highlightLinks() { document.querySelectorAll('a').forEach(el => el.style.backgroundColor = 'yellow'); return 'Links highlighted'; }. The runner invokes it automatically. Bare statements, arrow functions and top-level IIFEs are invalid. Keep it self-contained. The USER_SCRIPT sandbox can modify DOM but cannot access page globals/framework state. It is exempt from page CSP. Each script has an isolated instance per page load, but the DOM is shared with the user's other active scripts, which run in no set order. Give what you add a data-ts-ui value unique to this script and clean up only those values; never remove everything matching [data-ts-ui], or hide or remove what another script added. MH_* persistence is available only to saved scripts; fetch persistent_storage before using it. Images the imageLibrary tool saved are read with MH_getImage(name), in tests too; fetch image_library first.`,
     },
     injection_timing: {
         description: "Choose when saved scripts run.",
@@ -44,6 +44,13 @@ export const skills: Record<SkillId, Skill> = {
         content: `Saved scripts have isolated persistent storage. All functions are async: MH_setValue(key,value), MH_getValue(key) (null if missing), MH_deleteValue(key), MH_listValues() (all pairs). Values must be JSON-serializable. These functions are unavailable in executeContentScript tests: simulate with variables there, then add persistence for the saved version and verify after reload. Keep a regular named outer function and use an async IIFE inside:
 function countVisits() { (async () => { const n = (await MH_getValue('visits')) || 0; await MH_setValue('visits', n + 1); })(); }
 Use ordinary variables for temporary page state.`,
+    },
+    image_library: {
+        description: "Save images in the browser and use them from scripts on any site.",
+        content: `Save with the imageLibrary tool, which reads the bytes itself: for an image on the page (one you just generated, say) pass its selector or ref, or its url. Never read an image into your own output as base64; it costs far more than a name. Check the returned preview.
+In saved scripts, executeContentScript and ISOLATED evaluateJavaScript: await MH_getImage(name) gives null if it's missing, or {name, mimeType, width, height, size, description, dataUrl, blob, objectUrl(), bitmap(), file(filename)}. await MH_listImages() gives the metadata of all of them. In MAIN evaluateJavaScript they aren't available; call them in ISOLATED and pass objectUrl() across, but on a site with a strict Content Security Policy an <img> made in MAIN is blocked, so build it in ISOLATED there. Installed userscripts use GM_getImage(name) and GM_listImages() with those @grant lines.
+Pick what suits the use. <img src> and JS use objectUrl(); cursor: url() uses dataUrl; <canvas> uses bitmap(); uploads use file(). For a picture, use a real <img>, with object-fit for a background-style crop: from a script's world it loads even on a site with a strict Content Security Policy, where a CSS background-image is blocked, even from dataUrl. Use a CSS background only if you confirm it painted. If an image doesn't load, check the console and draw it on a <canvas> from bitmap(), which the policy doesn't cover. bitmap() can't read SVGs.
+Save at the size it'll be used, with maxSize: Chrome ignores a CSS cursor over 128px and may swap one over 32px back to the normal cursor near the window's edge. Generated images usually have a solid background; ask for a transparent one if the use needs it. Scripts ask by name, so delete and rename report which saved scripts that breaks.`,
     },
     scope_confirmation: {
         description: "Confirm persistent-script URL scope.",

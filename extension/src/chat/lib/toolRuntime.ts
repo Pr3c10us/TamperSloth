@@ -17,6 +17,7 @@ export const TOOL_GROUPS = {
     network: ['networkCapture', 'deepDOM'],
     system: ['clipboard', 'browserDownload', 'browserNotify'],
     guidance: ['annotatePage', 'waitForUserAction', 'listControls'],
+    images: ['imageLibrary'],
 } as const;
 export type Group = keyof typeof TOOL_GROUPS;
 type ModelOutputOptions = Parameters<NonNullable<ToolSet[string]["toModelOutput"]>>[0];
@@ -66,6 +67,7 @@ export function initialToolGroups(request: string): Group[] {
     if (/\b(network|websocket|replay|requests?)\b/i.test(request)) groups.push('network');
     if (/\b(clipboard|downloads?|notifications?)\b/i.test(request)) groups.push('system');
     if (/\b(guide|guidance|walk|teach|show me|step.by.step|highlight|annotat\w*)\b/i.test(request)) groups.push('guidance');
+    if (/\b(images?|pictures?|photos?|logos?|icons?|cursors?|wallpapers?|avatars?)\b/i.test(request)) groups.push('images');
     return [...new Set(groups)];
 }
 
@@ -129,8 +131,8 @@ export function createToolRuntime(rawTools: ToolSet, options: {
         return {enabled: [...groups], tools: added.flatMap(group => [...TOOL_GROUPS[group]]), guidance: added.map(groupGuidance).filter(Boolean)};
     };
     tools.enableTools = tool({
-        description: "Enable groups: browsing (DOM input), scripting (files/scripts), debugging, visual, browser (tabs/raw JS/AX/store/recipes), input (trusted CDP events/deep DOM/frames), network (CDP capture/WebSocket/replay), system (clipboard/downloads/notifications), guidance (page drawing and waiting for real user actions).",
-        inputSchema: z.object({groups: z.array(z.enum(["browsing", "scripting", "debugging", "visual", "browser", "input", "network", "system", "guidance"])).min(1).max(9)}),
+        description: "Enable groups: browsing (DOM input), scripting (files/scripts), debugging, visual, browser (tabs/raw JS/AX/store/recipes), input (trusted CDP events/deep DOM/frames), network (CDP capture/WebSocket/replay), system (clipboard/downloads/notifications), guidance (page drawing and waiting for real user actions), images (the library of saved images).",
+        inputSchema: z.object({groups: z.array(z.enum(["browsing", "scripting", "debugging", "visual", "browser", "input", "network", "system", "guidance", "images"])).min(1).max(10)}),
         execute: async ({groups: requested}) => enableGroups(requested),
     });
     const playbooks = options.playbooks ?? [];

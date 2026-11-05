@@ -1,6 +1,7 @@
 import {tool} from 'ai';
 import {z} from 'zod';
 import {browserSchemas, toolSchemas, type BrowserOperation} from './browserSchemas';
+import {blobToBase64} from './imageLibrary';
 
 // Keep the recursive JSON validator inside the browser service. Gemini rejects
 // z.json()'s recursive additionalProperties reference in function declarations.
@@ -14,6 +15,11 @@ const storeToolSchema = browserSchemas.store.extend({
                 return z.NEVER;
             }
         }).pipe(z.json()).optional(),
+});
+
+const imageToolSchema = browserSchemas.images.omit({dataUrl: true}).extend({
+    ref: z.string().max(20).optional().describe('An element ref, instead of selector.'),
+    attachment: z.string().max(300).optional().describe('save: the file name of an image the user sent in this chat.'),
 });
 
 export async function browserCall(operation: BrowserOperation, input: unknown) {
@@ -88,7 +94,8 @@ const gestureModelOutput = (output: any, postAction?: any) => output.screenshot
     : {type: 'text' as const, value: JSON.stringify(output)};
 
 /** Identifies the chat's task so the browser service can group, guard and clean up the tabs it opens. */
-export interface TaskContext {conversationId: string; originTabId?: number; /** Whether the chat started on a new tab page, which then belongs to the task. */ originBlank?: Promise<boolean>}
+export interface TaskContext {conversationId: string; originTabId?: number; /** Whether the chat started on a new tab page, which then belongs to the task. */ originBlank?: Promise<boolean>;
+    /** The bytes of an image the user sent in this chat, by file name. */ findAttachment?: (name: string) => Promise<Blob | null>}
 
 export function createBrowserTools(getTabId: () => number, selectTab: (id: number) => void, abortSignal?: AbortSignal, task?: TaskContext) {
     // Coordinate guidance cannot prove outcomes, so it unlocks only after selector-based guidance keeps failing.
@@ -344,6 +351,21 @@ export function createBrowserTools(getTabId: () => number, selectTab: (id: numbe
         browserTabGroups: make('tabGroups', 'List tab groups with their tabIds; group tabIds into a new group (or an existing groupId) with optional title/color/collapsed; update a group\'s title/color/collapsed; ungroup tabIds; or move a group to an index/window.'),
         evaluateJavaScript: make('evaluate', 'Execute a raw async JS body (use return) with structured per-frame results/errors. Default ISOLATED uses the separate user-script world and requires Allow User Scripts. MAIN explicitly accesses page globals. Frame IDs come from extension APIs; CDP uses separate session/context IDs. Timeout limits the wait, not code side effects.'),
         persistentStore: make('store', 'Get/set/delete/list persistent JSON values by namespace and key. For set, pass value as a JSON-encoded string; it is decoded before storage. Do not store credentials.'),
+        imageLibrary: tool({
+            description: "Keep images in the browser under a name, to reuse on any site. save takes name and one source: url (http, blob or data), selector or ref of an img, canvas, video, svg or background-image element on the page (a generated image, say), attachment, or screenshot true (with selector to crop to it). The extension reads the bytes itself and returns a preview; never read an image out as base64 yourself. maxSize shrinks the longest side, format converts, replace overwrites a name. list shows what's saved; view shows one; rename and delete manage them; upload puts one into a file field or drop area (selector, default the first file field); copy puts one on the clipboard. Scripts and evaluateJavaScript read them with MH_getImage(name); see getSkill image_library.",
+            inputSchema: imageToolSchema,
+            execute: async ({ref, attachment, ...input}) => {
+                const tabId = input.tabId || getTabId() || undefined;
+                const selector = ref ? (await browserCall('guidance', {tabId, action: 'resolveRef', ref})).selector as string : input.selector;
+                let dataUrl: string | undefined;
+                if (attachment) {
+                    const blob = await task?.findAttachment?.(attachment);
+                    if (!blob) return {error: `No file named "${attachment}" was sent in this chat.`};
+                    dataUrl = `data:${blob.type || 'application/octet-stream'};base64,${await blobToBase64(blob)}`;
+                }
+                return browserCall('images', {...input, tabId, selector, dataUrl});
+            },
+        }),
         siteRecipes: make('recipes', 'Save/get/list/delete reusable site recipes: name, origin, and ordered textual steps. Recipes are instructions to follow, not executable scripts.'),
         accessibilityTree: make('accessibility', 'Read a bounded accessibility view. DOM mode uses plain extension APIs and approximate names/roles in accessible open shadow roots. CDP mode returns the browser AX tree including a selected cross-origin session.'),
         clipboard: make('clipboard', 'Read or write clipboard text using an offscreen extension document.'),

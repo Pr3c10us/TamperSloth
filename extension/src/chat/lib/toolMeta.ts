@@ -1,4 +1,4 @@
-import {type LucideIcon, Route} from 'lucide-react';
+import {Images, type LucideIcon, Route} from 'lucide-react';
 import {
     TabletSmartphone,
     TreePine,
@@ -54,6 +54,7 @@ const toolMeta: Record<string, ToolMeta> = {
     browserTabGroups: {displayName: 'Tab groups',icon: TabletSmartphone, category: 'web'},
     evaluateJavaScript: {displayName: 'Evaluate JavaScript',icon: SquareTerminal, category: 'compute'},
     persistentStore: {displayName: 'Persistent storage',icon: Database, category: 'data'},
+    imageLibrary: {displayName: 'Saved images',icon: Images, category: 'data'},
     siteRecipes: {displayName: 'Site recipes',icon: BookOpen, category: 'data'},
     accessibilityTree: {displayName: 'Accessibility tree',icon: TreePine, category: 'web'},
     clipboard: {displayName: 'Clipboard',icon: ClipboardList, category: 'utility'},

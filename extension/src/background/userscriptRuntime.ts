@@ -1,5 +1,6 @@
 import type {BackgroundScript, ImportedUserscript} from "../chat/lib/types";
 import {grantKey, needsGmRelay, registrationMatches, runtimeUrlFilter} from "../scripts/userscript";
+import {IMAGE_HANDLE_JS} from "./imageScriptApi";
 
 // Builds what an installed Tampermonkey-style userscript is registered with:
 // a GM API shim in front of its @require code and source. Values live in the
@@ -179,6 +180,7 @@ ${body}
     var __tsValues = {}, __tsListeners = {}, __tsSeq = 0;
     var __tsName = GM_info.script.name;
 ${channel ? relayTransport(channel) : directTransport(token)}
+${IMAGE_HANDLE_JS}
 ${GM_SHIM}
     function __tsRun() {
         try {
@@ -434,6 +436,12 @@ const GM_SHIM = String.raw`
             __tsCall(details.ondone, r && r.clicked);
         }).catch(__tsWarn);
     }
+    function GM_getImage(name) {
+        return __tsAnswer({type: 'GM_GET_IMAGE', name: String(name)}).then(function (r) { return r.image ? __tsImageHandle(r.image) : null; });
+    }
+    function GM_listImages() {
+        return __tsAnswer({type: 'GM_LIST_IMAGES'}).then(function (r) { return r.images || []; });
+    }
     function GM_download(details, name) {
         if (typeof details === 'string') details = {url: details, name: name};
         var done = __tsSend({type: 'GM_DOWNLOAD', url: new URL(details.url, location.href).href, name: String(details.name || ''), saveAs: !!details.saveAs})
@@ -527,6 +535,8 @@ const GM_SHIM = String.raw`
         setClipboard: function (d, i) { return GM_setClipboard(d, i); },
         notification: function (d, t, i, c) { return GM_notification(d, t, i, c); },
         download: function (d, n) { return GM_download(d, n).done; },
+        getImage: GM_getImage,
+        listImages: GM_listImages,
         registerMenuCommand: function (c, f, o) { return Promise.resolve(GM_registerMenuCommand(c, f, o)); },
         unregisterMenuCommand: function (id) { GM_unregisterMenuCommand(id); return Promise.resolve(); },
         getTab: function () { return __tsTabRequest('get').then(function (r) { return r.tab; }); },

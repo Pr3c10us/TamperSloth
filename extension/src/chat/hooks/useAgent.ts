@@ -730,7 +730,13 @@ async function sendMessage(
         let userRequest = [...updatedMessages.filter(m => m.role === "user").slice(-3, -1).map(m => `Earlier: ${clip(m.content, 600)}`),
             ...(quotes ?? []).map(q => `Quoted from the page: ${clip(q.text, 400)}`), text].filter(Boolean).join("\n");
         const {tabContext, task, hasCode} = await tabContextReady;
-        const runtime = createToolRuntime(createAgentTools({conversationId, abortSignal: abortController.signal}), {
+        const findAttachment = async (name: string) => {
+            // Newest first, since a chat can hold the same file name twice. This message's file may still be on its way to disk.
+            const sent = (sessions.get(conversationId)?.messages ?? []).flatMap(m => m.attachments ?? []).reverse().find(a => a.name === name);
+            if (!sent?.id) return null;
+            return sentFiles.get(sent.id) ?? await loadAttachment(sent.id).catch(() => null);
+        };
+        const runtime = createToolRuntime(createAgentTools({conversationId, abortSignal: abortController.signal, findAttachment}), {
             request: text,
             playbooks,
             // A follow-up here is likely about that code, and enabling these mid-run costs a step and the prompt cache.

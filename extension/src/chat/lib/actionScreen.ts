@@ -263,6 +263,16 @@ export function assessAction(name: string, input: Record<string, any>, targets: 
                 : {risk: "low", reasons: [], payload: [stringOf(input.text)].filter(Boolean)};
         case "persistentStore":
             return LOW;
+        case "imageLibrary": {
+            const name = stringOf(input.name);
+            if (input.action === "list" || input.action === "view") return NONE;
+            if (input.action === "copy") return LOW;
+            if (input.action === "upload") return {risk: "medium", category: "input", changes: true, reasons: [`Puts your saved image "${name}" into a file field on this page`], payload: []};
+            if (input.action === "delete") return {risk: "medium", category: "persistent", changes: true, reasons: [`Deletes your saved image "${name}"`], payload: []};
+            if (input.action === "rename") return {risk: "low", category: "persistent", changes: true, reasons: [`Renames your saved image "${name}"`], payload: []};
+            return {risk: input.replace ? "medium" : "low", category: "persistent", changes: true,
+                reasons: [input.replace ? `Replaces your saved image "${name}"` : `Saves an image as "${name}"`], payload: [stringOf(input.url)].filter(Boolean)};
+        }
         case "siteRecipes":
             return input.action === "save" || input.action === "delete"
                 ? {risk: "medium", category: "persistent", changes: true, reasons: [`${input.action === "save" ? "Saves" : "Deletes"} a reusable site recipe`],

@@ -3,7 +3,11 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (sender.id !== chrome.runtime.id || sender.tab || (sender.url && !sender.url.startsWith(chrome.runtime.getURL('')))) return false;
     const task = message.action === 'read'
         ? navigator.clipboard.readText().then(text => ({text}))
-        : navigator.clipboard.writeText(message.text).then(() => ({ok: true}));
+        : message.action === 'writeImage'
+            ? fetch(message.dataUrl).then(response => response.blob())
+                .then(blob => navigator.clipboard.write([new ClipboardItem({'image/png': blob})]))
+                .then(() => ({ok: true}))
+            : navigator.clipboard.writeText(message.text).then(() => ({ok: true}));
     void task.then(respond, error => respond({error: error.message}));
     return true;
 });

@@ -61,6 +61,8 @@ const GRANT_LABELS: Record<string, string> = {
     gettab: "Keep data for each tab",
     savetab: "Keep data for each tab",
     gettabs: "Keep data for each tab",
+    getimage: "Read the images you've saved in TamperSloth",
+    listimages: "Read the images you've saved in TamperSloth",
 };
 
 function closeTab() {

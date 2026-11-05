@@ -3,6 +3,8 @@ import {CDPManager} from './cdp';
 import {VisualBrowser} from './visualBrowser';
 import {pageChanges, runPageGuidance} from './pageGuidance';
 import {assertNotWorkingTab, assertTaskGroup, assertTaskTabs, describeTask, finishTask, noteTaskTab, openTaskTabs, setTaskStatus, taskGroupStyle, tidyTaskGroup} from './taskTabs';
+import {runImageAction} from './imageService';
+import {temporaryImageHelpers, temporaryImageToken, usesImageHelpers} from './imageScriptApi';
 
 export const cdp = new CDPManager();
 const visual = new VisualBrowser(cdp);
@@ -36,14 +38,14 @@ function storageTransaction<T>(fn: () => Promise<T>) {
     return task;
 }
 let offscreenPending: Promise<void> | undefined;
-export async function clipboard(action: string, text?: string) {
+export async function clipboard(action: string, text?: string, dataUrl?: string) {
     if (!offscreenPending) offscreenPending = (async () => {
         if (!(await chrome.offscreen.hasDocument())) await chrome.offscreen.createDocument({
             url: 'clipboard.html', reasons: [chrome.offscreen.Reason.CLIPBOARD], justification: 'Read and write clipboard text for user requested browser tasks',
         });
     })().finally(() => { offscreenPending = undefined; });
     await offscreenPending;
-    return chrome.runtime.sendMessage({type: 'CLIPBOARD_OFFSCREEN', action, text});
+    return chrome.runtime.sendMessage({type: 'CLIPBOARD_OFFSCREEN', action, text, dataUrl});
 }
 
 /** DOM-derived accessibility view for phase 1; the CDP mode supplies Chrome's AX tree. */
@@ -169,7 +171,10 @@ async function run(operation: BrowserOperation, input: unknown) {
             const target = {tabId: requireValue(tabId, 'tabId'), ...(a.frameIds ? {frameIds: a.frameIds} : {})};
             // USER_SCRIPT is a separate isolated world with configurable CSP; extension ISOLATED forbids raw eval.
             await chrome.userScripts.configureWorld({csp: "script-src 'self' 'unsafe-eval'", messaging: true});
-            const code = `(async () => { const start = performance.now(); let timer; try {
+            // The page's own world can't message the extension, and handing it the token would hand it to the page.
+            if (usesImageHelpers(a.code) && a.world === 'MAIN') throw new Error('MH_getImage needs the default ISOLATED world. Call it there; an objectUrl() it returns also works from MAIN, except on a site with a strict image policy.');
+            const imageHelpers = usesImageHelpers(a.code) ? temporaryImageHelpers(await temporaryImageToken()) : '';
+            const code = `(async () => { ${imageHelpers} const start = performance.now(); let timer; try {
                 const value = await Promise.race([(async () => { ${a.code}\n })(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Evaluation timed out')), ${a.timeoutMs}); })]);
                 const json = JSON.stringify(value, (_, v) => typeof v === 'bigint' ? {type: 'bigint', value: String(v)} : v);
                 if (json && json.length > 1000000) throw new Error('Result exceeds 1 MB. Return a smaller result.');
@@ -210,6 +215,7 @@ async function run(operation: BrowserOperation, input: unknown) {
             await chrome.storage.local.set({[key]: recipes});
             return {ok: true, id};
         });
+        case 'images': return runImageAction(a, clipboard);
         case 'accessibility': {
             requireValue(tabId, 'tabId');
             if (a.mode === 'cdp') {

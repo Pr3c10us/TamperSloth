@@ -85,13 +85,13 @@ let visibleCaptureChain: Promise<unknown> = Promise.resolve();
 let lastVisibleCapture = 0;
 
 /** captureVisibleTab is window-scoped and limited to two calls/second globally. */
-export function captureVisibleTab(windowId: number, check: Check): Promise<string> {
+export function captureVisibleTab(windowId: number, check: Check, format: 'jpeg' | 'png' = 'jpeg'): Promise<string> {
     const capture = visibleCaptureChain.catch(() => {}).then(async () => {
         const remaining = 550 - (Date.now() - lastVisibleCapture);
         if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
         await check();
         lastVisibleCapture = Date.now();
-        return chrome.tabs.captureVisibleTab(windowId, {format: 'jpeg', quality: 80});
+        return chrome.tabs.captureVisibleTab(windowId, format === 'png' ? {format} : {format, quality: 80});
     });
     visibleCaptureChain = capture;
     return capture;
@@ -188,6 +188,28 @@ export async function captureViewportScreenshot(tabId: number, maxWidth: number 
             return {dataUrl, metadata: {...before.metrics, sourcePixels, imagePixels, coordinateSpace: 'root viewport CSS pixels',
                 cssRegion: {x: viewport.offsetLeft ?? 0, y: viewport.offsetTop ?? 0, width: viewport.width, height: viewport.height},
                 imagePixelsPerCSSPixel: {x: imagePixels.width / viewport.width, y: imagePixels.height / viewport.height}}};
+        } finally { bitmap.close(); }
+    });
+}
+
+/**
+ * A lossless capture to keep in the image library, of the viewport or one box of it
+ * (viewport CSS pixels). The ratio to the bitmap absorbs devicePixelRatio and browser zoom.
+ */
+export async function capturePng(tabId: number, box?: {x: number; y: number; width: number; height: number}) {
+    return withFreshScreenshot<{blob: Blob; metadata?: any}>(tabId, async () => {}, async (windowId, before) => {
+        const blob = await (await fetch(await captureVisibleTab(windowId, async () => {}, 'png'))).blob();
+        if (!box) return {blob};
+        const bitmap = await createImageBitmap(blob);
+        try {
+            const sx = bitmap.width / before.metrics.viewport.width, sy = bitmap.height / before.metrics.viewport.height;
+            const left = Math.max(0, Math.floor(box.x * sx)), top = Math.max(0, Math.floor(box.y * sy));
+            const width = Math.min(bitmap.width, Math.ceil((box.x + box.width) * sx)) - left;
+            const height = Math.min(bitmap.height, Math.ceil((box.y + box.height) * sy)) - top;
+            if (width < 1 || height < 1) throw new Error('That element has no visible area to capture.');
+            const canvas = new OffscreenCanvas(width, height);
+            canvas.getContext('2d')!.drawImage(bitmap, left, top, width, height, 0, 0, width, height);
+            return {blob: await canvas.convertToBlob({type: 'image/png'})};
         } finally { bitmap.close(); }
     });
 }

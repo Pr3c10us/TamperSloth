@@ -50,6 +50,26 @@ test('code in shipped playbooks parses, and the 3D kit does not trigger the secr
     assert.ok(kit.includes('three@0.187.0'), 'the library version stays pinned');
 });
 
+test('3D recipes add no visible buttons by default', () => {
+    const markdown = fs.readFileSync('playbooks/web-3d/playbook.md', 'utf8');
+    for (const [, name, code] of markdown.matchAll(/```js ([\w-]+)\r?\n([\s\S]*?)```/g)) {
+        if (name !== 'kit') assert.doesNotMatch(code, /s\.button\(|views:|loop: true/, name);
+    }
+    assert.doesNotMatch(markdown, /s\.button\('(?:Rotate|Pause)/);
+});
+
+test('the UI playbook uses the image library the way scripts must', () => {
+    const config = JSON.parse(fs.readFileSync('playbooks/ui-design/config.json', 'utf8'));
+    assert.ok(config.tools.includes('images'));
+    const markdown = fs.readFileSync('playbooks/ui-design/playbook.md', 'utf8');
+    const place = markdown.match(/```js image-place\r?\n([\s\S]*?)```/)[1];
+    // Exports only pack images a script names literally, so the helper takes a handle, never a name.
+    assert.match(place, /MH_getImage\('[\w.-]+'\)/);
+    assert.doesNotMatch(place, /MH_getImage\([a-zA-Z_$]/);
+    assert.match(place, /\.objectUrl\(\)/);
+    assert.match(place, /\.bitmap\(\)/);
+});
+
 test('a valid playbook parses, and optional fields get defaults', () => {
     const parsed = parsePlaybook(sample);
     assert.equal(parsed.id, 'sample-playbook');

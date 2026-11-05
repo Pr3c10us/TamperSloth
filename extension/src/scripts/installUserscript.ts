@@ -104,6 +104,27 @@ export async function prepareUserscript(source: string, sourceUrl = ""): Promise
     return {source, sourceUrl, parsed, requires, resources, warnings, existing};
 }
 
+/** What a userscript's header decides. */
+export function userscriptFields(parsed: ParsedUserscript) {
+    return {
+        namespace: parsed.namespace,
+        version: parsed.version,
+        author: parsed.author,
+        homepage: parsed.homepage,
+        matches: parsed.matches,
+        includes: parsed.includes,
+        excludeMatches: parsed.excludeMatches,
+        excludes: parsed.excludes,
+        allFrames: parsed.allFrames,
+        world: parsed.world,
+        grants: parsed.grants,
+        connects: parsed.connects,
+        updateURL: parsed.updateURL,
+        downloadURL: parsed.downloadURL,
+        contextMenu: parsed.contextMenu,
+    };
+}
+
 /** Saves the draft, replacing the script it updates (keeping its id, values and paused state). */
 export async function installUserscript(draft: UserscriptDraft, status?: BackgroundScript["status"]): Promise<BackgroundScript> {
     const {parsed} = draft;
@@ -117,25 +138,11 @@ export async function installUserscript(draft: UserscriptDraft, status?: Backgro
         status: status ?? draft.existing?.status ?? "active",
         runAt: parsed.runAt,
         userscript: {
-            namespace: parsed.namespace,
-            version: parsed.version,
-            author: parsed.author,
-            homepage: parsed.homepage,
-            matches: parsed.matches,
-            includes: parsed.includes,
-            excludeMatches: parsed.excludeMatches,
-            excludes: parsed.excludes,
-            allFrames: parsed.allFrames,
-            world: parsed.world,
-            grants: parsed.grants,
-            connects: parsed.connects,
+            ...userscriptFields(parsed),
             requires: draft.requires,
             resources: draft.resources,
-            updateURL: parsed.updateURL,
-            downloadURL: parsed.downloadURL,
             sourceUrl: draft.sourceUrl || draft.existing?.userscript?.sourceUrl || "",
             installedAt: Date.now(),
-            contextMenu: parsed.contextMenu,
             connectAllowed: draft.existing?.userscript?.connectAllowed,
             connectBlocked: draft.existing?.userscript?.connectBlocked,
         },

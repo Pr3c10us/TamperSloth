@@ -113,6 +113,13 @@ export const browserSchemas = {
     accessibility: z.object({tabId, mode: z.enum(['dom', 'cdp']).default('dom'), frameIds: z.array(z.number().int().nonnegative()).min(1).max(50).optional(), sessionId,
         frameId: z.string().max(200).optional(),
         maxNodes: z.number().int().min(1).max(1000).default(250)}),
+    images: z.object({tabId, action: z.enum(['save', 'list', 'view', 'delete', 'rename', 'upload', 'copy']),
+        name: z.string().min(1).max(100).optional(), newName: z.string().min(1).max(100).optional(),
+        url: z.string().min(1).max(20000).optional(), selector: z.string().min(1).max(1000).optional(), index: z.number().int().nonnegative().default(0),
+        screenshot: z.boolean().optional(), description: z.string().max(500).optional(), replace: z.boolean().optional(),
+        maxSize: z.number().int().min(16).max(8192).optional(), format: z.enum(['png', 'jpeg', 'webp']).optional(),
+        // An attachment the panel already holds; never model input (it would be the image as text).
+        dataUrl: z.string().startsWith('data:').max(90000000).optional()}),
     clipboard: z.object({action: z.enum(['read', 'write']), text: z.string().max(1000000).optional()}),
     download: z.object({action: z.enum(['start', 'status', 'cancel']), url: z.url().optional(), filename: z.string().max(250).optional(), downloadId: z.number().int().nonnegative().optional()}),
     notify: z.object({title: z.string().min(1).max(200), message: z.string().min(1).max(2000)}),

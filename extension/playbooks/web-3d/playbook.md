@@ -148,9 +148,10 @@ async function createStage({id, into, before, height = '420px', label = '3D view
   sheet.replaceSync(`:host{contain:layout paint}.box{position:relative;width:100%;height:100%}
     canvas{display:block;width:100%;height:100%;opacity:0;transition:opacity .4s;outline-offset:-3px}
     .bar{position:absolute;right:10px;bottom:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;pointer-events:auto}
-    button{font:500 13px/1 system-ui,sans-serif;min-height:34px;padding:0 12px;border-radius:8px;border:1px solid #8886;background:#ffffffd9;color:#111;cursor:pointer}
-    button:hover{background:#fff}button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
-    .dark button{background:#1c1c1ed9;color:#fff}.dark button:hover{background:#2c2c2e}`);
+    button{font:500 13px/1 system-ui,sans-serif;min-height:34px;padding:0 12px;border-radius:8px;border:1px solid #8886;background:#fff;color:#111;cursor:pointer}
+    button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+    .quiet{width:30px;height:30px;min-height:0;padding:0;border:0;border-radius:50%;background:#0006;color:#fff;font-size:11px;opacity:0;transition:opacity .2s}
+    .box:hover .quiet,.quiet:focus-visible{opacity:.85}@media (hover:none){.quiet{opacity:.7}}`);
   root.adoptedStyleSheets = [sheet];
   const box = root.appendChild(document.createElement('div')); box.className = 'box';
   const canvas = box.appendChild(document.createElement('canvas'));
@@ -168,6 +169,7 @@ async function createStage({id, into, before, height = '420px', label = '3D view
   scene.environmentIntensity = env;
 
   let raf = 0, last = 0, visible = true, dead = false, paused = false, dpr = 0, resized = true, shown = false, slow = 0, count = 0;
+  let autoLeft = 5, energy = 1, clock = 0, looping = false, hovering = false; // automatic motion runs about 5 seconds, then only while hovered
   const frames = [], autos = [];
   const want = () => { if (!raf && !dead && visible && !document.hidden && shown) raf = requestAnimationFrame(tick); };
   const cap = () => Math.min(devicePixelRatio, innerWidth < 768 ? Math.min(maxDpr, 1.5) : maxDpr);
@@ -185,8 +187,10 @@ async function createStage({id, into, before, height = '420px', label = '3D view
     const dt = last ? Math.min((t - last) / 1000, 0.1) : 0;
     last = t;
     if (resized) applySize();
-    const playing = autos.length && !paused && !still;
-    if (playing) for (const fn of autos) fn(dt, t / 1000);
+    autoLeft = Math.max(0, autoLeft - dt);
+    energy = THREE.MathUtils.damp(energy, !paused && (looping || autoLeft > 0 || hovering) ? 1 : 0, 3, dt); // eases to a stop instead of freezing
+    const playing = autos.length && !still && energy > 0.01;
+    if (playing) { clock += dt * energy; for (const fn of autos) fn(dt * energy, clock); }
     let more = false;
     for (const fn of frames) if (fn(dt, t / 1000) === true) more = true;
     renderer.render(scene, camera);
@@ -199,11 +203,23 @@ async function createStage({id, into, before, height = '420px', label = '3D view
     colors: pageColors(THREE), mats: color => mats(THREE, color),
     invalidate: want,
     onFrame: fn => frames.push(fn),                 // fn(dt, seconds). Return true to request another frame.
-    animate(fn) {                                   // automatic motion: gets a Pause button, and never runs under reduced motion
+    animate(fn, {loop = false} = {}) {              // fn(dt, seconds). Settles after about 5 seconds, resumes while hovered, and never runs under reduced motion.
       autos.push(fn);
-      if (autos.length === 1 && !still) { const b = s.button('Pause animation', () => { paused = !paused; b.textContent = paused ? 'Play animation' : 'Pause animation'; last = 0; want(); }); }
+      if (loop && !looping && !still) {             // endless motion, only when the user asks for it: adds a small icon that shows on hover or focus
+        looping = true;
+        const b = s.button('❚❚', () => { paused = !paused; b.textContent = paused ? '▶' : '❚❚'; b.setAttribute('aria-label', paused ? 'Play animation' : 'Pause animation'); last = 0; want(); }, true);
+        b.setAttribute('aria-label', 'Pause animation');
+      }
     },
-    button(text, fn) { const b = bar.appendChild(document.createElement('button')); b.type = 'button'; b.textContent = text; b.addEventListener('click', fn, {signal}); return b; },
+    wake(seconds = 1) { autoLeft = Math.max(autoLeft, seconds); want(); }, // keeps motion going in response to the user, such as cursor movement
+    button(text, fn, quiet = false) {               // only when the user asks for visible controls. Copies the look of the page's own buttons.
+      const b = bar.appendChild(document.createElement('button')); b.type = 'button'; b.textContent = text;
+      const page = document.querySelector('button,[role=button]');
+      if (quiet) b.className = 'quiet';
+      else if (page) { const c = getComputedStyle(page); Object.assign(b.style, {font: c.font, color: c.color, background: c.backgroundColor, border: c.border, borderRadius: c.borderRadius}); }
+      b.addEventListener('click', fn, {signal});
+      return b;
+    },
     light(preset = 'studio') {                      // studio: env + soft key. soft: env only. toon: direct light for MeshToonMaterial.
       if (preset === 'soft') return;
       const key = new THREE.DirectionalLight(0xffffff, preset === 'toon' ? 3 : 1.2); key.position.set(3, 5, 4); scene.add(key);
@@ -249,7 +265,7 @@ async function createStage({id, into, before, height = '420px', label = '3D view
       const r = host.getBoundingClientRect();
       return THREE.MathUtils.clamp(1 - (r.bottom / (innerHeight + r.height)), 0, 1);
     },
-    async orbit({views} = {}) {                     // drag to rotate; the wheel and vertical swipes still scroll the page
+    async orbit({views} = {}) {                     // drag, arrow keys, or click near an edge to rotate; the wheel and vertical swipes still scroll the page
       const {OrbitControls} = await within(10000, addon('controls/OrbitControls'), 'OrbitControls');
       const c = s.controls = new OrbitControls(camera, canvas);
       Object.assign(c, {enableDamping: !still, enableZoom: false, enablePan: false});
@@ -271,14 +287,19 @@ async function createStage({id, into, before, height = '420px', label = '3D view
         if (dt) c.dampingFactor = 1 - Math.exp(-7 * dt);
         return c.update() || !!goal;
       });
-      canvas.addEventListener('keydown', e => { // keyboard and buttons cover WCAG 2.5.7. Tab still leaves.
+      canvas.addEventListener('keydown', e => { // Tab still leaves
         const step = {ArrowLeft: [0.25, 0], ArrowRight: [-0.25, 0], ArrowUp: [0, -0.2], ArrowDown: [0, 0.2]}[e.key];
         if (step) { e.preventDefault(); turn(...step); }
       }, {signal});
       s.view = (theta, phi) => { goal = [THREE.MathUtils.degToRad(theta), THREE.MathUtils.degToRad(phi)]; want(); }; // eases to an angle in degrees
-      s.button('Rotate left', () => turn(0.5, 0));
-      s.button('Rotate right', () => turn(-0.5, 0));
-      for (const [name, [theta, phi]] of Object.entries(views ?? {})) s.button(name, () => s.view(theta, phi));
+      let press = null; // clicking near an edge turns the object: a non-drag option for WCAG 2.5.7, with nothing added on screen
+      canvas.addEventListener('pointerdown', e => { press = e.clientX; }, {signal});
+      canvas.addEventListener('pointerup', e => {
+        if (press === null || Math.abs(e.clientX - press) > 5) return;
+        const b = canvas.getBoundingClientRect(), x = (e.clientX - b.left) / b.width;
+        if (x < 0.25) turn(0.5, 0); else if (x > 0.75) turn(-0.5, 0);
+      }, {signal});
+      for (const [name, [theta, phi]] of Object.entries(views ?? {})) s.button(name, () => s.view(theta, phi)); // only if the user asks for buttons
       return c;
     },
     pick(objects, onHit) {                          // click to explore: a real click, not the end of a drag
@@ -335,11 +356,12 @@ async function createStage({id, into, before, height = '420px', label = '3D view
       host.remove(); kit.stages.delete(id);
     },
   };
+  host.addEventListener('pointerenter', () => { hovering = true; want(); }, {signal});
+  host.addEventListener('pointerleave', () => { hovering = false; }, {signal});
   canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); s.dispose(); }, {signal}); // leave the page as it was
   document.addEventListener('visibilitychange', () => { last = 0; want(); }, {signal});
   const start = location.pathname;
   const watch = setInterval(() => { if (!host.isConnected || location.pathname !== start) s.dispose(); }, 1000); // SPA navigation or removal
-  box.classList.toggle('dark', s.colors.dark);
   kit.stages.set(id, s);
   return s;
 }
@@ -360,7 +382,9 @@ async function stage3d(options, build) {
 // ===== END KIT =====
 ```
 
-Each recipe's `build(s)` gets the stage. Key members: `s.THREE`, `s.scene`, `s.rig` (a parent group for your object), `s.camera`, `s.colors` (`accent`, `bg`, `text`, `dark`), `s.mats(color)` (the presets), `s.light()`, `s.fit(obj)`, `s.shadow(obj)`, `s.animate(fn)`, `s.onFrame(fn)`, `s.parallax()`, `s.orbit()`, `s.view(theta, phi)` after orbit, `s.pick()`, `s.button()`, `s.useHdri(url)`, `s.loadGlb(url)`, `s.report()`, `s.dispose()`. Rerunning with the same `id` replaces the last version. Read a live stage from another script or evaluateJavaScript with `globalThis.__ts3d.stages.get('id').report()`.
+Each recipe's `build(s)` gets the stage. Key members: `s.THREE`, `s.scene`, `s.rig` (a parent group for your object), `s.camera`, `s.colors` (`accent`, `bg`, `text`, `dark`), `s.mats(color)` (the presets), `s.light()`, `s.fit(obj)`, `s.shadow(obj)`, `s.animate(fn)`, `s.wake()`, `s.onFrame(fn)`, `s.parallax()`, `s.orbit()`, `s.view(theta, phi)` after orbit, `s.pick()`, `s.useHdri(url)`, `s.loadGlb(url)`, `s.report()`, `s.dispose()`. Rerunning with the same `id` replaces the last version.
+
+**Keep controls off the object.** 3D shouldn't arrive with a row of buttons, so the kit adds none. Motion settles by itself after about 5 seconds, and drag, arrow keys and clicks near the edges rotate an object. Add `s.button()` or `views` only if the user asks for visible controls or the object can't be understood without them. They copy the page's own button style. Use `{loop: true}` only if the user asks for endless motion, which adds a small pause icon that appears on hover or focus. Read a live stage from another script or evaluateJavaScript with `globalThis.__ts3d.stages.get('id').report()`.
 
 ## Build workflows
 
@@ -451,7 +475,7 @@ Tested with header checks on 2026-11-04 (keyless, `Access-Control-Allow-Origin: 
 
 Each recipe is a complete body to place after the kit. Change the target selector, label, colors and parts. All of these ran on a strict-CSP page.
 
-**Hero object** (code-built, accent from the page, parallax, pausable):
+**Hero object** (code-built, accent from the page, parallax, settles after 5 seconds):
 
 ```js recipe-hero
 return stage3d({id: 'hero-3d', before: document.querySelector('main > *, h1'), height: 'min(60vh, 520px)', label: 'A slowly turning gyroscope with brass rings around a colored core', fov: 28}, async s => {
@@ -477,10 +501,10 @@ return stage3d({id: 'hero-3d', before: document.querySelector('main > *, h1'), h
 });
 ```
 
-**Product-style viewer** (a ceramic mug from a lathe and a tube, with orbit, preset views and click to focus):
+**Product-style viewer** (a ceramic mug from a lathe and a tube, with orbit and click to focus):
 
 ```js recipe-viewer
-return stage3d({id: 'viewer-3d', before: document.querySelector('main > *, h1'), height: '440px', label: 'Ceramic mug. Drag or use the buttons to rotate.', fov: 26}, async s => {
+return stage3d({id: 'viewer-3d', before: document.querySelector('main > *, h1'), height: '440px', label: 'Ceramic mug. Drag or use the arrow keys to rotate.', fov: 26}, async s => {
   const {THREE, rig, colors} = s;
   const mug = new THREE.Group(); mug.name = 'mug';
   const glaze = s.mats(colors.accent).glossy(), inner = s.mats(new THREE.Color(0xf4f1ea)).glossy();
@@ -494,7 +518,7 @@ return stage3d({id: 'viewer-3d', before: document.querySelector('main > *, h1'),
   s.fit(mug, {dir: [0.6, 0.45, 1], margin: 1.2});
   s.shadow(mug, {spread: 1.25, opacity: colors.dark ? 0.55 : 0.3});
   s.light();
-  await s.orbit({views: {Front: [0, 75], Handle: [90, 70], Top: [0, 18]}});
+  await s.orbit();
   s.pick([handle], () => s.view(90, 70)); // clicking the handle turns to show it
 });
 ```
@@ -530,7 +554,7 @@ return stage3d({id: 'bg-3d', into: section, label: 'Decorative particle field', 
   const target = new THREE.Vector2(99, 99);
   addEventListener('pointermove', e => {
     const b = s.host.getBoundingClientRect();
-    target.set(((e.clientX - b.left) / b.width - 0.5) * u.uSpan.value.x, -((e.clientY - b.top) / b.height - 0.5) * u.uSpan.value.y); s.invalidate();
+    target.set(((e.clientX - b.left) / b.width - 0.5) * u.uSpan.value.x, -((e.clientY - b.top) / b.height - 0.5) * u.uSpan.value.y); s.wake(1.2);
   }, {passive: true, signal});
   s.onFrame(dt => { u.uMouse.value.x = THREE.MathUtils.damp(u.uMouse.value.x, target.x, 4, dt); u.uMouse.value.y = THREE.MathUtils.damp(u.uMouse.value.y, target.y, 4, dt); });
   s.animate(dt => { u.uTime.value += dt; });
@@ -620,7 +644,8 @@ Most of these fail silently, leaving a dull, dark or broken result.
 | `dispose()` without `forceContextLoss()` | Tested: this evicted the host page's context [S5]. `s.dispose()` does both |
 | Default grey, sharp boxes, no shadow, even lighting, uniform spacing | Rounded edges, a limited palette from the page, jitter and a blob shadow |
 | Removing the original image or content when adding 3D | Keep it. Prices, specs and data must stay in DOM text |
-| Motion that auto-starts and never stops | Use `s.animate`, which adds Pause. Starting on scroll into view still counts as automatic under WCAG 2.2.2 [S13] |
+| Motion that auto-starts and never stops | Use `s.animate`, which settles after about 5 seconds, so no pause control is needed under WCAG 2.2.2 [S13] |
+| A row of Rotate, Pause or view buttons on the object | Nothing on screen by default. Drag, arrow keys and edge clicks already cover it |
 | Copying Shadertoy or LYGIA code | Write it from first principles, or adapt MIT sources |
 | Treating a console "Refused to load the script .../+esm" as failure | It's a harmless preload hint from jsDelivr's headers, and rendering still works. Judge by the status `stage3d` returns |
 
@@ -712,15 +737,16 @@ Run these before saying it's done. Report anything you couldn't verify. Budgets 
 
 **Performance:**
 - `report()` is inside the budgets. Scroll away and confirm rendering stops, and static scenes draw only on change.
-- Run the script twice. There's still only one `[data-ts-ui]` host.
+- Run the script twice. There's still only one host with this script's `data-ts-ui` value, and elements other scripts added are untouched.
 - Run `s.dispose()` from another script, and check that the host is gone and the page's own canvases still work.
 - You can't test weak devices or phones from here, so tell the user. Software rendering hides real GPU cost.
 
 **Accessibility:**
 - Informative canvas has `role="img"` and a real `aria-label`. Decorative is `aria-hidden` with no focus stop.
 - Reduced motion: no auto-rotation, parallax or camera moves, and rotation by hand still works. To test, emulate it or reason through `s.still`.
-- Autoplay has a working Pause button, or ends within 5 seconds.
-- Dragging has a non-drag option (`s.orbit` adds buttons and arrow keys), and Tab can always leave.
+- Automatic motion settles within about 5 seconds, or a loop the user asked for has its pause icon.
+- No visible buttons on the object unless the user asked for them.
+- Dragging has a non-drag option (`s.orbit` adds edge clicks and arrow keys), and Tab can always leave.
 - The wheel and vertical swipes still scroll the page. No text or data lives only inside the canvas, and text over a background still meets contrast.
 
 **Then report:** the decision and why, what you built, parts and budget numbers from `report()`, any asset with its license and credit, what couldn't be checked, and how to remove it. Close with the fact that it's a local change in this browser.

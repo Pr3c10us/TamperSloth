@@ -13,6 +13,8 @@ import {installUserscriptHost, pushToScript, refreshUserscriptMenus} from './use
 import {CONNECT_DECISION, installConnectPrompt} from './connectPrompt';
 import {installUserscriptLinks} from './userscriptLinks';
 import {CHECK_USERSCRIPT_UPDATE, installUserscriptUpdates} from './userscriptUpdates';
+import {savedScriptImageHelpers, temporaryImageHelpers, temporaryImageToken, usesImageHelpers} from './imageScriptApi';
+import {imageForScript, listImages} from '../chat/lib/imageLibrary';
 import {
     deleteScriptValue,
     getScriptValue,
@@ -182,6 +184,7 @@ function buildStorageHelpers(scriptId: string, token: string): string {
                 type: 'SCRIPT_LIST_VALUES', scriptId: __tampersloth_scriptId
             }).then(function(r) { return r ? r.values : {}; });
         }
+        ${savedScriptImageHelpers}
     `;
 }
 
@@ -190,8 +193,9 @@ function buildWrappedCode(
     fnName: string,
     scriptId?: string,
     token = '',
+    temporaryHelpers = '',
 ): string {
-    const storageHelpers = scriptId ? buildStorageHelpers(scriptId, token) : '';
+    const storageHelpers = scriptId ? buildStorageHelpers(scriptId, token) : temporaryHelpers;
     const scriptIdJson = JSON.stringify(scriptId ?? '');
     const tokenJson = JSON.stringify(token);
     const reportExecution = scriptId ? `
@@ -253,7 +257,9 @@ async function executeOnTab(
         );
     }
 
-    const wrappedCode = buildWrappedCode(code, fnName, options?.scriptId);
+    // So a script can be tried with the same image calls it will have once saved.
+    const imageHelpers = usesImageHelpers(code) ? temporaryImageHelpers(await temporaryImageToken()) : '';
+    const wrappedCode = buildWrappedCode(code, fnName, options?.scriptId, '', imageHelpers);
 
     const results = await chrome.userScripts.execute({
         target: {tabId},
@@ -363,10 +369,23 @@ function queueValueWrite(scriptId: string, write: () => Promise<void>): Promise<
     return next;
 }
 
+const answerImageRequest = async (message: any) => message.type === 'SCRIPT_GET_IMAGE'
+    ? {image: await imageForScript(message.name)}
+    : {images: await listImages()};
+
 async function answerUserScript(message: any, sender: chrome.runtime.MessageSender): Promise<unknown> {
+    const asksForImages = message.type === 'SCRIPT_GET_IMAGE' || message.type === 'SCRIPT_LIST_IMAGES';
+    // One-off code the agent is running: it has no saved script to authenticate as, just the token it was given.
+    if (asksForImages && typeof message.imageToken === 'string' && message.imageToken === await temporaryImageToken()) {
+        return answerImageRequest(message);
+    }
     const script = await authenticateScript(message);
     if (!script) return {denied: true, error: "TamperSloth doesn't recognise this script anymore. Reload the page."};
     switch (message.type) {
+        // Installed userscripts go through GM_getImage and their own @grant instead.
+        case 'SCRIPT_GET_IMAGE':
+        case 'SCRIPT_LIST_IMAGES':
+            return script.userscript ? {denied: true, error: "Installed userscripts read images with GM_getImage and @grant."} : answerImageRequest(message);
         case 'SCRIPT_GET_VALUE':
             await valueChains.get(script.id)?.catch(() => {});
             return {value: await getScriptValue(script.id, message.key)};

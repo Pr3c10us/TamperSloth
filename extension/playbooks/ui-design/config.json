@@ -1,8 +1,14 @@
 {
   "id": "ui-design",
   "name": "UI design and UX",
-  "description": "Use when a request changes how a page looks or works as an interface: redesigning, restyling or polishing a page, making it look better, or adding UI components, overlays, panels or widgets. Not for walkthroughs where the user does the steps.",
+  "description": "Use when a request changes how a page looks or works as an interface: redesigning, restyling or polishing a page, making it look better, or adding images, UI components, overlays, panels or widgets. Not for walkthroughs where the user does the steps.",
   "enabled": true,
-  "tools": ["browsing", "scripting", "visual", "browser"],
-  "lastVerified": "2026-11-02"
+  "tools": [
+    "browsing",
+    "scripting",
+    "visual",
+    "browser",
+    "images"
+  ],
+  "lastVerified": "2026-11-05"
 }

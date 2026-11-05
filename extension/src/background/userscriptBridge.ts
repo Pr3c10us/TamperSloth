@@ -1,4 +1,5 @@
 import type {BackgroundScript} from "../chat/lib/types";
+import {imageForScript, listImages} from "../chat/lib/imageLibrary";
 import {connectAllowed, grantKey} from "../scripts/userscript";
 import {clipboard} from "./browserService";
 import {askToConnect} from "./connectPrompt";
@@ -202,6 +203,19 @@ async function setClipboard(message: any, script: BackgroundScript) {
     return clipboard("write", String(message.text ?? ""));
 }
 
+// ── The image library ───────────────────────────────────────
+
+/** Every script's own grant: an installed script reads the user's images only if its review said so. */
+async function getImage(message: any, script: BackgroundScript) {
+    if (!hasGrant(script, "getimage")) return denied("GM_getImage isn't in this script's @grant list.");
+    return {image: await imageForScript(message.name)};
+}
+
+async function listLibrary(script: BackgroundScript) {
+    if (!hasGrant(script, "listimages")) return denied("GM_listImages isn't in this script's @grant list.");
+    return {images: await listImages()};
+}
+
 // ── Per-tab storage, cookies, audio ─────────────────────────
 
 const TAB_STORE_PREFIX = "ts_gm_tabs_";
@@ -306,6 +320,8 @@ export async function handleGmRequest(message: any, sender: Sender, script: Back
         case "GM_TAB": return tabStore(message, script, sender);
         case "GM_COOKIE": return cookies(message, script, sender);
         case "GM_AUDIO": return audio(message, script, sender);
+        case "GM_GET_IMAGE": return getImage(message, script);
+        case "GM_LIST_IMAGES": return listLibrary(script);
         default: return undefined;
     }
 }
